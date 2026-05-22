@@ -1,0 +1,66 @@
+{
+  "schema": "langclaw.evidence.v1",
+  "runId": "intel_mpcc1pzl_6w7jii",
+  "topic": "Analyze holder flow and smart-money signals on Mantle token 0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34",
+  "generatedAt": "2026-05-19T07:50:02.000Z",
+  "mantle": {
+    "chainId": 5000,
+    "registryAddress": "0xe69755e4249c4978c39fbe847ca9674ce7af3505",
+    "erc8004IdentityRegistry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+    "agentId": 94,
+    "decisionId": 1,
+    "signalType": "smart-money",
+    "proofTx": "0x39caaca5fe3a6792c427740342116f309ac02ee0a846c7dbe54f12c86a39a177",
+    "recorder": "0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c",
+    "evidenceUri": "langclaw://evidence/intel_mpcc1pzl_6w7jii/0x9a37002f2afbe1d3755b4e612f6ffb2070c29734170f97ddee99d5d90be83a73"
+  },
+  "sources": [
+    {
+      "id": "etherscan-token-transfers",
+      "type": "onchain_transfer_feed",
+      "title": "Token whale transfers",
+      "url": "https://api.etherscan.io/v2/api?chainid=5000&apikey=redacted&action=tokentx&module=account&offset=20&page=1&sort=desc&contractaddress=0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34",
+      "provider": "etherscan",
+      "summary": "Fetched Mantle token transfer activity. 20 records returned; latest and largest transfer summaries were included in the UI."
+    },
+    {
+      "id": "local-smart-money-synthesis",
+      "type": "agent_synthesis",
+      "title": "Smart money signal synthesis",
+      "provider": "local",
+      "summary": "Synthesized successful tool results into an analysis-only smart-money monitoring signal."
+    },
+    {
+      "id": "local-trading-synthesis",
+      "type": "agent_synthesis",
+      "title": "Trading signal synthesis",
+      "provider": "local",
+      "summary": "Synthesized source-backed tool results into a watchlist recommendation without executing trades."
+    }
+  ],
+  "providerErrors": [],
+  "orchestrationSteps": [
+    {
+      "agent": "Mantle Intelligence Planner",
+      "status": "complete",
+      "summary": "Detected a Mantle token address and selected holder-flow / smart-money tools."
+    },
+    {
+      "agent": "Mantle Tool Runner",
+      "status": "complete",
+      "summary": "Collected Mantle transfer evidence and local synthesis outputs."
+    },
+    {
+      "agent": "Mantle Decision Anchor",
+      "status": "complete",
+      "summary": "Recorded the decision hash and evidence URI to LangclawRegistry on Mantle."
+    }
+  ],
+  "finalAnswer": {
+    "title": "Mantle smart-money watch",
+    "signal": "smart-money or holder-flow activity needs monitoring",
+    "confidence": "medium",
+    "recommendation": "Add the strongest source-backed signal to the Mantle Alpha watchlist and record the decision proof.",
+    "caveat": "This is analysis-only. Langclaw did not sign, send, swap, buy, sell, or execute any transaction."
+  }
+}
