@@ -12,7 +12,7 @@ Returns `{ "ok": true, "service": "langclaw-backend" }`.
 
 `POST /api/chat/stream`
 
-Streams newline-delimited JSON. Direct chat uses OpenAI Responses API. Research mode runs the Langclaw workflow and can record selected-chain decision proof.
+Streams newline-delimited JSON. Direct chat uses OpenAI Responses API. Research mode runs the Langclaw workflow and can record selected-chain decision proof. The streamed `result.payload` now includes a stable `signals` object with `social`, `onchain`, and `combined` summaries, plus an additive `report` object for native report rendering.
 
 Request:
 
@@ -35,6 +35,12 @@ Important stream event types:
 - `tool_plan`, `tool_call`, `tool_result`, `tool_final`: Mantle intelligence tools.
 - `error`: request failure.
 
+For `tool_result` and `tool_final.payload.tools`, each tool result can now include additive metadata:
+
+- `attemptedProviders`: providers tried for that logical tool step
+- `fallbackReason`: why execution moved to a fallback provider
+- `scope`: `mantle-premium`, `legacy-fallback`, `legacy-default`, or `out-of-scope`
+
 ## Research
 
 `POST /api/discover`
@@ -45,11 +51,68 @@ Runs the Mantle Alpha workflow and returns a single JSON payload.
 
 Streams workflow progress before the final payload.
 
-The response includes source cards, provider gaps, final answer, usage receipt, and proof metadata:
+The response includes source cards, provider trace, structured `signals`, an additive `report`, final answer, usage receipt, and proof metadata:
 
 ```json
 {
   "topic": "Rank Mantle protocols by TVL and yield momentum",
+  "signals": {
+    "social": {
+      "status": "success",
+      "summary": "Collected live social and public context evidence for mantle from Elfa, Surf, Docs, and HackQuest.",
+      "providers": ["Elfa", "Surf", "Docs", "HackQuest"],
+      "sourceIds": ["surf-web-0-example", "elfa-narrative-0-example"],
+      "toolIds": []
+    },
+    "onchain": {
+      "status": "partial",
+      "summary": "On-chain enrichment produced usable evidence for mantle, but some provider coverage remained incomplete (Nansen).",
+      "providers": ["Nansen", "Dune"],
+      "sourceIds": [],
+      "toolIds": ["smart_money.nansen_smart_money_netflow"]
+    },
+    "combined": {
+      "status": "partial",
+      "summary": "Social and on-chain signals diverged: public attention was visible, but the on-chain side remained weaker or incomplete.",
+      "providers": ["Elfa", "Surf", "Nansen", "Dune"],
+      "sourceIds": ["surf-web-0-example", "elfa-narrative-0-example"],
+      "toolIds": ["smart_money.nansen_smart_money_netflow"]
+    }
+  },
+  "report": {
+    "kind": "smart-money",
+    "title": "Mantle smart money report",
+    "asOfUtc": "2026-05-23T04:48:00.000Z",
+    "executiveSummary": "This run returned direct smart-money evidence for Mantle, but some provider coverage remained incomplete.",
+    "bottomLine": "Treat the brief as directional research until the strongest flows are confirmed with a second source.",
+    "confidence": "medium",
+    "entities": [],
+    "tables": [],
+    "sections": [
+      {
+        "id": "combined-view",
+        "title": "Combined View",
+        "markdown": "Social and on-chain signals diverged: public attention was visible, but the on-chain side remained weaker or incomplete.",
+        "sourceIds": ["surf-web-0-example", "elfa-narrative-0-example"],
+        "toolIds": ["smart_money.nansen_smart_money_netflow"]
+      }
+    ],
+    "caveats": [
+      "Surf failed (402 Payment Required).",
+      "Treat this brief as directional research rather than verified accumulation."
+    ],
+    "recommendations": [
+      "Confirm wallet or holder flow with a second on-chain source before escalating the claim."
+    ]
+  },
+  "providerTrace": [
+    {
+      "provider": "Surf",
+      "status": "success",
+      "scope": "mantle-premium",
+      "message": "Collected 1 source card(s)."
+    }
+  ],
   "finalAnswer": {},
   "usage": {},
   "proof": {
@@ -70,6 +133,20 @@ The response includes source cards, provider gaps, final answer, usage receipt, 
   }
 }
 ```
+
+`signals.social`, `signals.onchain`, and `signals.combined` are always present for schema stability. Each section includes `status`, `summary`, `providers`, `sourceIds`, `toolIds`, and an optional `caveat`.
+
+`report` is additive and preferred for UI rendering when present. It uses one shared contract across research and direct on-chain outputs:
+
+- `kind`: `liquidity-anomaly`, `smart-money`, `market-brief`, `defi-yield`, or `mixed-research`
+- `confidence`: `high`, `medium`, `low`, or `insufficient`
+- `entities`: ranked entity cards only when the run includes real entity-level metrics
+- `tables`: ranked tables only when the run includes direct row-level metrics
+- `sections`: narrative markdown sections derived from the current run
+- `caveats`: source of truth for final-answer caveat text
+- `recommendations`: concrete next steps derived from the run
+
+`providerTrace` is additive metadata that explains which providers succeeded, failed, or were skipped. Premium Surf/Elfa/Nansen traces appear only for Mantle in this phase. No request flag is required; the shared research workflow now attempts combined discovery plus on-chain enrichment by default and degrades honestly when a provider is out of scope, disabled, or fails upstream.
 
 ## Strategy Lab
 
@@ -201,6 +278,15 @@ Provider keys:
 BRAVE_SEARCH_API_KEY=
 TAVILY_API_KEY=
 GITHUB_TOKEN=
+SURF_ENABLED=false
+SURF_API_KEY=
+SURF_TIMEOUT_MS=30000
+NANSEN_ENABLED=false
+NANSEN_API_KEY=
+NANSEN_TIMEOUT_MS=30000
+ELFA_ENABLED=false
+ELFA_API_KEY=
+ELFA_TIMEOUT_MS=45000
 DUNE_API_KEY=
 DUNE_STRATEGY_QUERY_ID=
 ALCHEMY_API_KEY=
@@ -208,6 +294,8 @@ ETHERSCAN_API_KEY=
 GOPLUS_API_KEY=
 GOPLUS_API_SECRET=
 ```
+
+Premium provider routing is Mantle-only in v1. Celo and other non-Mantle flows continue to use the legacy provider stack and surface a skipped provider trace instead of attempting Surf, Nansen, or Elfa.
 
 ## Errors
 

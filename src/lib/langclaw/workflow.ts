@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { synthesizeFinalAnswerWithOpenClaw } from "./openclaw-ai";
 import { synthesizeFinalAnswerWithOpenAI } from "./openai-synthesis";
+import { applyFinalAnswerGuardrails } from "./final-answer-guardrails";
 import {
   createRunId,
+  createStepSessionId,
   runEvidenceAgentStep,
   runPlannerAgentStep,
   runTrendAgentStep,
@@ -12,24 +15,40 @@ import {
 } from "./openclaw-workflow";
 import { runProviderDiscovery } from "./providers";
 import { persistLangclawProof } from "./proof";
+import { buildWorkflowResearchReport } from "./report";
 import { resolveProductChain } from "../chain-config";
+import { detectUnsupportedOnChainChain, inferAnalysisChain } from "../onchain-tools/chains";
+import { summarizePlan } from "../onchain-tools/planner";
+import { runOnChainToolWorkflow } from "../onchain-tools/workflow";
 import type {
   AgentOutputs,
   DiscoverPayload,
+  DiscoverSignalSection,
+  DiscoverSignals,
   FinalAnswer,
   FinalAnswerMeta,
   FinalConclusion,
   OrchestrationRuntime,
   OrchestrationStep,
   ProviderError,
+  ProviderTraceEntry,
+  ResearchReport,
   SourceCard,
   StepExecution,
+  WorkflowChainContext,
   WorkflowProgressEvent,
   ZeroGChainProof,
   ZeroGComputeProof,
   ZeroGProof,
   ZeroGStorageProof,
 } from "./types";
+import type {
+  OnChainContextMessage,
+  OnChainPlanSummary,
+  OnChainToolCallEvent,
+  OnChainToolFinalPayload,
+  OnChainToolResult,
+} from "../onchain-tools/types";
 
 const execFileAsync = promisify(execFile);
 
@@ -47,8 +66,36 @@ type WorkflowStepDefinition = {
 
 type WorkflowOptions = {
   chain?: string;
+  context?: OnChainContextMessage[];
   onEvent?: (event: WorkflowProgressEvent) => void | Promise<void>;
+  onToolCall?: (event: OnChainToolCallEvent) => void | Promise<void>;
+  onToolPlan?: (plan: OnChainPlanSummary) => void | Promise<void>;
+  onToolResult?: (event: OnChainToolResult) => void | Promise<void>;
   requestedModel?: unknown;
+  signal?: AbortSignal;
+};
+
+type WorkflowFinalAnswerSynthesisInput = {
+  topic: string;
+  sources: SourceCard[];
+  errors: ProviderError[];
+  providerTrace?: ProviderTraceEntry[];
+  runtime: OrchestrationRuntime;
+  steps: OrchestrationStep[];
+  agentOutputs?: AgentOutputs;
+  signals: DiscoverSignals;
+  report?: ResearchReport;
+  onChain?: OnChainToolFinalPayload;
+  onChainSkippedReason?: string;
+  requestedModel?: unknown;
+  preferOpenClaw: boolean;
+  sessionId: string;
+};
+
+type WorkflowFinalAnswerSynthesisResult = {
+  finalAnswer?: FinalAnswer;
+  meta: FinalAnswerMeta;
+  compute: ZeroGComputeProof;
 };
 
 type TraceOverrides = Record<string, Partial<OrchestrationStep>>;
@@ -70,7 +117,7 @@ const workflowSteps: WorkflowStepDefinition[] = [
     stepId: "discovery",
     agent: "Discovery Agent",
     skill: "openclaw/skills/discovery.md",
-    pendingSummary: "Waiting to collect live X, GitHub, Docs, and HackQuest sources.",
+    pendingSummary: "Waiting to collect live market, social, builder, and reference signals.",
   },
   {
     stepId: "source-normalizer",
@@ -95,6 +142,12 @@ const workflowSteps: WorkflowStepDefinition[] = [
     agent: "Verifier Agent",
     skill: "openclaw/skills/verifier.md",
     pendingSummary: "Waiting to prepare verification fields.",
+  },
+  {
+    stepId: "onchain-enrichment",
+    agent: "On-chain Enrichment",
+    skill: "onchain-tools/workflow",
+    pendingSummary: "Waiting to run the on-chain enrichment workflow.",
   },
   {
     stepId: "final-conclusion",
@@ -144,6 +197,8 @@ export async function runLangclawWorkflow(
   };
   await emitProgress(options, workflowSteps[0], "complete", openClawProbe.summary);
   const openClawWorkflowEnabled = shouldRunOpenClawWorkflow(openClawProbe.available);
+  const preferOpenClawFinalAnswer =
+    openClawWorkflowEnabled && process.env.OPENCLAW_AI_SYNTHESIS !== "false";
 
   await emitProgress(
     options,
@@ -174,13 +229,19 @@ export async function runLangclawWorkflow(
     options,
     workflowSteps[2],
     "running",
-    "Collecting live source cards from server-side provider tools."
+    "Collecting live source cards from premium and supporting research providers."
   );
-  const providerResult = await runProviderDiscovery(topic);
+  const providerResult = await runProviderDiscovery(topic, { chain: chain.id });
   const sources = providerResult.sources;
   const errors = providerResult.errors;
+  const providerTrace = providerResult.providerTrace;
   const providerSummary = summarizeProviders(sources);
   const failureSummary = summarizeFailures(errors);
+  const socialSignals = buildSocialSignals({
+    chain: chain.id,
+    errors,
+    sources,
+  });
   traceOverrides.discovery = {
     execution: "typescript-tool",
   };
@@ -188,7 +249,7 @@ export async function runLangclawWorkflow(
     options,
     workflowSteps[2],
     sources.length ? "complete" : "failed",
-    `Collected ${sources.length} live source cards from ${providerSummary}.${failureSummary}`
+    `Collected ${sources.length} live source cards from ${providerSummary}.${failureSummary} Social evidence status: ${socialSignals.status}.`
   );
 
   await emitProgress(
@@ -295,7 +356,60 @@ export async function runLangclawWorkflow(
     options,
     workflowSteps[7],
     "running",
-    "Final Conclusion Agent is asking OpenAI Responses API."
+    "Running the on-chain enrichment workflow."
+  );
+  const onChainEnrichment = await maybeRunOnChainEnrichment({
+    chain: chain.id,
+    context: options.context ?? [],
+    message: topic,
+    onToolCall: options.onToolCall,
+    onToolPlan: options.onToolPlan,
+    onToolResult: options.onToolResult,
+    signal: options.signal,
+  });
+  const chainContext = buildWorkflowChainContext({
+    onChain: onChainEnrichment.payload,
+    productChain: chain,
+    topic,
+  });
+  const signals = buildDiscoverSignals({
+    chain: chain.id,
+    errors,
+    onChain: onChainEnrichment.payload,
+    onChainSkippedReason: onChainEnrichment.skippedReason,
+    sources,
+  });
+  const report = buildWorkflowResearchReport({
+    errors,
+    generatedAt: new Date().toISOString(),
+    onChain: onChainEnrichment.payload,
+    onChainSkippedReason: onChainEnrichment.skippedReason,
+    providerTrace,
+    signals,
+    sources,
+    topic,
+  });
+  const onChainProgressSummary = onChainEnrichment.payload
+    ? `On-chain enrichment completed with ${onChainEnrichment.payload.tools.length} tool result(s) on ${onChainEnrichment.payload.plan.chain}. On-chain signal status: ${signals.onchain.status}. Combined signal status: ${signals.combined.status}.`
+    : onChainEnrichment.skippedReason ||
+      "On-chain enrichment was skipped for this research request.";
+  traceOverrides["onchain-enrichment"] = {
+    execution: "typescript-tool",
+    status: "complete",
+    summary: onChainProgressSummary,
+  };
+  await emitProgress(
+    options,
+    workflowSteps[7],
+    "complete",
+    onChainProgressSummary
+  );
+
+  await emitProgress(
+    options,
+    workflowSteps[8],
+    "running",
+    summarizeFinalAnswerKickoff(preferOpenClawFinalAnswer, signals)
   );
   const agentOutputs: AgentOutputs = {
     planner: plannerStep.output,
@@ -317,15 +431,32 @@ export async function runLangclawWorkflow(
     openClawProbe,
     traceOverrides
   );
-  const fallbackAnswer = buildFinalAnswer(topic, sources, errors, runtime);
-  const computeSynthesis = await synthesizeFinalAnswerWithOpenAI({
+  const fallbackAnswer = buildFinalAnswer(
     topic,
     sources,
     errors,
     runtime,
+    signals,
+    onChainEnrichment.payload,
+    onChainEnrichment.skippedReason,
+    providerTrace,
+    report
+  );
+  const computeSynthesis = await synthesizeWorkflowFinalAnswer({
+    topic,
+    sources,
+    errors,
+    providerTrace,
+    runtime,
     steps: traceBeforeAnswer,
     agentOutputs,
+    signals,
+    report,
+    onChain: onChainEnrichment.payload,
+    onChainSkippedReason: onChainEnrichment.skippedReason,
     requestedModel: options.requestedModel,
+    preferOpenClaw: preferOpenClawFinalAnswer,
+    sessionId: createStepSessionId(runId, "final-conclusion"),
   });
   const synthesis = computeSynthesis;
   const finalAnswerMeta = synthesis.meta;
@@ -338,7 +469,7 @@ export async function runLangclawWorkflow(
     : withFallbackCaveat(fallbackAnswer, finalAnswerMeta);
   await emitProgress(
     options,
-    workflowSteps[7],
+    workflowSteps[8],
     "complete",
     summarizeFinalAnswerProgress(finalAnswerMeta, Boolean(synthesis.finalAnswer)),
     finalAnswerMeta
@@ -346,13 +477,13 @@ export async function runLangclawWorkflow(
 
   await emitProgress(
     options,
-    workflowSteps[8],
+    workflowSteps[9],
     "running",
     `Building the canonical evidence bundle for source-backed ${chain.name} alpha proof.`
   );
   await emitProgress(
     options,
-    workflowSteps[9],
+    workflowSteps[10],
     "running",
     `Preparing the agent decision hash and submitting it to LangclawRegistry on ${chain.name} when enabled.`
   );
@@ -362,8 +493,11 @@ export async function runLangclawWorkflow(
     runId,
     topic,
     generatedAt,
+    chainContext,
     sources,
     errors,
+    signals,
+    report,
     steps: buildTraceSteps(
       topic,
       sources,
@@ -382,14 +516,14 @@ export async function runLangclawWorkflow(
   traceOverrides["mantle-chain"] = traceFromChainProof(proof.chain);
   await emitProgress(
     options,
-    workflowSteps[8],
+    workflowSteps[9],
     proof.storage.status === "failed" ? "failed" : "complete",
     summarizeStorageProof(proof.storage),
     proofMetaFromStorage(proof.storage)
   );
   await emitProgress(
     options,
-    workflowSteps[9],
+    workflowSteps[10],
     proof.chain.status === "failed" ? "failed" : "complete",
     summarizeChainProof(proof.chain),
     proofMetaFromChain(proof.chain)
@@ -398,8 +532,14 @@ export async function runLangclawWorkflow(
   return {
     topic,
     generatedAt,
+    chainContext,
     sources,
     errors,
+    providerTrace,
+    signals,
+    report,
+    onChain: onChainEnrichment.payload,
+    onChainSkippedReason: onChainEnrichment.skippedReason,
     orchestration: {
       runtime,
       steps: buildTraceSteps(
@@ -424,6 +564,77 @@ export async function runLangclawWorkflow(
       compute: computeSynthesis.compute,
     },
   };
+}
+
+export async function synthesizeWorkflowFinalAnswer(
+  input: WorkflowFinalAnswerSynthesisInput,
+  dependencies: {
+    openClaw?: typeof synthesizeFinalAnswerWithOpenClaw;
+    openAI?: typeof synthesizeFinalAnswerWithOpenAI;
+  } = {}
+): Promise<WorkflowFinalAnswerSynthesisResult> {
+  const openClawSynthesis =
+    dependencies.openClaw ?? synthesizeFinalAnswerWithOpenClaw;
+  const openAISynthesis =
+    dependencies.openAI ?? synthesizeFinalAnswerWithOpenAI;
+  let openClawResult:
+    | Awaited<ReturnType<typeof synthesizeFinalAnswerWithOpenClaw>>
+    | undefined;
+
+  if (input.preferOpenClaw) {
+    openClawResult = await openClawSynthesis({
+      topic: input.topic,
+      sources: input.sources,
+      errors: input.errors,
+      providerTrace: input.providerTrace,
+      runtime: input.runtime,
+      steps: input.steps,
+      agentOutputs: input.agentOutputs,
+      signals: input.signals,
+      report: input.report,
+      onChain: input.onChain,
+      onChainSkippedReason: input.onChainSkippedReason,
+      sessionId: input.sessionId,
+    });
+
+    if (openClawResult.finalAnswer) {
+      return {
+        finalAnswer: openClawResult.finalAnswer,
+        meta: openClawResult.meta,
+        compute: buildOpenClawComputeProof(openClawResult.meta),
+      };
+    }
+  }
+
+  const openAIResult = await openAISynthesis({
+    topic: input.topic,
+    sources: input.sources,
+    errors: input.errors,
+    providerTrace: input.providerTrace,
+    runtime: input.runtime,
+    steps: input.steps,
+    agentOutputs: input.agentOutputs,
+    signals: input.signals,
+    report: input.report,
+    onChain: input.onChain,
+    onChainSkippedReason: input.onChainSkippedReason,
+    requestedModel: input.requestedModel,
+  });
+
+  if (openClawResult?.meta.error && openAIResult.meta.error) {
+    return {
+      ...openAIResult,
+      meta: {
+        ...openAIResult.meta,
+        error: combineSynthesisErrors(
+          openClawResult.meta.error,
+          openAIResult.meta.error
+        ),
+      },
+    };
+  }
+
+  return openAIResult;
 }
 
 async function resolveOpenClawRuntime(): Promise<OpenClawProbe> {
@@ -492,15 +703,10 @@ function buildTraceSteps(
   finalAnswerMeta?: FinalAnswerMeta
 ): OrchestrationStep[] {
   const providers = new Set(sources.map((source) => source.provider));
-  const failedProviders = Array.from(
-    new Set(errors.map((error) => error.provider))
-  );
   const providerSummary = providers.size
     ? Array.from(providers).join(", ")
     : "no providers";
-  const failureSummary = failedProviders.length
-    ? ` Provider issues: ${failedProviders.join(", ")}.`
-    : "";
+  const failureSummary = summarizeFailures(errors);
 
   return [
     withTraceOverride("runtime", traceOverrides, {
@@ -514,7 +720,7 @@ function buildTraceSteps(
       agent: "Planner Agent",
       skill: "openclaw/skills/planner.md",
       status: "complete",
-      summary: `Created provider search plan for "${topic}" across X, GitHub, Docs, and HackQuest.`,
+      summary: `Created a provider plan for "${topic}" across Mantle premium and supporting public research providers.`,
       execution: "deterministic-fallback",
     }),
     withTraceOverride("discovery", traceOverrides, {
@@ -555,6 +761,14 @@ function buildTraceSteps(
       summary:
         "Prepared brief hash inputs and claim support checks for the verification panel. Chain anchoring not submitted yet.",
       execution: "deterministic-fallback",
+    }),
+    withTraceOverride("onchain-enrichment", traceOverrides, {
+      agent: "On-chain Enrichment",
+      skill: "onchain-tools/workflow",
+      status: "complete",
+      summary:
+        "Ran the shared on-chain enrichment workflow for the research request.",
+      execution: "typescript-tool",
     }),
     withTraceOverride("final-conclusion", traceOverrides, {
       agent: "Final Conclusion Agent",
@@ -625,6 +839,19 @@ function summarizeFinalAnswerStep(
   }
 
   return "Created the final conclusion from discovery, normalization, trend scoring, evidence, and verification outputs.";
+}
+
+function summarizeFinalAnswerKickoff(
+  preferOpenClaw: boolean,
+  signals: DiscoverSignals
+) {
+  const signalSummary = `Signals ready: social ${signals.social.status}, on-chain ${signals.onchain.status}, combined ${signals.combined.status}.`;
+
+  if (preferOpenClaw) {
+    return `Final Conclusion Agent is running through OpenClaw. ${signalSummary}`;
+  }
+
+  return `Final Conclusion Agent is asking OpenAI Responses API. ${signalSummary}`;
 }
 
 function summarizeFinalAnswerProgress(
@@ -722,6 +949,38 @@ function traceFromFinalAnswerMeta(
     sessionId: meta.sessionId,
     error: meta.error,
   };
+}
+
+function buildOpenClawComputeProof(
+  meta: FinalAnswerMeta
+): ZeroGComputeProof {
+  const model = meta.usedModel ?? meta.model;
+
+  return {
+    status: "used",
+    provider: "OpenClaw",
+    model,
+    requestedModel: meta.requestedModel,
+    usedModel: model,
+    modelHonored: meta.modelHonored,
+    fallbackFrom: meta.fallbackFrom,
+  };
+}
+
+function combineSynthesisErrors(...errors: Array<string | undefined>) {
+  const unique = Array.from(new Set(errors.filter(Boolean)));
+
+  if (!unique.length) {
+    return "";
+  }
+
+  if (unique.length === 1) {
+    return unique[0];
+  }
+
+  return `OpenClaw synthesis failed: ${unique[0]} OpenAI fallback failed: ${unique
+    .slice(1)
+    .join(" | ")}`;
 }
 
 function traceFromStorageProof(
@@ -898,12 +1157,277 @@ function buildFinalConclusion(
   };
 }
 
-function buildFinalAnswer(
+export function buildDiscoverSignals({
+  chain,
+  errors = [],
+  onChain,
+  onChainSkippedReason,
+  sources,
+}: {
+  chain: string;
+  errors?: ProviderError[];
+  onChain?: OnChainToolFinalPayload;
+  onChainSkippedReason?: string;
+  sources: SourceCard[];
+}): DiscoverSignals {
+  const social = buildSocialSignals({ chain, errors, sources });
+  const onchain = buildOnChainSignals({
+    chain,
+    onChain,
+    onChainSkippedReason,
+  });
+
+  return {
+    social,
+    onchain,
+    combined: buildCombinedSignals({ social, onchain }),
+  };
+}
+
+const socialMomentumProviders = new Set<SourceCard["provider"]>(["Elfa", "Surf", "X"]);
+
+export function buildSocialSignals({
+  chain,
+  errors = [],
+  sources,
+}: {
+  chain: string;
+  errors?: ProviderError[];
+  sources: SourceCard[];
+}): DiscoverSignalSection {
+  const directProviders = sources
+    .filter((source) => socialMomentumProviders.has(source.provider))
+    .map((source) => source.provider);
+  const providers = sortSignalProviders(
+    Array.from(new Set(sources.map((source) => providerLabel(source.provider))))
+  );
+  const sourceIds = sources.map((source) => source.id);
+  const hasDirectSocial = directProviders.length > 0;
+  const failedSocialProviders = summarizeFailedSocialProviders(errors);
+  const hasPartialSocialCoverage =
+    hasDirectSocial && failedSocialProviders.length > 0;
+
+  if (sources.length === 0) {
+    return {
+      status: "failed",
+      summary: "Discovery did not return usable social or public context evidence.",
+      providers,
+      sourceIds,
+      toolIds: [],
+      caveat: "No live source cards were collected for the social/context section.",
+    };
+  }
+
+  if (hasPartialSocialCoverage) {
+    return {
+      status: "partial",
+      summary: `Collected live social and public context evidence for ${chain} from ${providers.join(", ")}, but some social momentum providers failed.`,
+      providers,
+      sourceIds,
+      toolIds: [],
+      caveat: `Social evidence is partial because ${failedSocialProviders.join(", ")} failed while other providers still returned source cards.`,
+    };
+  }
+
+  if (hasDirectSocial) {
+    return {
+      status: "success",
+      summary: `Collected live social and public context evidence for ${chain} from ${providers.join(", ")}.`,
+      providers,
+      sourceIds,
+      toolIds: [],
+    };
+  }
+
+  return {
+    status: "partial",
+    summary: `Collected supporting builder and public context for ${chain}, but direct social momentum was limited to ${providers.join(", ")}.`,
+    providers,
+    sourceIds,
+    toolIds: [],
+    caveat:
+      "The social section is leaning on builder and documentation context rather than direct social momentum providers.",
+  };
+}
+
+function buildOnChainSignals({
+  chain,
+  onChain,
+  onChainSkippedReason,
+}: {
+  chain: string;
+  onChain?: OnChainToolFinalPayload;
+  onChainSkippedReason?: string;
+}): DiscoverSignalSection {
+  if (!onChain) {
+    const skipped = Boolean(onChainSkippedReason?.includes("outside Langclaw's supported on-chain scope"));
+
+    return {
+      status: skipped ? "skipped" : "failed",
+      summary:
+        onChainSkippedReason ||
+        `On-chain enrichment failed before it could produce usable evidence for ${chain}.`,
+      providers: [],
+      sourceIds: [],
+      toolIds: [],
+      caveat: onChainSkippedReason,
+    };
+  }
+
+  const directSuccesses = onChain.tools.filter(
+    (tool) => tool.status === "success" && tool.provider !== "local"
+  );
+  const directFailures = onChain.tools.filter(
+    (tool) => tool.status === "failed" && tool.provider !== "local"
+  );
+  const toolIds = onChain.tools.map((tool) => tool.commandId);
+  const attemptedProviders = Array.from(
+    new Set(
+      onChain.tools.flatMap((tool) =>
+        tool.attemptedProviders?.length ? tool.attemptedProviders : [tool.provider]
+      )
+    )
+  );
+  const providers = sortSignalProviders(
+    attemptedProviders.map((provider) => providerLabelFromOnChain(provider))
+  );
+
+  if (directSuccesses.length && !directFailures.length) {
+    return {
+      status: "success",
+      summary: `On-chain enrichment produced usable live evidence for ${chain} from ${providers.join(", ")}.`,
+      providers,
+      sourceIds: [],
+      toolIds,
+    };
+  }
+
+  if (directSuccesses.length || onChain.tools.some((tool) => tool.status === "success")) {
+    const failureProviders = sortSignalProviders(
+      Array.from(new Set(directFailures.map((tool) => providerLabelFromOnChain(tool.provider))))
+    );
+
+    return {
+      status: "partial",
+      summary: directFailures.length
+        ? `On-chain enrichment produced usable evidence for ${chain}, but some provider coverage remained incomplete (${failureProviders.join(", ")}).`
+        : `On-chain enrichment ran for ${chain}, but the evidence stayed analysis-level rather than fully confirmed.`,
+      providers,
+      sourceIds: [],
+      toolIds,
+      caveat: directFailures.length ? onChain.caveat : onChain.caveat,
+    };
+  }
+
+  return {
+    status: "partial",
+    summary: `On-chain enrichment ran for ${chain}, but no direct provider returned strong evidence.`,
+    providers,
+    sourceIds: [],
+    toolIds,
+    caveat: onChain.caveat,
+  };
+}
+
+function buildCombinedSignals({
+  social,
+  onchain,
+}: {
+  social: DiscoverSignalSection;
+  onchain: DiscoverSignalSection;
+}): DiscoverSignalSection {
+  const providers = sortSignalProviders([
+    ...social.providers,
+    ...onchain.providers,
+  ]);
+  const sourceIds = Array.from(new Set([...social.sourceIds, ...onchain.sourceIds]));
+  const toolIds = Array.from(new Set([...social.toolIds, ...onchain.toolIds]));
+
+  if (social.status === "success" && onchain.status === "success") {
+    return {
+      status: "success",
+      summary:
+        "Social and on-chain signals converged into a usable live research brief.",
+      providers,
+      sourceIds,
+      toolIds,
+    };
+  }
+
+  if (social.status === "skipped" && onchain.status === "skipped") {
+    return {
+      status: "skipped",
+      summary:
+        "The workflow could not build a combined signal because both social and on-chain sections were skipped.",
+      providers,
+      sourceIds,
+      toolIds,
+      caveat: [social.caveat, onchain.caveat].filter(Boolean).join(" "),
+    };
+  }
+
+  if (social.status === "failed" && onchain.status === "failed") {
+    return {
+      status: "failed",
+      summary:
+        "The workflow could not build a dependable combined view from either social or on-chain evidence.",
+      providers,
+      sourceIds,
+      toolIds,
+      caveat: [social.caveat, onchain.caveat].filter(Boolean).join(" "),
+    };
+  }
+
+  const summary =
+    social.status === "success"
+      ? "Social and on-chain signals diverged: public attention was visible, but the on-chain side remained weaker or incomplete."
+      : onchain.status === "success"
+        ? "Social and on-chain signals diverged: on-chain evidence was usable, but social confirmation remained limited."
+        : "Social and on-chain signals remained partial, so the combined brief should be treated as directional.";
+
+  return {
+    status: "partial",
+    summary,
+    providers,
+    sourceIds,
+    toolIds,
+    caveat: [social.caveat, onchain.caveat].filter(Boolean).join(" "),
+  };
+}
+
+export function buildFinalAnswer(
   topic: string,
   sources: SourceCard[],
   errors: ProviderError[],
-  runtime: OrchestrationRuntime
+  runtime: OrchestrationRuntime,
+  signals: DiscoverSignals,
+  onChain?: OnChainToolFinalPayload,
+  onChainSkippedReason?: string,
+  providerTrace?: ProviderTraceEntry[],
+  report?: ResearchReport
 ): FinalAnswer {
+  if (report) {
+    return buildReportLedFallbackAnswer(
+      errors,
+      signals,
+      onChain,
+      onChainSkippedReason,
+      providerTrace,
+      report
+    );
+  }
+
+  if (onChain) {
+    return buildOnChainLedFallbackAnswer(
+      topic,
+      sources,
+      errors,
+      signals,
+      onChain,
+      providerTrace
+    );
+  }
+
   const activeProviders = Array.from(
     new Set(sources.map((source) => providerLabel(source.provider)))
   );
@@ -919,9 +1443,19 @@ function buildFinalAnswer(
     Boolean(findSource(sources, "HackQuest"));
 
   if (!sourceCount) {
-    return {
+    const answerMarkdown = [
+      `Aku belum bisa memberi rekomendasi yang kuat untuk "${topic}" karena discovery tidak menemukan live source yang cukup.`,
+      signals.combined.summary,
+      signals.social.summary,
+      signals.onchain.summary,
+      onChainSkippedReason || "On-chain enrichment tidak dijalankan untuk brief ini.",
+      "Coba pakai topic yang lebih spesifik atau cek konfigurasi provider.",
+    ].join("\n\n");
+
+    return applyFinalAnswerGuardrails({
       title: "Discovery did not find enough evidence",
       answer: `Jawaban singkat: untuk "${topic}", aku belum bisa memberi rekomendasi yang kuat karena discovery tidak menemukan live source yang cukup.`,
+      answerMarkdown,
       bullets: [
         "Tidak ada source card yang bisa dipakai sebagai evidence.",
         "Workflow agent tetap berjalan, tetapi hasilnya belum layak dijadikan dasar demo.",
@@ -932,12 +1466,36 @@ function buildFinalAnswer(
       caveat:
         "Kesimpulan ini lemah karena tidak ada live source yang berhasil dikumpulkan.",
       generatedBy: "Final Conclusion Agent",
-    };
+    }, {
+      errors,
+      onChainSkippedReason,
+      providerTrace,
+      signals,
+    });
   }
 
-  return {
+  const onChainSummary =
+    onChainSkippedReason || "On-chain enrichment tidak dijalankan untuk request ini.";
+  const recommendation =
+    "Untuk demo, jelaskan Langclaw sebagai AI Alpha & Data agent: user bertanya satu Mantle topic, Langclaw mencari evidence, lalu decision hash dan evidence URI dicatat sebagai proof.";
+  const answerMarkdown = [
+    `Combined signal: ${signals.combined.summary}`,
+    `Social signal: ${signals.social.summary}`,
+    `On-chain signal: ${signals.onchain.summary}`,
+    `Untuk "${topic}", Langclaw menemukan ${sourceCount} live source dari ${providerText}. Pola terkuatnya masih mengarah ke AI agent yang menggabungkan public signal, builder activity, dan evidence-backed research.`,
+    onChainSummary,
+    hasAllCoreSignals
+      ? "- Sinyalnya lengkap: ada percakapan publik, repo builder, referensi teknis, dan konteks HackQuest."
+      : `- Sinyalnya cukup, tetapi belum lengkap di semua provider. Provider aktif: ${providerText}.`,
+    `- Workflow dijalankan lewat ${runtimeText}, jadi proses agent bisa ditampilkan sebagai alur planner, discovery, evidence, on-chain enrichment, dan final synthesis.`,
+    "- Arah project yang paling masuk akal adalah research agent yang hanya memperdalam on-chain evidence saat request memang membutuhkannya.",
+    `Next step: ${recommendation}`,
+  ].join("\n\n");
+
+  return applyFinalAnswerGuardrails({
     title: "Mantle Alpha brief",
     answer: `Jawaban singkat: "${topic}" layak dipakai sebagai arah Mantle Alpha karena Langclaw menemukan ${sourceCount} live sources dari ${providerText}. Pola terkuatnya adalah AI agent yang mencari sinyal on-chain, merangkum evidence, lalu menyiapkan agent decision proof.`,
+    answerMarkdown,
     bullets: [
       hasAllCoreSignals
         ? "Sinyalnya lengkap: ada percakapan publik, repo builder, referensi teknis, dan konteks HackQuest."
@@ -945,25 +1503,426 @@ function buildFinalAnswer(
       `Workflow dijalankan lewat ${runtimeText}, jadi proses agent bisa ditampilkan sebagai alur Planner, Discovery, Source, Trend, Evidence, Verifier, dan Final Conclusion.`,
       "Arah project yang paling masuk akal adalah Mantle Alpha Sentinel: agent yang memonitor smart money, liquidity anomaly, dan protocol momentum tanpa mengeksekusi trade.",
     ],
-    recommendation:
-      "Untuk demo, jelaskan Langclaw sebagai AI Alpha & Data agent: user bertanya satu Mantle topic, Langclaw mencari evidence, lalu decision hash dan evidence URI dicatat sebagai proof.",
-    caveat: errors.length
-      ? `Ada ${errors.length} provider issue, jadi jawaban ini sebaiknya dianggap directional dan perlu dicek ulang sebelum dipakai sebagai klaim final.`
-      : "Tidak ada provider error, tetapi jawaban tetap dibatasi oleh live sources yang ditemukan pada saat run ini.",
+    recommendation,
+    caveat: "Directional research only.",
     generatedBy: "Final Conclusion Agent",
-  };
+  }, {
+    errors,
+    onChainSkippedReason,
+    providerTrace,
+    signals,
+  });
 }
 
-function withFallbackCaveat(answer: FinalAnswer, meta: FinalAnswerMeta) {
+function buildReportLedFallbackAnswer(
+  errors: ProviderError[],
+  signals: DiscoverSignals,
+  onChain: OnChainToolFinalPayload | undefined,
+  onChainSkippedReason: string | undefined,
+  providerTrace: ProviderTraceEntry[] | undefined,
+  report: ResearchReport
+): FinalAnswer {
+  const answerMarkdown = buildUserFacingReportAnswerMarkdown(
+    report,
+    signals,
+    onChain,
+    onChainSkippedReason
+  );
+
+  return applyFinalAnswerGuardrails({
+    title: report.title,
+    answer: report.executiveSummary,
+    answerMarkdown,
+    bullets: buildReportFallbackBullets(report, signals).slice(0, 4),
+    recommendation: report.recommendations[0],
+    caveat: report.caveats.join(" "),
+    generatedBy: "Final Conclusion Agent",
+  }, {
+    errors,
+    onChain,
+    onChainSkippedReason,
+    providerTrace,
+    report,
+    signals,
+  });
+}
+
+function buildUserFacingReportAnswerMarkdown(
+  report: ResearchReport,
+  signals: DiscoverSignals,
+  onChain: OnChainToolFinalPayload | undefined,
+  onChainSkippedReason: string | undefined
+) {
+  const includeOnChainRead = !(
+    report.entities.length || report.tables.length
+  );
+  const lines = [
+    report.executiveSummary,
+    report.bottomLine !== report.executiveSummary ? report.bottomLine : undefined,
+    ...buildReportFallbackBullets(report, signals).map((bullet) => `- ${bullet}`),
+    report.recommendations[0]
+      ? `Next step: ${report.recommendations[0]}`
+      : undefined,
+    includeOnChainRead && onChain
+      ? `On-chain read: ${onChain.answer}`
+      : includeOnChainRead && onChainSkippedReason
+        ? `On-chain read: ${onChainSkippedReason}`
+        : undefined,
+  ].filter(Boolean);
+
+  return lines.join("\n\n");
+}
+
+function buildReportFallbackBullets(
+  report: ResearchReport,
+  signals: DiscoverSignals
+) {
+  return uniqueStrings([
+    signals.combined.summary,
+    signals.onchain.summary,
+    report.bottomLine,
+    report.recommendations[0],
+  ]).filter(Boolean);
+}
+
+function buildOnChainLedFallbackAnswer(
+  topic: string,
+  sources: SourceCard[],
+  errors: ProviderError[],
+  signals: DiscoverSignals,
+  onChain: OnChainToolFinalPayload,
+  providerTrace?: ProviderTraceEntry[]
+): FinalAnswer {
+  const chainName = onChain.plan.chainName || onChain.plan.chain;
+  const intent = onChain.plan.intent;
+  const directSuccesses = onChain.tools.filter(
+    (tool) => tool.status === "success" && tool.provider !== "local"
+  );
+  const directFailures = onChain.tools.filter(
+    (tool) => tool.status === "failed" && tool.provider !== "local"
+  );
+  const localSuccesses = onChain.tools.filter(
+    (tool) => tool.status === "success" && tool.provider === "local"
+  );
+  const totalIssues = errors.length + directFailures.length;
+  const summary = buildOnChainSummary({
+    chainName,
+    directFailures,
+    directSuccesses,
+    intent,
+    localSuccesses,
+    topic,
+  });
+  const findings = [
+    ...buildResearchFindingBullets(sources),
+    buildOnChainFindingBullet({
+      chainName,
+      directFailures,
+      directSuccesses,
+      localSuccesses,
+      onChain,
+    }),
+  ];
+  const bottomLine = buildOnChainBottomLine({
+    chainName,
+    directFailures,
+    directSuccesses,
+    intent,
+  });
+  const answerMarkdown = [
+    "Short conclusion",
+    "",
+    `- Combined signal: ${signals.combined.summary}`,
+    `- Social signal: ${signals.social.summary}`,
+    `- On-chain signal: ${signals.onchain.summary}`,
+    "",
+    `- Summary: ${summary}`,
+    "",
+    "What we found",
+    "",
+    ...findings.map((item) => `- ${item}`),
+    "",
+    "Bottom line",
+    "",
+    `- ${bottomLine}`,
+    "",
+    `Recommendation: ${onChain.recommendation}`,
+  ].join("\n");
+
+  return applyFinalAnswerGuardrails({
+    title: `${chainName} research brief`,
+    answer: summary,
+    answerMarkdown,
+    bullets: findings,
+    recommendation: onChain.recommendation,
+    caveat: totalIssues ? onChain.caveat : onChain.caveat,
+    generatedBy: "Final Conclusion Agent",
+  }, {
+    errors,
+    onChain,
+    providerTrace,
+    signals,
+  });
+}
+
+function buildOnChainSummary({
+  chainName,
+  directFailures,
+  directSuccesses,
+  intent,
+  localSuccesses,
+  topic,
+}: {
+  chainName: string;
+  directFailures: OnChainToolResult[];
+  directSuccesses: OnChainToolResult[];
+  intent: string;
+  localSuccesses: OnChainToolResult[];
+  topic: string;
+}) {
+  const isSmartMoney =
+    intent === "smart-money" || /\bsmart[-\s]money|whale|accumulat\w*/i.test(topic);
+
+  if (isSmartMoney && !directSuccesses.length) {
+    return `Based on the collected evidence and the on-chain enrichment run, the system did not confirm verified smart-money accumulation on ${chainName}. The bundle is stronger on public, builder, and research context than on hard on-chain proof.`;
+  }
+
+  if (isSmartMoney) {
+    return `The combined research and on-chain bundle found live smart-money-related evidence on ${chainName}, but it still needs manual verification before being framed as confirmed accumulation.`;
+  }
+
+  if (!directSuccesses.length) {
+    return `The on-chain enrichment run for "${topic}" did not return strong direct evidence, so the result should be treated as directional research rather than a confirmed signal.`;
+  }
+
+  if (directFailures.length) {
+    return `The run returned usable on-chain evidence, but some providers still failed, so the conclusion is directional rather than final.`;
+  }
+
+  if (localSuccesses.length) {
+    return `The run returned usable direct evidence and a local synthesis summary, giving this bundle a stronger mixed research and on-chain footing.`;
+  }
+
+  return `The run returned usable direct evidence, so this bundle can be used as a research brief with manual follow-up.`;
+}
+
+function buildResearchFindingBullets(sources: SourceCard[]) {
+  const bullets: string[] = [];
+  const xCount = countSourcesByProvider(sources, "X");
+  const githubCount = countSourcesByProvider(sources, "GitHub");
+  const docsCount = countSourcesByProvider(sources, "Tavily");
+  const hackQuestCount = countSourcesByProvider(sources, "HackQuest");
+
+  if (xCount) {
+    bullets.push(
+      `X activity: ${xCount} post(s) were collected, which supports public narrative activity rather than direct on-chain proof.`
+    );
+  }
+
+  if (githubCount) {
+    bullets.push(
+      `GitHub / tooling: ${githubCount} repo or builder reference(s) were collected, which supports builder activity more than finalized on-chain adoption.`
+    );
+  }
+
+  if (docsCount) {
+    bullets.push(
+      `Docs / analysis pages: ${docsCount} technical or reference page(s) were collected, which add context but do not replace direct on-chain evidence.`
+    );
+  }
+
+  if (hackQuestCount) {
+    bullets.push(
+      `Hackathon signals: ${hackQuestCount} HackQuest listing(s) were collected, which indicate developer engagement rather than whale flow confirmation.`
+    );
+  }
+
+  if (!bullets.length) {
+    bullets.push(
+      "Research discovery returned limited source coverage, so the answer leans more heavily on the on-chain enrichment attempt."
+    );
+  }
+
+  return bullets;
+}
+
+function buildOnChainFindingBullet({
+  chainName,
+  directFailures,
+  directSuccesses,
+  localSuccesses,
+  onChain,
+}: {
+  chainName: string;
+  directFailures: OnChainToolResult[];
+  directSuccesses: OnChainToolResult[];
+  localSuccesses: OnChainToolResult[];
+  onChain: OnChainToolFinalPayload;
+}) {
+  const failureProviders = summarizeResultProviders(directFailures);
+  const successProviders = summarizeResultProviders(directSuccesses);
+  const localDetail = localSuccesses.length
+    ? ` ${localSuccesses.length} local synthesis step(s) still produced analysis-only signals.`
+    : "";
+
+  if (!directSuccesses.length && directFailures.length) {
+    return `On-chain enrichment on ${chainName}: dedicated on-chain providers failed or lacked usable inputs (${failureProviders}).${localDetail} No transactions were signed or executed by Langclaw.`;
+  }
+
+  if (!directSuccesses.length) {
+    return `On-chain enrichment on ${chainName}: no direct provider returned usable evidence.${localDetail} No transactions were signed or executed by Langclaw.`;
+  }
+
+  const failureSuffix = directFailures.length
+    ? ` ${directFailures.length} provider issue(s) still need fixing (${failureProviders}).`
+    : "";
+
+  return `On-chain enrichment on ${chainName}: ${directSuccesses.length} direct provider result(s) returned usable evidence (${successProviders}).${failureSuffix} No transactions were signed or executed by Langclaw.`;
+}
+
+function buildOnChainBottomLine({
+  chainName,
+  directFailures,
+  directSuccesses,
+  intent,
+}: {
+  chainName: string;
+  directFailures: OnChainToolResult[];
+  directSuccesses: OnChainToolResult[];
+  intent: string;
+}) {
+  if (intent === "smart-money" && !directSuccesses.length) {
+    return `Current evidence does not demonstrate verified smart-money accumulation on ${chainName}. The available bundle is stronger on narrative and builder context than on dedicated on-chain proof.`;
+  }
+
+  if (!directSuccesses.length) {
+    return `Current evidence is still incomplete, so treat this as directional research until a direct on-chain provider succeeds.`;
+  }
+
+  if (directFailures.length) {
+    return `Use the successful provider data now, but keep the claim framed as directional until the failed providers are fixed or replaced with confirming queries.`;
+  }
+
+  return `Use the direct evidence as a starting point for manual review, not as an automated final claim.`;
+}
+
+function countSourcesByProvider(
+  sources: SourceCard[],
+  provider: SourceCard["provider"]
+) {
+  return sources.filter((source) => source.provider === provider).length;
+}
+
+function summarizeResultProviders(results: OnChainToolResult[]) {
+  const providers = Array.from(new Set(results.map((result) => result.provider)));
+
+  return providers.join(", ");
+}
+
+export function withFallbackCaveat(answer: FinalAnswer, meta: FinalAnswerMeta) {
   const fallbackNote = meta.error
-    ? ` AI synthesis failed, deterministic fallback used. Reason: ${meta.error}`
-    : " AI synthesis failed, deterministic fallback used.";
+    ? `AI synthesis failed, deterministic fallback used. Reason: ${meta.error}`
+    : "AI synthesis failed, deterministic fallback used.";
+  const baseCaveat = answer.caveat || "Limited confidence.";
+  const combinedCaveat = baseCaveat.includes("AI synthesis failed")
+    ? baseCaveat
+    : `${baseCaveat} ${fallbackNote}`.trim();
+  const markdown = stripTrailingCaveat(answer.answerMarkdown || answer.answer);
+  const updatedMarkdown = markdown
+    ? `${markdown}\n\nCaveat: ${combinedCaveat}`
+    : `Caveat: ${combinedCaveat}`;
 
   return {
     ...answer,
-    caveat: answer.caveat.includes("AI synthesis failed")
-      ? answer.caveat
-      : `${answer.caveat}${fallbackNote}`,
+    caveat: combinedCaveat,
+    answerMarkdown: updatedMarkdown,
+  };
+}
+
+async function maybeRunOnChainEnrichment({
+  chain,
+  context,
+  message,
+  onToolCall,
+  onToolPlan,
+  onToolResult,
+  signal,
+}: {
+  chain: string;
+  context: OnChainContextMessage[];
+  message: string;
+  onToolCall?: (event: OnChainToolCallEvent) => void | Promise<void>;
+  onToolPlan?: (plan: OnChainPlanSummary) => void | Promise<void>;
+  onToolResult?: (event: OnChainToolResult) => void | Promise<void>;
+  signal?: AbortSignal;
+}): Promise<{ payload?: OnChainToolFinalPayload; skippedReason?: string }> {
+  const unsupportedChain = detectUnsupportedOnChainChain(message);
+
+  if (unsupportedChain) {
+    return {
+      skippedReason: `On-chain enrichment was skipped because ${unsupportedChain.name} is outside Langclaw's supported on-chain scope.`,
+    };
+  }
+
+  try {
+    const result = await runOnChainToolWorkflow({
+      chain,
+      context,
+      message,
+      onToolCall,
+      onToolPlan,
+      onToolResult,
+      signal,
+    });
+
+    return {
+      payload: result.payload,
+    };
+  } catch (error) {
+    return {
+      skippedReason: `On-chain enrichment failed and was skipped. ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
+}
+
+function buildWorkflowChainContext({
+  onChain,
+  productChain,
+  topic,
+}: {
+  onChain?: OnChainToolFinalPayload;
+  productChain: ReturnType<typeof resolveProductChain>;
+  topic: string;
+}): WorkflowChainContext {
+  const inferred = inferAnalysisChain(topic, productChain.id);
+
+  return {
+    productChain: {
+      id: productChain.id,
+      name: productChain.name,
+      chainId: productChain.chainId,
+      nativeSymbol: productChain.nativeCurrency.symbol,
+    },
+    analysisChain: onChain
+      ? {
+          id: onChain.plan.chain,
+          name: onChain.plan.chainName,
+          chainId: onChain.plan.chainId,
+          nativeSymbol: onChain.plan.nativeSymbol,
+          source: onChain.plan.analysisSource,
+          supported: true,
+        }
+      : {
+          id: inferred.chain.id,
+          name: inferred.chain.name,
+          chainId: inferred.chain.etherscanId,
+          nativeSymbol: inferred.chain.nativeSymbol,
+          source: inferred.source,
+          supported: !inferred.unsupportedChain,
+        },
+    unsupportedAnalysisChain: inferred.unsupportedChain,
   };
 }
 
@@ -990,18 +1949,141 @@ function summarizeProviders(sources: SourceCard[]) {
   return providers.size ? Array.from(providers).join(", ") : "no providers";
 }
 
-function summarizeFailures(errors: ProviderError[]) {
-  const failedProviders = Array.from(
-    new Set(errors.map((error) => providerLabel(error.provider)))
+export function summarizeFailures(errors: ProviderError[]) {
+  const failures = new Map<string, string>();
+
+  for (const error of errors) {
+    const provider = providerLabel(error.provider);
+
+    if (!failures.has(provider)) {
+      failures.set(provider, compactProviderIssueMessage(error.message));
+    }
+  }
+
+  if (!failures.size) {
+    return "";
+  }
+
+  const formatted = Array.from(failures.entries()).map(([provider, message]) =>
+    message ? `${provider} (${message})` : provider
   );
 
-  return failedProviders.length
-    ? ` Provider issues: ${failedProviders.join(", ")}.`
-    : "";
+  return ` Provider issues: ${formatted.join("; ")}.`;
+}
+
+function summarizeFailedSocialProviders(errors: ProviderError[]) {
+  return Array.from(
+    new Set(
+      errors
+        .map((error) => error.provider)
+        .filter((provider) => socialMomentumProviders.has(provider))
+        .map((provider) => providerLabel(provider))
+    )
+  );
+}
+
+function compactProviderIssueMessage(message: string) {
+  return message.replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+function uniqueStrings(values: Array<string | undefined>) {
+  return Array.from(new Set(values.filter(Boolean) as string[]));
+}
+
+function stripTrailingCaveat(markdown: string) {
+  return markdown
+    .replace(/\n{2,}#{1,6}\s*Caveats?\s*\n[\s\S]*$/i, "")
+    .replace(/\n{2,}Caveat:\s*[\s\S]*$/i, "")
+    .replace(/^Caveat:\s*[\s\S]*$/i, "")
+    .trim();
 }
 
 function providerLabel(provider: SourceCard["provider"]) {
   return provider === "Tavily" ? "Docs" : provider;
+}
+
+function providerLabelFromOnChain(provider: string) {
+  if (provider === "coingecko") {
+    return "CoinGecko";
+  }
+
+  if (provider === "defillama") {
+    return "DeFiLlama";
+  }
+
+  if (provider === "dexscreener") {
+    return "DEX Screener";
+  }
+
+  if (provider === "etherscan") {
+    return "Etherscan";
+  }
+
+  if (provider === "geckoterminal") {
+    return "GeckoTerminal";
+  }
+
+  if (provider === "goplus") {
+    return "GoPlus";
+  }
+
+  if (provider === "local") {
+    return "Local synthesis";
+  }
+
+  if (provider === "nansen") {
+    return "Nansen";
+  }
+
+  if (provider === "surf") {
+    return "Surf";
+  }
+
+  if (provider === "elfa") {
+    return "Elfa";
+  }
+
+  if (provider === "dune") {
+    return "Dune";
+  }
+
+  if (provider === "alchemy") {
+    return "Alchemy";
+  }
+
+  return provider;
+}
+
+function sortSignalProviders(providers: string[]) {
+  const order = new Map(
+    [
+      "Elfa",
+      "Surf",
+      "X",
+      "Nansen",
+      "Dune",
+      "CoinGecko",
+      "GeckoTerminal",
+      "DEX Screener",
+      "DeFiLlama",
+      "Alchemy",
+      "Etherscan",
+      "GoPlus",
+      "GitHub",
+      "Docs",
+      "HackQuest",
+      "Local synthesis",
+    ].map((label, index) => [label, index])
+  );
+
+  return Array.from(new Set(providers))
+    .filter(Boolean)
+    .sort((left, right) => {
+      const leftRank = order.get(left) ?? Number.MAX_SAFE_INTEGER;
+      const rightRank = order.get(right) ?? Number.MAX_SAFE_INTEGER;
+
+      return leftRank - rightRank || left.localeCompare(right);
+    });
 }
 
 function cleanText(value: string) {

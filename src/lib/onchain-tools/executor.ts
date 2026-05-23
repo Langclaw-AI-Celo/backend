@@ -11,6 +11,10 @@ import {
   getTokenMetadata,
 } from "./providers/alchemy";
 import {
+  getCoinMarkets,
+  searchCoin,
+} from "./providers/coingecko";
+import {
   getAddressSecurity,
   getTokenSecurity,
 } from "./providers/goplus";
@@ -32,14 +36,26 @@ import {
   getYieldPools,
 } from "./providers/defillama";
 import { getLatestResult } from "./providers/dune";
+import { getTrendingNarratives } from "./providers/elfa";
+import {
+  getNetworkNewPools,
+  getNetworkTrendingPools,
+  getPoolData,
+  getTokenData as getGeckoTerminalTokenData,
+  getTokenInfo,
+  getTokenTopHolders,
+} from "./providers/geckoterminal";
 import type {
   OnChainExecuteInput,
   OnChainExecutorId,
   OnChainPlan,
+  OnChainProvider,
   OnChainProviderResponse,
   OnChainToolCallEvent,
   OnChainToolResult,
 } from "./types";
+import { getSmartMoneyNetflow } from "./providers/nansen";
+import { getSurfWebSearch } from "./providers/surf";
 
 type Executor = (input: OnChainExecuteInput) => Promise<OnChainProviderResponse>;
 
@@ -61,6 +77,16 @@ const executors: Record<OnChainExecutorId, Executor> = {
       chain: input.chain,
       signal: input.signal,
       tokenAddress: input.tokenAddress,
+    }),
+  "coingecko.coin_markets": (input) =>
+    getCoinMarkets({
+      query: input.query,
+      signal: input.signal,
+    }),
+  "coingecko.search_coin": (input) =>
+    searchCoin({
+      query: input.query,
+      signal: input.signal,
     }),
   "defillama.chains": (input) =>
     getChains({ chain: input.chain, query: input.query, signal: input.signal }),
@@ -110,7 +136,9 @@ const executors: Record<OnChainExecutorId, Executor> = {
   "dexscreener.top_boosts": (input) =>
     getTopBoostedTokens({ chain: input.chain, query: input.query, signal: input.signal }),
   "dune.latest_result": (input) =>
-    getLatestResult({ query: input.query, signal: input.signal }),
+    getLatestResult({ query: input.rawQuery ?? input.query, signal: input.signal }),
+  "elfa.trending_narratives": (input) =>
+    getTrendingNarratives({ signal: input.signal }),
   "etherscan.account_balance": (input) =>
     getAccountBalance({
       chain: input.chain,
@@ -149,11 +177,51 @@ const executors: Record<OnChainExecutorId, Executor> = {
       signal: input.signal,
       walletAddress: input.walletAddress,
     }),
+  "geckoterminal.network_new_pools": (input) =>
+    getNetworkNewPools({
+      chain: input.chain,
+      signal: input.signal,
+    }),
+  "geckoterminal.network_trending_pools": (input) =>
+    getNetworkTrendingPools({
+      chain: input.chain,
+      signal: input.signal,
+    }),
+  "geckoterminal.pool_data": (input) =>
+    getPoolData({
+      chain: input.chain,
+      pairAddress: input.tokenAddress,
+      signal: input.signal,
+      tokenAddress: input.tokenAddress,
+    }),
+  "geckoterminal.token_data": (input) =>
+    getGeckoTerminalTokenData({
+      chain: input.chain,
+      signal: input.signal,
+      tokenAddress: input.tokenAddress,
+    }),
+  "geckoterminal.token_info": (input) =>
+    getTokenInfo({
+      chain: input.chain,
+      signal: input.signal,
+      tokenAddress: input.tokenAddress,
+    }),
+  "geckoterminal.token_top_holders": (input) =>
+    getTokenTopHolders({
+      chain: input.chain,
+      signal: input.signal,
+      tokenAddress: input.tokenAddress,
+    }),
   "goplus.token_security": (input) =>
     getTokenSecurity({
       chain: input.chain,
       signal: input.signal,
       tokenAddress: input.tokenAddress,
+    }),
+  "nansen.smart_money_netflow": (input) =>
+    getSmartMoneyNetflow({
+      chain: input.chain,
+      signal: input.signal,
     }),
   "local.signal_synthesis": async (input) => ({
     data: {
@@ -163,6 +231,8 @@ const executors: Record<OnChainExecutorId, Executor> = {
     },
     summary: summarizePreviousResults(input.previousResults),
   }),
+  "surf.web_search": (input) =>
+    getSurfWebSearch({ query: input.query, signal: input.signal }),
 };
 
 const cache = new Map<string, { expiresAt: number; result: OnChainToolResult }>();
@@ -195,6 +265,7 @@ export async function executeOnChainPlan({
       chainId: plan.chainId,
       command,
       previousResults: results,
+      rawQuery: plan.rawQuery,
       query: plan.query,
       signal,
       tokenAddress: plan.tokenAddress,
@@ -224,48 +295,82 @@ async function executeCommand(input: OnChainExecuteInput): Promise<OnChainToolRe
     };
   }
 
-  try {
-    const executor = executors[input.command.executor];
+  const attempts = [
+    {
+      executor: input.command.executor,
+      provider: input.command.provider,
+    },
+    ...(input.command.fallback ?? []),
+  ];
+  const attemptedProviders: OnChainProvider[] = [];
+  const errors: Array<{ message: string; provider: OnChainProvider }> = [];
+
+  for (const attempt of attempts) {
+    const executor = executors[attempt.executor];
 
     if (!executor) {
-      throw new Error(`Executor ${input.command.executor} is not registered.`);
+      errors.push({
+        message: `Executor ${attempt.executor} is not registered.`,
+        provider: attempt.provider,
+      });
+      attemptedProviders.push(attempt.provider);
+      continue;
     }
 
-    const response = await executor(input);
-    const result: OnChainToolResult = {
-      commandId: input.command.id,
-      data: response.data,
-      domain: input.command.domain,
-      latencyMs: Date.now() - startedAt,
-      provider: input.command.provider,
-      sourceUrl: response.sourceUrl || input.command.docsUrl,
-      status: "success",
-      summary: response.summary || "Tool completed.",
-      title: input.command.title,
-    };
+    attemptedProviders.push(attempt.provider);
 
-    writeCache(cacheKey, input.command.cacheTtlSeconds, result);
+    try {
+      const response = await executor(input);
+      const result: OnChainToolResult = {
+        attemptedProviders,
+        commandId: input.command.id,
+        data: response.data,
+        domain: input.command.domain,
+        fallbackReason: buildFallbackReason(errors),
+        latencyMs: Date.now() - startedAt,
+        provider: attempt.provider,
+        scope: errors.length
+          ? "legacy-fallback"
+          : input.command.scope ?? "legacy-default",
+        sourceUrl: response.sourceUrl || input.command.docsUrl,
+        status: "success",
+        summary: response.summary || "Tool completed.",
+        title: input.command.title,
+      };
 
-    return result;
-  } catch (error) {
-    return {
-      commandId: input.command.id,
-      domain: input.command.domain,
-      error: error instanceof Error ? error.message : "Tool execution failed.",
-      latencyMs: Date.now() - startedAt,
-      provider: input.command.provider,
-      sourceUrl: input.command.docsUrl,
-      status: "failed",
-      summary: error instanceof Error ? error.message : "Tool execution failed.",
-      title: input.command.title,
-    };
+      writeCache(cacheKey, input.command.cacheTtlSeconds, result);
+
+      return result;
+    } catch (error) {
+      errors.push({
+        message:
+          error instanceof Error ? error.message : "Tool execution failed.",
+        provider: attempt.provider,
+      });
+    }
   }
+
+  return {
+    attemptedProviders,
+    commandId: input.command.id,
+    domain: input.command.domain,
+    error: errors[0]?.message ?? "Tool execution failed.",
+    fallbackReason: buildFallbackReason(errors),
+    latencyMs: Date.now() - startedAt,
+    provider: errors[0]?.provider ?? input.command.provider,
+    scope: errors.length > 1 ? "legacy-fallback" : input.command.scope ?? "legacy-default",
+    sourceUrl: input.command.docsUrl,
+    status: "failed",
+    summary: errors[0]?.message ?? "Tool execution failed.",
+    title: input.command.title,
+  };
 }
 
 function buildCacheKey(input: OnChainExecuteInput) {
   return JSON.stringify({
     chain: input.chain,
     commandId: input.command.id,
+    rawQuery: input.rawQuery,
     query: input.query,
     tokenAddress: input.tokenAddress,
     walletAddress: input.walletAddress,
@@ -299,4 +404,16 @@ function summarizePreviousResults(results: OnChainToolResult[]) {
   const failures = results.filter((result) => result.status === "failed");
 
   return `Synthesized ${successes.length} successful tool results and ${failures.length} failed tool results into an analysis-only signal.`;
+}
+
+function buildFallbackReason(
+  errors: Array<{ message: string; provider: OnChainProvider }>
+) {
+  if (!errors.length) {
+    return undefined;
+  }
+
+  return errors
+    .map((entry) => `${entry.provider}: ${entry.message}`)
+    .join(" | ");
 }

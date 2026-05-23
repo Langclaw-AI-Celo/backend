@@ -1,7 +1,24 @@
+import { resolveProductChain } from "../chain-config";
+import {
+  isPremiumProviderInScope,
+  type PremiumProviderId,
+} from "../premium-providers";
+import {
+  cleanError,
+  cleanExcerpt,
+  compactTitle,
+  dedupeSources,
+  hashId,
+  providerFailure,
+  responseMessage,
+} from "./provider-utils";
+import { discoverElfa } from "./providers/elfa";
+import { discoverSurf } from "./providers/surf";
 import type {
   ProviderError,
   ProviderName,
   ProviderResult,
+  ProviderTraceEntry,
   SourceCard,
   SourceType,
 } from "./types";
@@ -81,11 +98,79 @@ type WebSearchResult = {
   engine: SearchEngine;
 };
 
+type DiscoveryOptions = {
+  chain?: string;
+};
+
 const JSON_HEADERS = {
   "Content-Type": "application/json",
 };
 
-export async function runProviderDiscovery(topic: string): Promise<ProviderResult> {
+export async function runProviderDiscovery(
+  topic: string,
+  options: DiscoveryOptions = {}
+): Promise<ProviderResult> {
+  const chain = resolveProductChain(options.chain).id;
+  const sources: SourceCard[] = [];
+  const errors: ProviderError[] = [];
+  const providerTrace: ProviderTraceEntry[] = [];
+
+  if (isPremiumProviderInScope(chain)) {
+    const premiumResults = await Promise.all([
+      runTimedDiscovery(discoverSurf(topic), "Surf"),
+      runTimedDiscovery(discoverElfa(topic), "Elfa"),
+    ]);
+
+    for (const { provider, result } of premiumResults) {
+      mergeProviderResult(
+        result,
+        "mantle-premium",
+        sources,
+        errors,
+        providerTrace,
+        provider
+      );
+    }
+    providerTrace.push({
+      message: "Nansen is reserved for the structured on-chain workflow.",
+      provider: "Nansen",
+      scope: "mantle-premium",
+      status: "skipped",
+    });
+
+    if (shouldRunLegacyFallback(topic, sources.length)) {
+      await collectLegacyProviders(topic, sources, errors, providerTrace, "legacy-fallback");
+    } else {
+      providerTrace.push(
+        skippedLegacyTrace("X", "Premium research providers already returned enough evidence."),
+        skippedLegacyTrace("GitHub", "Premium research providers already returned enough evidence."),
+        skippedLegacyTrace("Tavily", "Premium research providers already returned enough evidence."),
+        skippedLegacyTrace("HackQuest", "Premium research providers already returned enough evidence.")
+      );
+    }
+  } else {
+    providerTrace.push(
+      ...(["surf", "nansen", "elfa"] as const).map((provider) =>
+        skippedPremiumTrace(provider, "Premium provider rollout is Mantle-only in this phase.")
+      )
+    );
+    await collectLegacyProviders(topic, sources, errors, providerTrace, "legacy-default");
+  }
+
+  return {
+    errors,
+    providerTrace,
+    sources: dedupeSources(sources),
+  };
+}
+
+async function collectLegacyProviders(
+  topic: string,
+  sources: SourceCard[],
+  errors: ProviderError[],
+  providerTrace: ProviderTraceEntry[],
+  scope: "legacy-default" | "legacy-fallback"
+) {
   const providerResults = await Promise.allSettled([
     discoverX(topic),
     discoverGitHub(topic),
@@ -93,24 +178,108 @@ export async function runProviderDiscovery(topic: string): Promise<ProviderResul
     discoverHackQuest(topic),
   ]);
 
-  const sources: SourceCard[] = [];
-  const errors: ProviderError[] = [];
-
   for (const result of providerResults) {
     if (result.status === "fulfilled") {
-      sources.push(...result.value.sources);
-      errors.push(...result.value.errors);
-    } else {
-      errors.push({
-        provider: "Tavily",
-        message: cleanError(result.reason),
-      });
+      mergeProviderResult(result.value, scope, sources, errors, providerTrace);
+      continue;
     }
+
+    errors.push({
+      message: cleanError(result.reason),
+      provider: "Tavily",
+    });
+    providerTrace.push({
+      message: cleanError(result.reason),
+      provider: "Tavily",
+      scope,
+      status: "failed",
+    });
+  }
+}
+
+async function runTimedDiscovery(
+  promise: Promise<ProviderResult>,
+  provider: ProviderName
+) {
+  const startedAt = Date.now();
+  const result = await promise;
+  const durationMs = Date.now() - startedAt;
+  const status = result.sources.length > 0 ? "success" : "failed";
+
+  console.info(
+    `[discovery] ${provider} ${status} in ${durationMs}ms (${result.sources.length} source card(s))`
+  );
+
+  return { provider, result };
+}
+
+function mergeProviderResult(
+  result: ProviderResult,
+  scope: ProviderTraceEntry["scope"],
+  sources: SourceCard[],
+  errors: ProviderError[],
+  providerTrace: ProviderTraceEntry[],
+  providerOverride?: ProviderName
+) {
+  sources.push(...result.sources);
+  errors.push(...result.errors);
+  providerTrace.push(...result.providerTrace);
+
+  const provider = providerOverride ?? result.sources[0]?.provider ?? result.errors[0]?.provider;
+
+  if (!provider) {
+    return;
   }
 
+  if (result.sources.length > 0) {
+    providerTrace.push({
+      message: `Collected ${result.sources.length} source card(s).`,
+      provider,
+      scope,
+      sourceCount: result.sources.length,
+      status: "success",
+    });
+    return;
+  }
+
+  const message = result.errors[0]?.message ?? "No source cards were returned.";
+  providerTrace.push({
+    message,
+    provider,
+    scope,
+    status: "failed",
+  });
+}
+
+function shouldRunLegacyFallback(topic: string, sourceCount: number) {
+  if (sourceCount < 3) {
+    return true;
+  }
+
+  return /\b(github|repo|sdk|docs|builder|integration|hackathon|project)\b/i.test(
+    topic
+  );
+}
+
+function skippedLegacyTrace(provider: ProviderName, message: string): ProviderTraceEntry {
   return {
-    sources: dedupeSources(sources),
-    errors,
+    message,
+    provider,
+    scope: "legacy-fallback",
+    status: "skipped",
+  };
+}
+
+function skippedPremiumTrace(
+  provider: PremiumProviderId,
+  message: string
+): ProviderTraceEntry {
+  return {
+    message,
+    provider:
+      provider === "surf" ? "Surf" : provider === "elfa" ? "Elfa" : "Nansen",
+    scope: "out-of-scope",
+    status: "skipped",
   };
 }
 
@@ -154,8 +323,9 @@ async function discoverXWithBrave(topic: string): Promise<ProviderResult> {
     }));
 
   return {
-    sources,
     errors: [],
+    providerTrace: [],
+    sources,
   };
 }
 
@@ -228,7 +398,7 @@ async function discoverXApi(topic: string): Promise<ProviderResult> {
         };
       }) ?? [];
 
-    return { sources, errors: [] };
+    return { errors: [], providerTrace: [], sources };
   } catch (error) {
     return providerFailure("X", cleanError(error));
   }
@@ -289,7 +459,7 @@ async function discoverGitHub(topic: string): Promise<ProviderResult> {
         },
       })) ?? [];
 
-    return { sources, errors: [] };
+    return { errors: [], providerTrace: [], sources };
   } catch (error) {
     return providerFailure("GitHub", cleanError(error));
   }
@@ -306,6 +476,8 @@ async function discoverDocs(topic: string): Promise<ProviderResult> {
   }
 
   return {
+    errors: [],
+    providerTrace: [],
     sources: response.results.slice(0, 3).map((result, index) => ({
       id: `docs-${index}-${hashId(result.url ?? result.title ?? "")}`,
       type: "docs_page" as const,
@@ -319,7 +491,6 @@ async function discoverDocs(topic: string): Promise<ProviderResult> {
         searchProvider: result.engine,
       },
     })),
-    errors: [],
   };
 }
 
@@ -357,8 +528,9 @@ async function discoverHackQuest(topic: string): Promise<ProviderResult> {
   }
 
   return {
-    sources: dedupeSources(sources).slice(0, 3),
     errors,
+    providerTrace: [],
+    sources: dedupeSources(sources).slice(0, 3),
   };
 }
 
@@ -397,8 +569,9 @@ async function discoverHackQuestDirectory(): Promise<ProviderResult> {
     };
 
     return {
-      sources: [directoryCard],
       errors: [],
+      providerTrace: [],
+      sources: [directoryCard],
     };
   } catch (error) {
     return providerFailure("HackQuest", cleanError(error));
@@ -562,78 +735,6 @@ function inferHackQuestType(url: string): SourceType {
   return url.includes("/projects/") ? "hackquest_project" : "hackquest_hackathon";
 }
 
-function providerFailure(
-  provider: ProviderName,
-  message: string
-): ProviderResult {
-  return {
-    sources: [],
-    errors: [
-      {
-        provider,
-        message,
-      },
-    ],
-  };
-}
-
-export function dedupeSources(sources: SourceCard[]) {
-  const seen = new Set<string>();
-  const deduped: SourceCard[] = [];
-
-  for (const source of sources) {
-    const key = source.url.toLowerCase();
-
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    deduped.push(source);
-  }
-
-  return deduped;
-}
-
-function compactTitle(text: string, fallback: string) {
-  const clean = text.replace(/\s+/g, " ").trim();
-
-  if (!clean) {
-    return fallback;
-  }
-
-  return clean.length > 96 ? `${clean.slice(0, 93)}...` : clean;
-}
-
-function cleanExcerpt(text: string) {
-  const clean = text.replace(/\s+/g, " ").trim();
-
-  if (!clean) {
-    return "Live source discovered for this topic.";
-  }
-
-  return clean.length > 220 ? `${clean.slice(0, 217)}...` : clean;
-}
-
-function cleanError(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return String(error);
-}
-
-async function responseMessage(response: Response) {
-  const text = await response.text();
-  const compact = text.replace(/\s+/g, " ").trim();
-
-  if (!compact) {
-    return `${response.status} ${response.statusText}`;
-  }
-
-  return `${response.status} ${response.statusText}: ${compact.slice(0, 240)}`;
-}
-
 function normalizeUrl(url: string) {
   if (url.startsWith("http")) {
     return url;
@@ -690,15 +791,4 @@ function extractHackQuestMetrics(text: string, marker: string) {
     prize,
     status,
   };
-}
-
-function hashId(value: string) {
-  let hash = 0;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(index);
-    hash |= 0;
-  }
-
-  return Math.abs(hash).toString(36);
 }

@@ -30,3 +30,4 @@ provider
 - Deduplicated source cards
 - Provider-specific metadata
 - Clean excerpts for evidence storage
+- Neutral source records that can support either a report or a chat answer

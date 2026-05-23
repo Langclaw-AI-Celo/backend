@@ -12,7 +12,7 @@ Node.js HTTP API (`langclaw-backend`) for **Langclaw Mantle Alpha Sentinel**: Ma
 - **Chat** — `POST /api/chat/stream`, session sync to Supabase
 - **Account** — wallet auth, API keys (HMAC), memory, automation, usage ledger
 - **Proof** — evidence bundles and Mantle `LangclawRegistry` agent decision records
-- **On-chain tools** — Mantle-first Dune, DEX Screener, DeFiLlama, Alchemy, Etherscan-style, and GoPlus providers
+- **On-chain tools** — Mantle-first Dune, DEX Screener, DeFiLlama, Alchemy, Etherscan-style, GoPlus, plus Mantle-only premium Surf, Nansen, and Elfa adapters with legacy fallback
 
 ## Local setup
 
@@ -58,8 +58,11 @@ OpenClaw runs reasoning steps (`openclaw agent --json`); discovery and provider 
 ```text
 runLangclawWorkflow(topic)
   → Planner (OpenClaw)
-  → Discovery (TS: X/Brave, GitHub, Tavily, HackQuest)
+  → Discovery (TS: Surf, Elfa, X/Brave, GitHub, Tavily, HackQuest)
+  → Combined signals (TS: social, onchain, combined summaries)
+  → Structured report (TS: deterministic report core with ranked tables when real metrics exist)
   → Source normalizer (TS)
+  → On-chain enrichment (TS: Nansen, Surf, DEX Screener, Dune, DeFiLlama, Alchemy, Etherscan, GoPlus by scope)
   → Mantle alpha scorer (OpenClaw)
   → Evidence packager (OpenClaw)
   → Verifier (OpenClaw)
@@ -84,6 +87,7 @@ Env (see `.env.example`):
 ```bash
 OPENCLAW_ENABLED=true
 OPENCLAW_WORKFLOW_ENABLED=true
+OPENCLAW_AI_SYNTHESIS=true
 OPENAI_API_KEY=
 OPENAI_CHAT_MODEL=gpt-5-mini
 OPENAI_AGENT_MODEL=gpt-5.2
@@ -102,11 +106,15 @@ Copy [`.env.example`](.env.example). Minimum for a useful dev server:
 
 Langclaw providers: `BRAVE_SEARCH_API_KEY`, `GITHUB_TOKEN`, `TAVILY_API_KEY`, …
 
+Mantle premium intelligence rollout: `SURF_ENABLED`, `SURF_API_KEY`, `NANSEN_ENABLED`, `NANSEN_API_KEY`, `ELFA_ENABLED`, `ELFA_API_KEY`, plus optional `*_TIMEOUT_MS` overrides. In this phase, shared research runs default to a combined Mantle workflow: Surf and Elfa feed the social/public side, Nansen feeds Mantle smart-money analysis, and legacy/public providers remain as supplemental context. Non-Mantle requests keep the same shared response schema but degrade honestly through legacy or out-of-scope behavior.
+
+Research payloads now also expose an additive `report` object. It is provider-agnostic and deterministic: the backend computes report kind, ranked entities, tables, narrative sections, caveats, and recommendations from the current run's normalized evidence. When the run does not include direct row-level metrics, the report stays narrative-first instead of fabricating a leaderboard.
+
 Celo/Mantle proof: `MANTLE_CHAIN_*`, `CELO_CHAIN_*`, `{MANTLE,CELO}_AGENT_PRIVATE_KEY`, `{MANTLE,CELO}_AGENT_WALLET`, `{MANTLE,CELO}_ERC8004_AGENT_ID`, `{MANTLE,CELO}_LANGCLAW_REGISTRY_ADDRESS`. Runtime proof/journal transactions prefer the agent key; `{MANTLE,CELO}_PRIVATE_KEY` remains a fallback. Celo transactions use the configured USDT fee-currency adapter when supported. Mantle legacy `LANGCLAW_REGISTRY_ADDRESS` remains supported.
 
 Celo ERC-8004 reputation: set `CELO_ERC8004_REPUTATION_ENABLED=true` plus `CELO_ERC8004_REPUTATION_FEEDBACK_PRIVATE_KEY` to submit `giveFeedback(...)` after a Langclaw decision proof anchors. Use a feedback key that is not the agent recorder key.
 
-Core chain data sources: `DUNE_API_KEY`, `DUNE_DEFAULT_QUERY_ID`, `DUNE_STRATEGY_QUERY_ID`, `ALCHEMY_API_KEY`, `ETHERSCAN_API_KEY`, `GOPLUS_*`; DEX Screener and DeFiLlama work without keys for public endpoints. GoPlus is skipped on Celo because the live provider does not support Celo mainnet in this workflow.
+Core chain data sources: `DUNE_API_KEY`, `DUNE_DEFAULT_QUERY_ID`, `DUNE_STRATEGY_QUERY_ID`, `ALCHEMY_API_KEY`, `ETHERSCAN_API_KEY`, `GOPLUS_*`; DEX Screener and DeFiLlama work without keys for public endpoints. GoPlus is skipped on Celo because the live provider does not support Celo mainnet in this workflow. Surf, Nansen, and Elfa are Mantle-only in this rollout. The shared workflow always returns `signals.social`, `signals.onchain`, `signals.combined`, and an additive `report`; outside Mantle premium scope those sections fall back or mark honest skips/failures instead of changing the payload shape.
 
 Strategy Lab proof: `{MANTLE,CELO}_LANGCLAW_TRADING_JOURNAL_ADDRESS`, `{MANTLE,CELO}_TRADING_JOURNAL_ENABLED`, and optional `{MANTLE,CELO}_TRADING_JOURNAL_DEPLOY_BLOCK`. Mantle legacy `LANGCLAW_TRADING_JOURNAL_ADDRESS` remains supported. Without these, backtests still run and return a `prepared` proof state instead of pretending to be anchored.
 

@@ -1,3 +1,4 @@
+import type { OpenAITextFormat } from "../openai/responses";
 import {
   isRecord,
   parseLooseJson,
@@ -5,23 +6,36 @@ import {
   readString,
   runOpenClawAgentJson,
 } from "./openclaw-runner";
+import {
+  buildFinalAnswerGuardrails,
+  applyFinalAnswerGuardrails,
+} from "./final-answer-guardrails";
 import type {
   AgentOutputs,
+  DiscoverSignals,
   FinalAnswer,
   FinalAnswerMeta,
   OrchestrationRuntime,
   OrchestrationStep,
   ProviderError,
+  ProviderTraceEntry,
+  ResearchReport,
   SourceCard,
 } from "./types";
+import type { OnChainToolFinalPayload } from "../onchain-tools/types";
 
-type OpenClawFinalAnswerInput = {
+export type OpenClawFinalAnswerInput = {
   topic: string;
   sources: SourceCard[];
   errors: ProviderError[];
+  providerTrace?: ProviderTraceEntry[];
   runtime: OrchestrationRuntime;
   steps: OrchestrationStep[];
   agentOutputs?: AgentOutputs;
+  signals: DiscoverSignals;
+  report?: ResearchReport;
+  onChain?: OnChainToolFinalPayload;
+  onChainSkippedReason?: string;
   sessionId?: string;
 };
 
@@ -79,7 +93,14 @@ export async function synthesizeFinalAnswerWithOpenClaw(
 
   if (finalAnswer) {
     return {
-      finalAnswer,
+      finalAnswer: applyFinalAnswerGuardrails(finalAnswer, {
+        errors: input.errors,
+        onChain: input.onChain,
+        onChainSkippedReason: input.onChainSkippedReason,
+        providerTrace: input.providerTrace,
+        report: input.report,
+        signals: input.signals,
+      }),
       meta: {
         synthesis: "openclaw-ai",
         execution: "openclaw-agent",
@@ -102,48 +123,124 @@ export async function synthesizeFinalAnswerWithOpenClaw(
   };
 }
 
-export function buildFinalAnswerPrompt(input: OpenClawFinalAnswerInput) {
-  const evidence = {
-    topic: input.topic,
-    providerCoverage: summarizeProviderCoverage(input.sources),
-    providerErrors: input.errors,
-    sources: input.sources.map((source) => ({
+type FinalAnswerPromptOptions = {
+  compact?: boolean;
+};
+
+export const DEFAULT_AGENT_MAX_OUTPUT_TOKENS = 4096;
+
+export function buildFinalAnswerPrompt(
+  input: OpenClawFinalAnswerInput,
+  options: FinalAnswerPromptOptions = {}
+) {
+  const compact = options.compact === true;
+  const guardrails = buildFinalAnswerGuardrails({
+    errors: input.errors,
+    onChain: input.onChain,
+    onChainSkippedReason: input.onChainSkippedReason,
+    providerTrace: input.providerTrace,
+    report: input.report,
+    signals: input.signals,
+  });
+  const excerptLimit = compact ? 320 : 700;
+  const sources = (compact ? input.sources.slice(0, 10) : input.sources).map(
+    (source) => ({
       id: source.id,
       type: source.type,
       title: cleanText(source.title),
       url: source.url,
       author: source.author,
       publishedAt: source.publishedAt,
-      excerpt: cleanText(source.excerpt).slice(0, 700),
+      excerpt: cleanText(source.excerpt).slice(0, excerptLimit),
       metrics: source.metrics,
       provider: source.provider,
-    })),
+    })
+  );
+  const evidence = {
+    topic: input.topic,
+    providerCoverage: summarizeProviderCoverage(input.sources),
+    providerErrors: input.errors,
+    sources,
     orchestration: {
       runtime: input.runtime,
-      steps: input.steps,
+      steps: compact
+        ? input.steps.map((step) => ({
+            agent: step.agent,
+            status: step.status,
+            summary: cleanText(step.summary).slice(0, 160),
+          }))
+        : input.steps,
     },
-    agentOutputs: input.agentOutputs,
+    agentOutputs: compact
+      ? compactAgentOutputs(input.agentOutputs)
+      : input.agentOutputs,
+    signals: input.signals,
+    report: compact
+      ? compactResearchReport(input.report)
+      : input.report ?? null,
+    guardrails,
+    onChainEnrichment: compact
+      ? compactOnChainEnrichment(input.onChain, input.onChainSkippedReason)
+      : input.onChain
+        ? {
+            answer: input.onChain.answer,
+            attemptedProviders: input.onChain.tools.map((tool) => ({
+              attemptedProviders: tool.attemptedProviders,
+              fallbackReason: tool.fallbackReason,
+              provider: tool.provider,
+              scope: tool.scope,
+              status: tool.status,
+              summary: tool.summary,
+              title: tool.title,
+            })),
+            caveat: input.onChain.caveat,
+            chain: input.onChain.plan.chain,
+            intent: input.onChain.plan.intent,
+            providerTrace: input.onChain.providerTrace,
+            recommendation: input.onChain.recommendation,
+            toolCount: input.onChain.tools.length,
+          }
+        : {
+            skippedReason:
+              input.onChainSkippedReason ||
+              "No on-chain enrichment was executed.",
+          },
+    ...(compact && input.sources.length > sources.length
+      ? {
+          omittedSourceCount: input.sources.length - sources.length,
+        }
+      : {}),
+    ...(compact && input.providerTrace?.length
+      ? {
+          providerTrace: input.providerTrace.slice(0, 12).map((entry) => ({
+            message: cleanText(entry.message).slice(0, 120),
+            provider: entry.provider,
+            scope: entry.scope,
+            status: entry.status,
+          })),
+        }
+      : {}),
   };
 
   return [
     "You are Langclaw's Final Conclusion Agent.",
     "Write the final answer as a natural AI chat response, not a dashboard card.",
-    "Use polished ChatGPT-style structure: one concise opening paragraph, 2-6 scannable bullets, and short recommendation/caveat text.",
+    "Write natural Markdown with flexible structure. Short paragraphs and bullets are allowed when they help readability, but do not force a rigid template.",
     "Do not write dense paragraphs. Do not put markdown tables into JSON string fields unless they are necessary and valid.",
     "Use only the evidence in the input JSON. Do not invent facts, numbers, dates, providers, URLs, or claims.",
-    "If a provider failed or evidence is weak, say that clearly in the caveat.",
+    "Treat the report object as supporting context for the answer. Use it to stay grounded, but keep conclusion user-facing rather than report-shaped.",
+    "If a provider failed or evidence is weak, say that clearly in the conclusion.",
+    "If ranked entities exist, prefer a best-effort shortlist with explicit gaps instead of saying no ranking is available.",
+    "The backend appends the exact structured caveat after synthesis, so do not add a caveat field.",
+    "Do not claim any evidenceUri, storage upload, prepared or anchored Mantle proof, Mantle anchoring, chain write, or transaction submission state in conclusion. Proof state is reported separately by the workflow payload.",
     "Answer in the same language as the user topic. If the topic mixes Indonesian and English, prefer Indonesian.",
     "Return only valid JSON. Do not wrap it in markdown. Do not add commentary outside JSON.",
     "",
     "Required JSON shape:",
     JSON.stringify(
       {
-        title: "short answer title",
-        answer: "direct answer to the user's topic or question",
-        bullets: ["evidence-grounded reason 1", "evidence-grounded reason 2"],
-        recommendation: "practical next step",
-        caveat: "quality note based on provider errors and source coverage",
-        generatedBy: "Final Conclusion Agent",
+        conclusion:
+          "natural markdown answer for the user, including concise evidence and a practical next step when helpful",
       },
       null,
       2
@@ -154,35 +251,285 @@ export function buildFinalAnswerPrompt(input: OpenClawFinalAnswerInput) {
   ].join("\n");
 }
 
+export const FINAL_ANSWER_OPENAI_TEXT_FORMAT: OpenAITextFormat = {
+  type: "json_schema",
+  name: "langclaw_final_answer",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      conclusion: {
+        type: "string",
+        description:
+          "Natural markdown answer for the user, including concise evidence and a practical next step when helpful.",
+      },
+    },
+    required: ["conclusion"],
+  },
+};
+
+export function describeFinalAnswerParseFailure(text: string) {
+  const trimmed = text.trim();
+
+  if (!trimmed) {
+    return "OpenAI returned empty synthesis output.";
+  }
+
+  if (looksLikeBrokenJson(trimmed)) {
+    return "OpenAI returned malformed or truncated finalAnswer JSON.";
+  }
+
+  if (trimmed.length >= 40) {
+    return "OpenAI returned non-JSON synthesis output.";
+  }
+
+  return "OpenAI did not return a valid finalAnswer JSON object.";
+}
+
 export function parseFinalAnswer(text: string): FinalAnswer | undefined {
   const parsed = parseLooseJson(text);
-  const candidate = isRecord(parsed) && isRecord(parsed.finalAnswer)
-    ? parsed.finalAnswer
-    : parsed;
+  const fromJson = normalizeFinalAnswerRecord(
+    isRecord(parsed) && isRecord(parsed.finalAnswer)
+      ? parsed.finalAnswer
+      : isRecord(parsed)
+        ? parsed
+        : typeof parsed === "string"
+          ? { answerMarkdown: parsed }
+          : undefined
+  );
 
-  if (!isRecord(candidate)) {
+  if (fromJson) {
+    return fromJson;
+  }
+
+  return parseProseFinalAnswer(text);
+}
+
+function normalizeFinalAnswerRecord(
+  candidate: Record<string, unknown> | undefined
+): FinalAnswer | undefined {
+  if (!candidate) {
     return undefined;
   }
 
-  const title = readString(candidate.title);
-  const answer = readString(candidate.answer);
-  const recommendation = readString(candidate.recommendation);
-  const caveat = readString(candidate.caveat);
+  const title = normalizeOptionalText(
+    readString(candidate.title) || readString(candidate.headline)
+  );
+  const conclusion = normalizeOptionalText(readString(candidate.conclusion));
+  const answer = normalizeOptionalText(
+    readString(candidate.answer) || readString(candidate.summary)
+  );
+  const answerMarkdown = normalizeOptionalText(
+    conclusion ||
+      readString(candidate.answerMarkdown) ||
+      readString(candidate.content) ||
+      readString(candidate.markdown)
+  );
+  const recommendation = normalizeOptionalText(readString(candidate.recommendation));
+  const caveat = normalizeOptionalText(readString(candidate.caveat));
   const bullets = Array.isArray(candidate.bullets)
     ? candidate.bullets.map(readString).filter(Boolean).slice(0, 6)
     : [];
 
-  if (!title || !answer || !recommendation || !caveat) {
+  const normalizedAnswer =
+    answerMarkdown ||
+    answer ||
+    buildLegacyAnswerMarkdown({
+      answer,
+      bullets,
+      caveat,
+      recommendation,
+      title,
+    });
+
+  if (!normalizedAnswer) {
     return undefined;
   }
 
   return {
     title,
-    answer,
+    answer: conclusion || answer || normalizedAnswer,
+    answerMarkdown: normalizedAnswer,
     bullets,
     recommendation,
     caveat,
-    generatedBy: "Final Conclusion Agent",
+    generatedBy: "Final Conclusion Agent" as const,
+  };
+}
+
+function parseProseFinalAnswer(text: string): FinalAnswer | undefined {
+  const trimmed = text.trim();
+
+  if (!trimmed || looksLikeBrokenJson(trimmed)) {
+    return undefined;
+  }
+
+  return normalizeFinalAnswerRecord({
+    answerMarkdown: trimmed,
+  });
+}
+
+function looksLikeBrokenJson(text: string) {
+  const trimmed = text.trim();
+
+  return (
+    trimmed.startsWith("{") ||
+    trimmed.startsWith("[") ||
+    /"answerMarkdown"\s*:/.test(trimmed) ||
+    /"finalAnswer"\s*:/.test(trimmed)
+  );
+}
+
+function buildLegacyAnswerMarkdown({
+  answer,
+  bullets,
+  caveat,
+  recommendation,
+  title,
+}: {
+  answer?: string;
+  bullets: string[];
+  caveat?: string;
+  recommendation?: string;
+  title?: string;
+}) {
+  if (!answer && !bullets.length && !recommendation && !caveat) {
+    return undefined;
+  }
+
+  return [
+    title ? `## ${title}` : "",
+    answer || "",
+    bullets.length
+      ? ["", ...bullets.map((bullet) => `- ${bullet}`)].join("\n")
+      : "",
+    recommendation ? `\nNext step: ${recommendation}` : "",
+    caveat ? `\nCaveat: ${caveat}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizeOptionalText(value: string | undefined) {
+  const normalized = value?.trim();
+
+  return normalized ? normalized : undefined;
+}
+
+function compactAgentOutputs(agentOutputs: AgentOutputs | undefined) {
+  if (!agentOutputs) {
+    return undefined;
+  }
+
+  return {
+    planner: agentOutputs.planner
+      ? { summary: cleanText(agentOutputs.planner.summary).slice(0, 240) }
+      : undefined,
+    trend: agentOutputs.trend
+      ? {
+          summary: cleanText(agentOutputs.trend.summary).slice(0, 240),
+          topTrend: agentOutputs.trend.topTrend,
+          score: agentOutputs.trend.score,
+        }
+      : undefined,
+    evidence: agentOutputs.evidence
+      ? { bundleSummary: cleanText(agentOutputs.evidence.bundleSummary).slice(0, 240) }
+      : undefined,
+    verifier: agentOutputs.verifier
+      ? {
+          verificationSummary: cleanText(
+            agentOutputs.verifier.verificationSummary
+          ).slice(0, 240),
+        }
+      : undefined,
+  };
+}
+
+function compactResearchReport(report: ResearchReport | undefined) {
+  if (!report) {
+    return null;
+  }
+
+  return {
+    asOfUtc: report.asOfUtc,
+    bottomLine: cleanText(report.bottomLine).slice(0, 400),
+    caveats: report.caveats.slice(0, 4).map((caveat) => cleanText(caveat).slice(0, 200)),
+    confidence: report.confidence,
+    entities: report.entities.slice(0, 5).map((entity) => ({
+      metrics: compactMetricRecord(entity.metrics),
+      label: entity.label,
+      rank: entity.rank,
+      severity: entity.severity,
+      summary: cleanText(entity.summary).slice(0, 180),
+    })),
+    executiveSummary: cleanText(report.executiveSummary).slice(0, 500),
+    kind: report.kind,
+    recommendations: report.recommendations
+      .slice(0, 3)
+      .map((recommendation) => cleanText(recommendation).slice(0, 200)),
+    sections: report.sections.slice(0, 4).map((section) => ({
+      markdown: cleanText(section.markdown).slice(0, 280),
+      title: section.title,
+    })),
+    tables: report.tables.slice(0, 2).map((table) => ({
+      columns: table.columns.slice(0, 8),
+      rows: table.rows.slice(0, 3).map((row) => compactTableRow(row, table.columns)),
+      title: table.title,
+    })),
+    title: report.title,
+  };
+}
+
+function compactOnChainEnrichment(
+  onChain: OnChainToolFinalPayload | undefined,
+  onChainSkippedReason: string | undefined
+) {
+  if (!onChain) {
+    return {
+      skippedReason:
+        onChainSkippedReason || "No on-chain enrichment was executed.",
+    };
+  }
+
+  return {
+    answer: cleanText(onChain.answer).slice(0, 500),
+    caveat: cleanText(onChain.caveat).slice(0, 240),
+    chain: onChain.plan.chain,
+    intent: onChain.plan.intent,
+    rankingBasis:
+      onChain.report?.sections
+        .find((section) => section.id === "signal-summary")
+        ?.markdown.replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 220) || undefined,
+    recommendation: cleanText(onChain.recommendation).slice(0, 240),
+    topProtocols: onChain.report?.entities.slice(0, 3).map((entity) => ({
+      coverage: readMetricValue(entity.metrics, "coverage"),
+      label: entity.label,
+      metrics: compactMetricRecord(entity.metrics),
+      rank: entity.rank,
+      severity: entity.severity,
+    })),
+    topRankedEntities: onChain.report?.entities.slice(0, 5).map((entity) => ({
+      category: entity.category,
+      coverage: readMetricValue(entity.metrics, "coverage"),
+      label: entity.label,
+      metrics: compactMetricRecord(entity.metrics),
+      rank: entity.rank,
+      severity: entity.severity,
+    })),
+    toolCount: onChain.tools.length,
+    tools: onChain.tools.slice(0, 8).map((tool) => ({
+      commandId: tool.commandId,
+      fallbackReason: tool.fallbackReason,
+      provider: tool.provider,
+      status: tool.status,
+      summary: cleanText(tool.summary).slice(0, 160),
+      title: tool.title,
+    })),
   };
 }
 
@@ -207,4 +554,52 @@ function cleanText(value: string) {
     .replace(/&#39;/g, "'")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function compactMetricRecord(metrics: Record<string, string | number | null>) {
+  const priorityKeys = [
+    "score",
+    "tvlUsd",
+    "bestApy",
+    "momentumScore",
+    "poolCount",
+    "coverage",
+  ];
+  const compact: Record<string, string | number | null> = {};
+
+  for (const key of priorityKeys) {
+    if (key in metrics) {
+      compact[key] = metrics[key];
+    }
+  }
+
+  if (Object.keys(compact).length > 0) {
+    return compact;
+  }
+
+  for (const [key, value] of Object.entries(metrics).slice(0, 6)) {
+    compact[key] = value;
+  }
+
+  return compact;
+}
+
+function compactTableRow(
+  row: Record<string, string | number | null>,
+  columns: string[]
+) {
+  const compact: Record<string, string | number | null> = {};
+
+  for (const column of columns.slice(0, 8)) {
+    compact[column] = row[column];
+  }
+
+  return compact;
+}
+
+function readMetricValue(
+  metrics: Record<string, string | number | null>,
+  key: string
+) {
+  return key in metrics ? metrics[key] : undefined;
 }

@@ -45,18 +45,35 @@ export async function runOnChainToolWorkflow({
   const payload = synthesizeOnChainAnswer({ plan, results });
   if (process.env.MANTLE_INTEL_PROOF_ENABLED === "true") {
     payload.proof = await persistGenericMantleProof({
-      chain: plan.chain,
+      chain: plan.productChain,
       evidence: {
         answer: payload.answer,
         bullets: payload.bullets,
         caveat: payload.caveat,
+        chainContext: {
+          analysisChain: {
+            chain: plan.chain,
+            chainId: plan.chainId,
+            chainName: plan.chainName,
+            source: plan.analysisSource,
+          },
+          productChain: {
+            chain: plan.productChain,
+            chainId: plan.productChainId,
+            chainName: plan.productChainName,
+          },
+        },
         plan: summarizePlan(plan),
+        report: payload.report,
         recommendation: payload.recommendation,
         tools: results.map((result) => ({
+          attemptedProviders: result.attemptedProviders,
           commandId: result.commandId,
           domain: result.domain,
           error: result.error,
+          fallbackReason: result.fallbackReason,
           provider: result.provider,
+          scope: result.scope,
           sourceUrl: result.sourceUrl,
           status: result.status,
           summary: result.summary,
@@ -99,7 +116,7 @@ function estimateOnChainTokenUsage({
   results: OnChainToolResult[];
 }): ZeroGTokenUsage {
   const inputText = [
-    `${payload.plan.chainName} Intelligence on-chain tool workflow.`,
+    `${payload.plan.chainName} intelligence on-chain tool workflow on product chain ${payload.plan.productChainName}.`,
     ...context.map((item) => `${item.role}: ${item.content}`),
     `user: ${message}`,
     `plan: ${JSON.stringify(payload.plan)}`,
@@ -142,6 +159,10 @@ function buildOnChainRunId() {
 
 function signalTypeForPlan(intent: string) {
   if (intent === "wallet") {
+    return "smart-money";
+  }
+
+  if (intent === "smart-money") {
     return "smart-money";
   }
 

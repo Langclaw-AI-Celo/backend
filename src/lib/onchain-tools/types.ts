@@ -1,4 +1,10 @@
-import type { ModelUsageReceipt, ZeroGProof } from "../langclaw/types";
+import type {
+  ModelUsageReceipt,
+  ProviderTraceEntry,
+  ProviderTraceScope,
+  ResearchReport,
+  ZeroGProof,
+} from "../langclaw/types";
 
 export const onChainDomains = [
   "token_discovery",
@@ -21,12 +27,17 @@ export type OnChainDomain = (typeof onChainDomains)[number];
 
 export type OnChainProvider =
   | "alchemy"
+  | "coingecko"
   | "defillama"
   | "dexscreener"
   | "dune"
+  | "elfa"
   | "etherscan"
+  | "geckoterminal"
   | "goplus"
-  | "local";
+  | "local"
+  | "nansen"
+  | "surf";
 
 export type ProductChainId = "mantle" | "celo";
 
@@ -36,6 +47,8 @@ export type OnChainExecutorId =
   | "alchemy.asset_transfers"
   | "alchemy.token_balances"
   | "alchemy.token_metadata"
+  | "coingecko.coin_markets"
+  | "coingecko.search_coin"
   | "defillama.chains"
   | "defillama.protocol"
   | "defillama.protocols"
@@ -50,14 +63,28 @@ export type OnChainExecutorId =
   | "dexscreener.token_snapshot"
   | "dexscreener.top_boosts"
   | "dune.latest_result"
+  | "elfa.trending_narratives"
   | "etherscan.account_balance"
   | "etherscan.get_code"
   | "etherscan.token_balance"
   | "etherscan.token_transfers"
   | "etherscan.txlist"
+  | "geckoterminal.network_new_pools"
+  | "geckoterminal.network_trending_pools"
+  | "geckoterminal.pool_data"
+  | "geckoterminal.token_data"
+  | "geckoterminal.token_info"
+  | "geckoterminal.token_top_holders"
   | "goplus.address_security"
   | "goplus.token_security"
-  | "local.signal_synthesis";
+  | "local.signal_synthesis"
+  | "nansen.smart_money_netflow"
+  | "surf.web_search";
+
+export type OnChainFallbackStep = {
+  executor: OnChainExecutorId;
+  provider: OnChainProvider;
+};
 
 export type JsonSchema = {
   type: "object";
@@ -79,10 +106,12 @@ export type OnChainCommand = {
   description: string;
   docsUrl?: string;
   executor: OnChainExecutorId;
+  fallback?: OnChainFallbackStep[];
   provider: OnChainProvider;
   riskLevel: OnChainRiskLevel;
   cacheTtlSeconds: number;
   paramsSchema: JsonSchema;
+  scope?: ProviderTraceScope;
 };
 
 export type OnChainContextMessage = {
@@ -94,13 +123,19 @@ export type OnChainToolMode = "chat" | "onchain" | "research";
 
 export type OnChainPlan = {
   intent: string;
-  chain: ProductChainId;
+  chain: string;
   chainId: number;
   chainName: string;
+  analysisSource: "product-fallback" | "prompt";
   commands: OnChainPlannedCommand[];
   domainCount: number;
   nativeSymbol: string;
   providerGaps?: string[];
+  providerTrace?: ProviderTraceEntry[];
+  productChain: ProductChainId;
+  productChainId: number;
+  productChainName: string;
+  rawQuery?: string;
   query?: string;
   registryCommandCount: number;
   tokenAddress?: string;
@@ -123,12 +158,15 @@ export type OnChainToolCallEvent = {
 export type OnChainToolStatus = "failed" | "skipped" | "success";
 
 export type OnChainToolResult = {
+  attemptedProviders?: OnChainProvider[];
   commandId: string;
   data?: unknown;
   domain: OnChainDomain;
   error?: string;
+  fallbackReason?: string;
   latencyMs: number;
   provider: OnChainProvider;
+  scope?: ProviderTraceScope;
   sourceUrl?: string;
   status: OnChainToolStatus;
   summary: string;
@@ -141,6 +179,8 @@ export type OnChainToolFinalPayload = {
   caveat: string;
   generatedAt: string;
   plan: OnChainPlanSummary;
+  providerTrace?: ProviderTraceEntry[];
+  report?: ResearchReport;
   recommendation: string;
   title: string;
   tools: OnChainToolResult[];
@@ -165,10 +205,11 @@ export type OnChainProviderResponse = {
 };
 
 export type OnChainExecuteInput = {
-  chain: ProductChainId;
+  chain: string;
   chainId: number;
   command: OnChainCommand;
   previousResults: OnChainToolResult[];
+  rawQuery?: string;
   query?: string;
   signal?: AbortSignal;
   tokenAddress?: string;

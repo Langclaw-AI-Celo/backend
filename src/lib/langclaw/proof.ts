@@ -24,11 +24,14 @@ import {
 import { sanitizeError } from "./openclaw-runner";
 import type {
   AgentOutputs,
+  DiscoverSignals,
   FinalAnswer,
   FinalConclusion,
   OrchestrationStep,
   ProviderError,
+  ResearchReport,
   SourceCard,
+  WorkflowChainContext,
   ZeroGChainProof,
   ZeroGProof,
   ZeroGStorageProof,
@@ -39,9 +42,12 @@ type PersistProofInput = {
   runId: string;
   topic: string;
   generatedAt: string;
+  chainContext: WorkflowChainContext;
   sources: SourceCard[];
   errors: ProviderError[];
   steps: OrchestrationStep[];
+  signals: DiscoverSignals;
+  report?: ResearchReport;
   finalConclusion: FinalConclusion;
   finalAnswer: FinalAnswer;
   agentOutputs: AgentOutputs;
@@ -161,9 +167,12 @@ function buildEvidenceBundle(input: PersistProofInput) {
     runId: input.runId,
     topic: input.topic,
     generatedAt: input.generatedAt,
+    chainContext: input.chainContext,
     sources: input.sources,
     providerErrors: input.errors,
     orchestrationSteps: input.steps,
+    signals: input.signals,
+    report: input.report,
     agentOutputs: input.agentOutputs,
     finalConclusion: input.finalConclusion,
     finalAnswer: input.finalAnswer,

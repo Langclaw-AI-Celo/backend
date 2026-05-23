@@ -1,7 +1,5 @@
 import type { DirectChatPayload } from "../lib/chat-sessions";
 import { readProductChainId, resolveProductChain } from "../lib/chain-config";
-import { detectUnsupportedOnChainChain } from "../lib/onchain-tools/chains";
-import { runOnChainToolWorkflow } from "../lib/onchain-tools/workflow";
 import {
   accountAuthErrorResponse,
   requireAccountAuth,
@@ -9,6 +7,11 @@ import {
 import type { WalletAuthInput } from "../lib/server/wallet-auth";
 import { runLangclawWorkflow } from "../lib/langclaw/workflow";
 import type { WorkflowProgressEvent } from "../lib/langclaw/types";
+import type {
+  OnChainPlanSummary,
+  OnChainToolCallEvent,
+  OnChainToolResult,
+} from "../lib/onchain-tools/types";
 import {
   refundResearchUsage,
   reserveResearchUsage,
@@ -69,26 +72,10 @@ export async function handleChatStream(request: Request) {
   const toolMode = readToolMode(body.toolMode, body.researchTrend);
   const selectedChain = resolveProductChain(readProductChainId(body.chain));
   const useAgent = toolMode === "research" || body.useAgent === true;
-  const shouldBillUsage = useAgent || toolMode === "onchain";
+  const shouldBillUsage = useAgent;
 
   if (!message) {
     return Response.json({ error: "Message is required." }, { status: 400 });
-  }
-
-  if (toolMode === "onchain") {
-    const unsupportedChain = detectUnsupportedOnChainChain(message);
-
-    if (unsupportedChain) {
-      return Response.json(
-        {
-          error: [
-            "Langclaw Intelligence currently supports Mantle and Celo only.",
-            `I detected ${unsupportedChain.name}; switch the prompt to Mantle or Celo, or use Chat mode for general multi-chain discussion.`,
-          ].join(" "),
-        },
-        { status: 400 }
-      );
-    }
   }
 
   const account = await requireAccountAuth({
@@ -142,51 +129,6 @@ export async function handleChatStream(request: Request) {
 
       try {
         stopIfAborted();
-
-        if (toolMode === "onchain") {
-          const result = await runOnChainToolWorkflow({
-            chain: selectedChain.id,
-            context,
-            message,
-            signal: request.signal,
-            onToolCall: (event) => {
-              stopIfAborted();
-              write({ type: "tool_call", event });
-            },
-            onToolPlan: (plan) => {
-              stopIfAborted();
-              write({ type: "tool_plan", plan });
-            },
-            onToolResult: (event) => {
-              stopIfAborted();
-              write({ type: "tool_result", event });
-            },
-          });
-          const proof = result.payload.proof;
-
-          result.payload.usage = await settleResearchUsage({
-            computeStatus: proof?.compute?.status ?? "used",
-            providerTrace: proof?.compute
-              ? {
-                  billing: proof.compute.billing,
-                  provider: proof.compute.provider,
-                  requestId: proof.compute.requestId,
-                  teeVerified: proof.compute.teeVerified,
-                }
-              : undefined,
-            reservation: reservation!,
-            tokenUsage: proof?.compute?.usage ?? result.tokenUsage,
-            topic: message,
-          });
-          usageSettled = true;
-
-          stopIfAborted();
-          write({
-            type: "tool_final",
-            payload: result.payload,
-          });
-          return;
-        }
 
         if (!useAgent) {
           let streamedAnswer = "";
@@ -251,7 +193,23 @@ export async function handleChatStream(request: Request) {
               stopIfAborted();
               write({ type: "progress", event });
             },
-            selectedChain.id
+            selectedChain.id,
+            {
+              context,
+              onToolCall: (event: OnChainToolCallEvent) => {
+                stopIfAborted();
+                write({ type: "tool_call", event });
+              },
+              onToolPlan: (plan: OnChainPlanSummary) => {
+                stopIfAborted();
+                write({ type: "tool_plan", plan });
+              },
+              onToolResult: (event: OnChainToolResult) => {
+                stopIfAborted();
+                write({ type: "tool_result", event });
+              },
+              signal: request.signal,
+            }
           )
         );
         const proof = payload.proof ?? payload.zeroG;
@@ -330,12 +288,24 @@ function readContextMessages(value: unknown): ContextMessage[] {
 export function buildChatWorkflowOptions(
   requestedModel: unknown,
   onEvent: (event: WorkflowProgressEvent) => void | Promise<void>,
-  chain?: string
+  chain?: string,
+  extras?: {
+    context?: ContextMessage[];
+    onToolCall?: (event: OnChainToolCallEvent) => void | Promise<void>;
+    onToolPlan?: (plan: OnChainPlanSummary) => void | Promise<void>;
+    onToolResult?: (event: OnChainToolResult) => void | Promise<void>;
+    signal?: AbortSignal;
+  }
 ) {
   return {
     chain,
+    context: extras?.context,
+    onToolCall: extras?.onToolCall,
+    onToolPlan: extras?.onToolPlan,
+    onToolResult: extras?.onToolResult,
     requestedModel,
     onEvent,
+    signal: extras?.signal,
   };
 }
 
@@ -408,7 +378,7 @@ function readToolMode(toolMode: unknown, researchTrend: unknown) {
   }
 
   if (toolMode === "onchain") {
-    return "onchain";
+    return "research";
   }
 
   if (toolMode === "research" || researchTrend === true) {

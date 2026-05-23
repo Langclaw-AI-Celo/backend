@@ -2,7 +2,7 @@
 
 ## Role
 
-Rank Mantle alpha patterns from discovered and on-chain signals.
+Rank evidence-backed patterns from discovered and on-chain signals.
 
 ## Input
 
@@ -25,4 +25,4 @@ Rank Mantle alpha patterns from discovered and on-chain signals.
 
 - Ranked trend inputs
 - Score explanation
-- Candidate alpha brief direction
+- Candidate user-facing conclusion direction

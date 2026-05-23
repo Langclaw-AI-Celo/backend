@@ -31,12 +31,13 @@ Default runtime:
 ```text
 OPENCLAW_ENABLED=true
 OPENCLAW_WORKFLOW_ENABLED=true
+OPENCLAW_AI_SYNTHESIS=true
 OPENCLAW_STEP_TIMEOUT_SECONDS=60
 OPENAI_API_KEY=
 OPENAI_AGENT_MODEL=gpt-5.2
 ```
 
-With the default setting, Langclaw probes the OpenClaw CLI, runs the reasoning steps through OpenClaw when available, returns execution metadata for each step, and asks OpenAI Responses API to synthesize the final chat answer.
+With the default setting, Langclaw probes the OpenClaw CLI, runs the reasoning steps through OpenClaw when available, returns execution metadata for each step, and uses OpenClaw for the final chat answer when `OPENCLAW_AI_SYNTHESIS=true`. OpenAI remains the fallback path if the OpenClaw final synthesis step is disabled or fails.
 
 Optional runtime:
 
@@ -44,6 +45,7 @@ Optional runtime:
 OPENCLAW_ENABLED=true
 OPENCLAW_CLI_PATH=openclaw
 OPENCLAW_WORKFLOW_ENABLED=true
+OPENCLAW_AI_SYNTHESIS=true
 OPENCLAW_STEP_TIMEOUT_SECONDS=60
 OPENCLAW_MODEL=
 OPENAI_CHAT_MODEL=gpt-5-mini

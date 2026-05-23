@@ -3,6 +3,7 @@ import type {
   OnChainCommand,
   OnChainDomain,
   OnChainExecutorId,
+  OnChainFallbackStep,
   OnChainProvider,
   OnChainRiskLevel,
 } from "./types";
@@ -12,10 +13,12 @@ type CommandSeed = {
   description: string;
   docsUrl?: string;
   executor: OnChainExecutorId;
+  fallback?: OnChainFallbackStep[];
   id: string;
   provider: OnChainProvider;
   required?: string[];
   riskLevel?: OnChainRiskLevel;
+  scope?: OnChainCommand["scope"];
   title: string;
 };
 
@@ -26,11 +29,16 @@ type DomainPack = {
 
 const docs = {
   alchemy: "https://www.alchemy.com/docs/data/token-api/token-api-endpoints/alchemy-get-token-balances",
+  coingecko: "https://docs.coingecko.com/reference/search-data",
   defillama: "https://api-docs.defillama.com/",
   dexscreener: "https://docs.dexscreener.com/api/reference",
   dune: "https://docs.dune.com/api-reference/executions/execution-object",
+  elfa: "https://docs.elfa.ai/api/rest/elfa-api/",
   etherscan: "https://docs.etherscan.io/introduction",
+  geckoterminal: "https://docs.coingecko.com/reference/networks-list",
   goplus: "https://docs.gopluslabs.io/docs/getting-started",
+  nansen: "https://docs.nansen.ai/api/smart-money",
+  surf: "https://docs.asksurf.ai/data-api/overview",
 };
 
 const commonProperties: JsonSchema["properties"] = {
@@ -68,7 +76,26 @@ const packs: DomainPack[] = [
   {
     domain: "token_discovery",
     commands: [
+      seed(
+        "surf_discovery_search",
+        "Surf discovery search",
+        "Search broad crypto market context and Mantle narratives through Surf.",
+        "surf.web_search",
+        "surf",
+        ["query"],
+        "medium",
+        [
+          {
+            executor: "dexscreener.search_pairs",
+            provider: "dexscreener",
+          },
+        ],
+        "mantle-premium"
+      ),
       seed("trending_boosted_tokens", "Trending boosted tokens", "Find tokens with the most active DEX Screener boosts.", "dexscreener.top_boosts", "dexscreener"),
+      seed("coingecko_search_coin", "CoinGecko coin search", "Resolve a likely CoinGecko coin id before using aggregated market endpoints.", "coingecko.search_coin", "coingecko", ["query"]),
+      seed("geckoterminal_trending_pools", "GeckoTerminal trending pools", "Fetch trending pools for the inferred analysis chain through GeckoTerminal.", "geckoterminal.network_trending_pools", "geckoterminal"),
+      seed("geckoterminal_new_pools", "GeckoTerminal new pools", "Fetch newly created pools for the inferred analysis chain through GeckoTerminal.", "geckoterminal.network_new_pools", "geckoterminal"),
       seed("latest_token_profiles", "Latest token profiles", "Read newly published DEX Screener token profiles.", "dexscreener.latest_profiles", "dexscreener"),
       seed("latest_boosts", "Latest token boosts", "Fetch the latest DEX Screener token boost feed.", "dexscreener.latest_boosts", "dexscreener"),
       seed("pair_search", "Pair search", "Search DEX pairs by symbol, address, or narrative query.", "dexscreener.search_pairs", "dexscreener", ["query"]),
@@ -79,6 +106,24 @@ const packs: DomainPack[] = [
   {
     domain: "market_data",
     commands: [
+      seed(
+        "surf_market_search",
+        "Surf market search",
+        "Search market context, web coverage, and broad crypto signal summaries through Surf.",
+        "surf.web_search",
+        "surf",
+        ["query"],
+        "medium",
+        [
+          {
+            executor: "dexscreener.search_pairs",
+            provider: "dexscreener",
+          },
+        ],
+        "mantle-premium"
+      ),
+      seed("coingecko_coin_markets", "CoinGecko coin markets", "Fetch aggregated price, market cap, and volume after resolving a CoinGecko coin id.", "coingecko.coin_markets", "coingecko", ["query"]),
+      seed("geckoterminal_token_data", "GeckoTerminal token data", "Fetch token-level on-chain market data by token contract address.", "geckoterminal.token_data", "geckoterminal", ["tokenAddress"]),
       seed("token_market_snapshot", "Token market snapshot", "Fetch token price, volume, liquidity, FDV, and market cap.", "dexscreener.token_snapshot", "dexscreener", ["tokenAddress"]),
       seed("pair_price_snapshot", "Pair price snapshot", "Fetch price and volume for a specific DEX pair.", "dexscreener.pair_snapshot", "dexscreener", ["pairAddress"]),
       seed("market_pair_search", "Market pair search", "Search market pairs by token symbol or phrase.", "dexscreener.search_pairs", "dexscreener", ["query"]),
@@ -90,6 +135,9 @@ const packs: DomainPack[] = [
   {
     domain: "pair_liquidity",
     commands: [
+      seed("geckoterminal_network_trending_pools", "GeckoTerminal trending pools", "Inspect the chain's trending pools before drilling into a specific pair.", "geckoterminal.network_trending_pools", "geckoterminal"),
+      seed("geckoterminal_network_new_pools", "GeckoTerminal new pools", "Inspect newly created pools on the analysis chain for early liquidity anomalies.", "geckoterminal.network_new_pools", "geckoterminal"),
+      seed("geckoterminal_pool_data", "GeckoTerminal pool data", "Fetch pair-level liquidity and activity for a specific pool address.", "geckoterminal.pool_data", "geckoterminal", ["pairAddress"]),
       seed("token_pools", "Token pools", "Fetch liquidity pools for a token address.", "dexscreener.token_pairs", "dexscreener", ["tokenAddress"]),
       seed("pair_details", "Pair details", "Fetch pair-level liquidity and transaction metrics.", "dexscreener.pair_snapshot", "dexscreener", ["pairAddress"]),
       seed("paid_order_check", "Paid order check", "Check DEX Screener paid-order status for token promotion context.", "dexscreener.orders", "dexscreener", ["tokenAddress"]),
@@ -123,6 +171,22 @@ const packs: DomainPack[] = [
   {
     domain: "smart_money",
     commands: [
+      seed(
+        "nansen_smart_money_netflow",
+        "Smart money netflow",
+        "Read aggregated smart-money accumulation and distribution on Mantle through Nansen.",
+        "nansen.smart_money_netflow",
+        "nansen",
+        ["query"],
+        "medium",
+        [
+          {
+            executor: "dune.latest_result",
+            provider: "dune",
+          },
+        ],
+        "mantle-premium"
+      ),
       seed("smart_wallet_balances", "Smart wallet balances", "Fetch token balances for a suspected smart-money wallet.", "alchemy.token_balances", "alchemy", ["walletAddress"]),
       seed("smart_wallet_transfers", "Smart wallet transfers", "Fetch recent transfer flow for accumulation or exit clues.", "alchemy.asset_transfers", "alchemy", ["walletAddress"]),
       seed("token_whale_transfers", "Token whale transfers", "Fetch recent token transfers for holder movement analysis.", "etherscan.token_transfers", "etherscan", ["tokenAddress"]),
@@ -156,6 +220,8 @@ const packs: DomainPack[] = [
   {
     domain: "token_security",
     commands: [
+      seed("geckoterminal_token_info", "GeckoTerminal token info", "Fetch token metadata, sites, socials, and security-oriented context from GeckoTerminal.", "geckoterminal.token_info", "geckoterminal", ["tokenAddress"], "medium"),
+      seed("geckoterminal_top_holders", "GeckoTerminal top holders", "Fetch the token holder concentration snapshot from GeckoTerminal when available.", "geckoterminal.token_top_holders", "geckoterminal", ["tokenAddress"], "medium"),
       seed("goplus_token_security", "GoPlus token security", "Fetch token risk fields from GoPlus.", "goplus.token_security", "goplus", ["tokenAddress"], "high"),
       seed("contract_code_check", "Contract code check", "Check whether bytecode exists through Etherscan V2.", "etherscan.get_code", "etherscan", ["tokenAddress"], "medium"),
       seed("token_liquidity_context", "Token liquidity context", "Fetch DEX liquidity context for security review.", "dexscreener.token_pairs", "dexscreener", ["tokenAddress"]),
@@ -189,6 +255,22 @@ const packs: DomainPack[] = [
   {
     domain: "social_sentiment",
     commands: [
+      seed(
+        "elfa_trending_narratives",
+        "Elfa trending narratives",
+        "Read real-time narrative momentum and social attention through Elfa.",
+        "elfa.trending_narratives",
+        "elfa",
+        [],
+        "medium",
+        [
+          {
+            executor: "dexscreener.top_boosts",
+            provider: "dexscreener",
+          },
+        ],
+        "mantle-premium"
+      ),
       seed("token_profile_socials", "Token profile socials", "Inspect DEX Screener profile links and socials.", "dexscreener.latest_profiles", "dexscreener"),
       seed("pair_social_context", "Pair social context", "Search pair data and social metadata by query.", "dexscreener.search_pairs", "dexscreener", ["query"]),
       seed("boost_sentiment_proxy", "Boost sentiment proxy", "Use token boosts as a lightweight attention proxy.", "dexscreener.top_boosts", "dexscreener"),
@@ -211,6 +293,8 @@ const packs: DomainPack[] = [
   {
     domain: "trading_signal_analysis",
     commands: [
+      seed("coingecko_market_context", "CoinGecko market context", "Fetch aggregated market context for a named asset before ranking trading signals.", "coingecko.coin_markets", "coingecko", ["query"], "medium"),
+      seed("geckoterminal_trending_pool_signal", "GeckoTerminal trending pool signal", "Inspect trending pools on the analysis chain for liquidity and turnover anomalies.", "geckoterminal.network_trending_pools", "geckoterminal", [], "medium"),
       seed("price_liquidity_signal", "Price and liquidity signal", "Read price, volume, and liquidity from DEX Screener.", "dexscreener.token_snapshot", "dexscreener", ["tokenAddress"], "medium"),
       seed("security_signal", "Security signal", "Read security flags that affect signal quality.", "goplus.token_security", "goplus", ["tokenAddress"], "high"),
       seed("market_attention_signal", "Market attention signal", "Read boost and profile attention proxies.", "dexscreener.top_boosts", "dexscreener"),
@@ -257,16 +341,20 @@ function seed(
   executor: OnChainExecutorId,
   provider: OnChainProvider,
   required: string[] = [],
-  riskLevel: OnChainRiskLevel = "low"
+  riskLevel: OnChainRiskLevel = "low",
+  fallback?: OnChainFallbackStep[],
+  scope?: OnChainCommand["scope"]
 ): CommandSeed {
   return {
     description,
     docsUrl: provider === "local" ? undefined : docs[provider],
     executor,
+    fallback,
     id,
     provider,
     required,
     riskLevel,
+    scope,
     title,
   };
 }
@@ -278,6 +366,7 @@ function createCommand(domain: OnChainDomain, seedValue: CommandSeed): OnChainCo
     docsUrl: seedValue.docsUrl,
     domain,
     executor: seedValue.executor,
+    fallback: seedValue.fallback,
     id: `${domain}.${seedValue.id}`,
     paramsSchema: {
       properties: commonProperties,
@@ -286,6 +375,7 @@ function createCommand(domain: OnChainDomain, seedValue: CommandSeed): OnChainCo
     },
     provider: seedValue.provider,
     riskLevel: seedValue.riskLevel ?? "low",
+    scope: seedValue.scope,
     title: seedValue.title,
   };
 }

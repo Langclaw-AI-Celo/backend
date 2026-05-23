@@ -15,10 +15,22 @@ export type OpenAITokenUsage = {
 
 export type OpenAITextResult = {
   id?: string;
+  incomplete?: boolean;
   model: string;
   text: string;
   usage?: OpenAITokenUsage;
 };
+
+export type OpenAITextFormat =
+  | {
+      type: "json_object";
+    }
+  | {
+      type: "json_schema";
+      name: string;
+      strict?: boolean;
+      schema: Record<string, unknown>;
+    };
 
 type OpenAIRequestInput = {
   input: OpenAITextMessage[] | string;
@@ -27,6 +39,7 @@ type OpenAIRequestInput = {
   model?: string;
   signal?: AbortSignal;
   temperature?: number;
+  textFormat?: OpenAITextFormat;
 };
 
 type OpenAIStreamInput = OpenAIRequestInput & {
@@ -34,7 +47,7 @@ type OpenAIStreamInput = OpenAIRequestInput & {
 };
 
 const defaultOpenAIBaseUrl = "https://api.openai.com/v1";
-const defaultChatModel = "gpt-5-mini";
+const defaultChatModel = "gpt-5.2";
 const defaultAgentModel = "gpt-5.2";
 
 export function getOpenAIBaseUrl() {
@@ -62,6 +75,7 @@ export async function createOpenAITextResponse({
   model = getDefaultOpenAIModel("chat"),
   signal,
   temperature,
+  textFormat,
 }: OpenAIRequestInput): Promise<OpenAITextResult> {
   const payload = await openAIJson<Record<string, unknown>>("/responses", {
     body: {
@@ -70,14 +84,30 @@ export async function createOpenAITextResponse({
       max_output_tokens: maxOutputTokens,
       model,
       temperature,
+      text: textFormat ? { format: textFormat } : undefined,
     },
     signal,
   });
+  const status = readString(payload.status);
+
+  if (status === "failed") {
+    throw new Error(readOpenAIResponseError(payload) || "OpenAI response failed.");
+  }
+
+  const text = extractOpenAIText(payload);
+  const incomplete = status === "incomplete";
+
+  if (incomplete && !text.trim()) {
+    throw new Error(
+      "OpenAI synthesis response was incomplete with no output text. Increase OPENAI_AGENT_MAX_OUTPUT_TOKENS or shorten the research payload."
+    );
+  }
 
   return {
     id: readString(payload.id),
+    incomplete,
     model: readString(payload.model) || model,
-    text: extractOpenAIText(payload),
+    text,
     usage: readOpenAIUsage(payload.usage),
   };
 }
@@ -321,6 +351,12 @@ function readOpenAIError(value: Record<string, unknown>) {
   const error = readRecord(value.error);
 
   return readString(error?.message) || readString(value.message);
+}
+
+function readOpenAIResponseError(payload: Record<string, unknown>) {
+  const error = readRecord(payload.error);
+
+  return readOpenAIError(error ?? payload);
 }
 
 function readRecord(value: unknown) {

@@ -104,6 +104,10 @@ export function normalizeProtocolSlug(query: string | undefined) {
     }
   }
 
+  if (/^[a-z0-9-]{2,40}$/.test(text) && !isGenericProtocolWord(text)) {
+    return text;
+  }
+
   return "";
 }
 

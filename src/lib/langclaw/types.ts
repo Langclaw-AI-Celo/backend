@@ -1,4 +1,5 @@
 import type { UsageMeter } from "../usage-pricing";
+import type { OnChainToolFinalPayload } from "../onchain-tools/types";
 
 export type SourceType =
   | "x_post"
@@ -7,7 +8,30 @@ export type SourceType =
   | "hackquest_hackathon"
   | "hackquest_project";
 
-export type ProviderName = "X" | "GitHub" | "Tavily" | "HackQuest";
+export type ProviderName =
+  | "X"
+  | "GitHub"
+  | "Tavily"
+  | "HackQuest"
+  | "Surf"
+  | "Nansen"
+  | "Elfa";
+
+export type ProviderTraceStatus = "success" | "failed" | "skipped";
+
+export type ProviderTraceScope =
+  | "mantle-premium"
+  | "legacy-fallback"
+  | "legacy-default"
+  | "out-of-scope";
+
+export type ProviderTraceEntry = {
+  provider: string;
+  status: ProviderTraceStatus;
+  scope: ProviderTraceScope;
+  message: string;
+  sourceCount?: number;
+};
 
 export type SourceCard = {
   id: string;
@@ -29,6 +53,7 @@ export type ProviderError = {
 export type ProviderResult = {
   sources: SourceCard[];
   errors: ProviderError[];
+  providerTrace: ProviderTraceEntry[];
 };
 
 export type OrchestrationRuntime = "openclaw" | "typescript";
@@ -88,11 +113,12 @@ export type FinalConclusion = {
 };
 
 export type FinalAnswer = {
-  title: string;
+  title?: string;
   answer: string;
+  answerMarkdown?: string;
   bullets: string[];
-  recommendation: string;
-  caveat: string;
+  recommendation?: string;
+  caveat?: string;
   generatedBy: "Final Conclusion Agent";
 };
 
@@ -107,6 +133,90 @@ export type FinalAnswerMeta = {
   transport?: string;
   fallbackFrom?: string;
   error?: string;
+};
+
+export type DiscoverSignalStatus =
+  | "success"
+  | "partial"
+  | "skipped"
+  | "failed";
+
+export type DiscoverSignalSection = {
+  status: DiscoverSignalStatus;
+  summary: string;
+  providers: string[];
+  sourceIds: string[];
+  toolIds: string[];
+  caveat?: string;
+};
+
+export type DiscoverSignals = {
+  social: DiscoverSignalSection;
+  onchain: DiscoverSignalSection;
+  combined: DiscoverSignalSection;
+};
+
+export type ResearchReportKind =
+  | "liquidity-anomaly"
+  | "smart-money"
+  | "market-brief"
+  | "defi-yield"
+  | "token-discovery"
+  | "mixed-research";
+
+export type ResearchReportSeverity =
+  | "high"
+  | "medium"
+  | "watch"
+  | "fragile"
+  | "info";
+
+export type ResearchReportConfidence =
+  | "high"
+  | "medium"
+  | "low"
+  | "insufficient";
+
+export type ResearchReportEntity = {
+  id: string;
+  label: string;
+  category: string;
+  rank: number;
+  severity: ResearchReportSeverity;
+  summary: string;
+  metrics: Record<string, string | number | null>;
+  sourceIds: string[];
+  toolIds: string[];
+};
+
+export type ResearchReportTable = {
+  id: string;
+  title: string;
+  description?: string;
+  columns: string[];
+  rows: Array<Record<string, string | number | null>>;
+};
+
+export type ResearchReportSection = {
+  id: string;
+  title: string;
+  markdown: string;
+  sourceIds: string[];
+  toolIds: string[];
+};
+
+export type ResearchReport = {
+  kind: ResearchReportKind;
+  title: string;
+  asOfUtc: string;
+  executiveSummary: string;
+  bottomLine: string;
+  confidence: ResearchReportConfidence;
+  entities: ResearchReportEntity[];
+  tables: ResearchReportTable[];
+  sections: ResearchReportSection[];
+  caveats: string[];
+  recommendations: string[];
 };
 
 export type PlannerOutput = {
@@ -164,11 +274,38 @@ export type AgentOutputs = {
   verifier?: VerifierOutput;
 };
 
+export type WorkflowChainContext = {
+  productChain: {
+    id: string;
+    name: string;
+    chainId: number;
+    nativeSymbol: string;
+  };
+  analysisChain: {
+    id: string;
+    name: string;
+    chainId: number;
+    nativeSymbol?: string;
+    source: "product-fallback" | "prompt";
+    supported: boolean;
+  };
+  unsupportedAnalysisChain?: {
+    id: string;
+    name: string;
+  };
+};
+
 export type DiscoverPayload = {
   topic: string;
   generatedAt: string;
+  chainContext: WorkflowChainContext;
   sources: SourceCard[];
   errors: ProviderError[];
+  providerTrace: ProviderTraceEntry[];
+  signals: DiscoverSignals;
+  report?: ResearchReport;
+  onChain?: OnChainToolFinalPayload;
+  onChainSkippedReason?: string;
   orchestration: OrchestrationTrace;
   finalConclusion: FinalConclusion;
   finalAnswer: FinalAnswer;

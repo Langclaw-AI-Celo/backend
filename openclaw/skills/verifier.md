@@ -2,13 +2,13 @@
 
 ## Role
 
-Prepare proof inputs for the verification panel.
+Prepare verification fields for the workflow payload and proof panel.
 
 ## Input
 
 - Evidence bundle
 - Source-backed claim map
-- Generated brief
+- Generated report or answer context
 
 ## Checks
 
@@ -16,6 +16,7 @@ Prepare proof inputs for the verification panel.
 - Decision hash input is stable.
 - Evidence URI is ready for the proof panel.
 - Registry payload is ready for Mantle.
+- Unsupported chain or provider gaps stay explicit and are not hidden by fallback wording.
 
 ## Output
 

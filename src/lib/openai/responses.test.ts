@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { streamOpenAITextResponse } from "./responses";
+import { getDefaultOpenAIModel, streamOpenAITextResponse } from "./responses";
 import { mockFetch, sseResponse, withEnv } from "../../test/helpers";
+
+test("chat default model falls back to GPT-5.2", async () => {
+  await withEnv({}, async () => {
+    assert.equal(getDefaultOpenAIModel("chat"), "gpt-5.2");
+  });
+});
 
 test("OpenAI streaming preserves whitespace in output deltas", async () => {
   const restore = mockFetch(() =>

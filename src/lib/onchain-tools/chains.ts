@@ -22,6 +22,19 @@ export type ResolvedChainConfig = ChainConfig & {
   id: string;
 };
 
+export type AnalysisChainSource = "product-fallback" | "prompt";
+
+export type UnsupportedChainHint = {
+  id: string;
+  name: string;
+};
+
+export type AnalysisChainResolution = {
+  chain: ResolvedChainConfig;
+  source: AnalysisChainSource;
+  unsupportedChain?: UnsupportedChainHint;
+};
+
 export const defaultChain: ProductChainId = defaultProductChain;
 
 const chains: Record<string, ChainConfig> = {
@@ -136,23 +149,36 @@ export function detectChainWithFallback(
   text: string,
   fallback: string | undefined
 ) {
-  const resolvedFallback = resolveProductChain(fallback).id;
-
-  return detectExplicitChain(text) ?? resolveChain(resolvedFallback);
+  return inferAnalysisChain(text, fallback).chain;
 }
 
 export function detectUnsupportedOnChainChain(text: string) {
-  const chain = detectExplicitChain(text);
-
-  if (!chain || isProductChainId(chain.id)) {
-    return null;
-  }
-
-  return chain;
+  return inferAnalysisChain(text, defaultChain).unsupportedChain ?? null;
 }
 
 export function isSupportedProductChain(chain: string) {
   return isProductChainId(resolveChain(chain).id);
+}
+
+export function inferAnalysisChain(
+  text: string,
+  fallback: string | undefined
+): AnalysisChainResolution {
+  const resolvedFallback = resolveProductChain(fallback).id;
+  const explicitChain = detectExplicitChain(text);
+
+  if (explicitChain) {
+    return {
+      chain: explicitChain,
+      source: "prompt",
+    };
+  }
+
+  return {
+    chain: resolveChain(resolvedFallback),
+    source: "product-fallback",
+    unsupportedChain: detectPotentialUnsupportedChain(text),
+  };
 }
 
 export function isProviderSupportedForChain(
@@ -160,6 +186,10 @@ export function isProviderSupportedForChain(
   provider: string
 ) {
   const resolved = resolveChain(chain);
+
+  if (provider === "nansen" || provider === "surf" || provider === "elfa") {
+    return resolved.id === "mantle";
+  }
 
   if (provider === "goplus") {
     return Boolean(resolved.goPlusId);
@@ -194,6 +224,14 @@ export function getGoPlusChainId(chain: string) {
   return id;
 }
 
+export function getChainLookupTerms(chain: string) {
+  const resolved = resolveChain(chain);
+
+  return [resolved.id, resolved.name, ...resolved.aliases]
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -218,4 +256,79 @@ function detectExplicitChain(text: string) {
   }
 
   return undefined;
+}
+
+function detectPotentialUnsupportedChain(
+  text: string
+): UnsupportedChainHint | undefined {
+  const patterns = [
+    /\bon\s+([a-z][a-z0-9\s-]{1,30}?)\s+(?:dex|pairs?|pools?|tokens?|protocols?|chain|network)\b/i,
+    /\b([a-z][a-z0-9\s-]{1,30}?)\s+(?:chain|network)\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const candidate = normalizeUnsupportedChainCandidate(match?.[1]);
+
+    if (!candidate || isKnownChain(candidate)) {
+      continue;
+    }
+
+    return {
+      id: candidate.replace(/\s+/g, "-"),
+      name: toTitleCase(candidate),
+    };
+  }
+
+  return undefined;
+}
+
+function isKnownChain(candidate: string) {
+  const normalized = candidate.trim().toLowerCase();
+
+  return Object.entries(chains).some(
+    ([key, value]) => key === normalized || value.aliases.includes(normalized)
+  );
+}
+
+function normalizeUnsupportedChainCandidate(value: string | undefined) {
+  const candidate = value?.trim().toLowerCase().replace(/\s+/g, " ");
+
+  if (!candidate) {
+    return undefined;
+  }
+
+  if (candidate.split(" ").length > 3) {
+    return undefined;
+  }
+
+  const stopwords = new Set([
+    "a",
+    "all",
+    "alpha",
+    "current",
+    "dex",
+    "latest",
+    "selected",
+    "supported",
+    "that",
+    "the",
+    "this",
+    "tokens",
+    "without",
+  ]);
+
+  if (stopwords.has(candidate)) {
+    return undefined;
+  }
+
+  return candidate;
+}
+
+function toTitleCase(value: string) {
+  return value
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
 }

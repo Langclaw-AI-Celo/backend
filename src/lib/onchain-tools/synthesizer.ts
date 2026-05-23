@@ -1,5 +1,6 @@
 import { onChainDomainLabels } from "./registry";
 import { summarizePlan } from "./planner";
+import { buildOnChainResearchReport } from "../langclaw/report";
 import type {
   OnChainPlan,
   OnChainToolFinalPayload,
@@ -24,14 +25,26 @@ export function synthesizeOnChainAnswer({
     successful.length > 0
       ? `I ran ${results.length} ${chainName} intelligence tools across ${domainText || "selected domains"} for ${plan.chain}. ${successful.length} tools returned usable evidence.`
       : `I tried ${results.length} ${chainName} intelligence tools for ${plan.chain}, but no provider returned usable evidence.`;
+  const caveat = buildCaveat(failed, plan);
+  const recommendation = buildRecommendation(plan.intent, successful, failed, plan);
+  const report = buildOnChainResearchReport({
+    answer,
+    caveat,
+    generatedAt: new Date().toISOString(),
+    plan: summarizePlan(plan),
+    recommendation,
+    tools: results,
+  });
 
   return {
     answer,
     bullets,
-    caveat: buildCaveat(failed, plan),
-    generatedAt: new Date().toISOString(),
+    caveat,
+    generatedAt: report.asOfUtc,
     plan: summarizePlan(plan),
-    recommendation: buildRecommendation(plan.intent, successful, failed, plan),
+    providerTrace: buildProviderTrace(plan, results),
+    recommendation,
+    report,
     title,
     tools: results,
   };
@@ -39,15 +52,13 @@ export function synthesizeOnChainAnswer({
 
 export function formatOnChainAnswer(payload: OnChainToolFinalPayload) {
   const lines = [
-    `## ${payload.title}`,
-    "",
     payload.answer,
     "",
-    ...payload.bullets.map((bullet) => `- ${bullet}`),
+    ...payload.bullets.slice(0, 5).map((bullet) => `- ${bullet}`),
     "",
-    `**Recommendation:** ${payload.recommendation}`,
+    `Recommendation: ${payload.recommendation}`,
     "",
-    `**Caveat:** ${payload.caveat}`,
+    `Caveat: ${payload.caveat}`,
   ];
 
   return lines.filter(Boolean).join("\n");
@@ -56,6 +67,10 @@ export function formatOnChainAnswer(payload: OnChainToolFinalPayload) {
 function titleFor(intent: string, chainName: string) {
   if (intent === "wallet") {
     return `${chainName} wallet intelligence`;
+  }
+
+  if (intent === "smart-money") {
+    return `${chainName} smart money analysis`;
   }
 
   if (intent === "security") {
@@ -117,6 +132,10 @@ function buildRecommendation(
 
   if (!successful.length) {
     return `Do not make a decision from this run. Add a ${chainName} token address, wallet address, or configured Dune query and run it again.`;
+  }
+
+  if (intent === "smart-money") {
+    return `Treat this as directional smart-money research only. Confirm the holder flow with a second on-chain source before framing it as verified accumulation.`;
   }
 
   if (intent === "trading-signal") {
@@ -204,4 +223,34 @@ function buildWatchAction(
   }
 
   return `add the strongest signal to the ${chainName} Alpha watchlist and record the decision proof.`;
+}
+
+function buildProviderTrace(plan: OnChainPlan, results: OnChainToolResult[]) {
+  const traces = [...(plan.providerTrace ?? [])];
+
+  for (const result of results) {
+    const attempted = result.attemptedProviders ?? [];
+    const failedAttempts = attempted.slice(0, Math.max(0, attempted.length - 1));
+
+    for (const provider of failedAttempts) {
+      traces.push({
+        message: result.fallbackReason ?? `${provider} fallback was triggered.`,
+        provider,
+        scope: "legacy-fallback",
+        status: "failed",
+      });
+    }
+
+    traces.push({
+      message:
+        result.status === "success"
+          ? result.summary
+          : result.error ?? result.summary,
+      provider: result.provider,
+      scope: result.scope ?? "legacy-default",
+      status: result.status === "success" ? "success" : "failed",
+    });
+  }
+
+  return traces;
 }

@@ -11,8 +11,9 @@ Run live discovery through TypeScript provider tools.
 
 ## Provider Tools
 
-- X recent search
-- X results through Brave Search `site:x.com`
+- Surf web discovery
+- Elfa narrative discovery
+- X results through Brave Search `site:x.com` when public fallback is needed
 - GitHub repository search
 - Tavily docs search
 - Brave Search web fallback
@@ -24,3 +25,4 @@ Run live discovery through TypeScript provider tools.
 - Raw provider results
 - Provider errors
 - Live source URLs
+- Coverage gaps that downstream agents should surface honestly

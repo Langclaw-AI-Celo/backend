@@ -111,7 +111,7 @@ test("direct chat requires wallet auth", async () => {
   assert.match((await response.json() as { error: string }).error, /required/);
 });
 
-test("on-chain tool mode rejects explicit unsupported chains before wallet auth", async () => {
+test("legacy on-chain mode now aliases to research and still requires wallet auth", async () => {
   const response = await handleChatStream(
     new Request("http://localhost/api/chat/stream", {
       body: JSON.stringify({
@@ -123,9 +123,112 @@ test("on-chain tool mode rejects explicit unsupported chains before wallet auth"
   );
   const payload = (await response.json()) as { error: string };
 
-  assert.equal(response.status, 400);
-  assert.match(payload.error, /supports Mantle and Celo only/);
-  assert.match(payload.error, /Base/);
+  assert.equal(response.status, 401);
+  assert.match(payload.error, /required/);
+});
+
+test("legacy on-chain mode aliases to research and returns a hybrid result payload", async () => {
+  const restore = mockFetch((url) => {
+    const parsed = new URL(url);
+
+    if (isSupabaseRequest(url)) {
+      if (parsed.pathname.includes("/rpc/langclaw_usage_reserve_balance")) {
+        return jsonResponse([
+          {
+            balance_after_neuron: "999999999999988000",
+            balance_before_neuron: "1000000000000000000",
+          },
+        ]);
+      }
+
+      if (parsed.pathname.includes("/rpc/langclaw_usage_finalize_reservation")) {
+        return jsonResponse([
+          {
+            balance_after_neuron: "999999999999984400",
+            charged_neuron: "1600",
+            completion_tokens: 80,
+            prompt_tokens: 120,
+            released_neuron: "0",
+            status: "charged",
+          },
+        ]);
+      }
+
+      return supabaseWalletResponse();
+    }
+
+    if (parsed.hostname === "www.hackquest.io") {
+      return new Response(
+        '<html><body><a href="/hackathons/mantle-turing-test">Mantle Turing Test Hackathon</a></body></html>',
+        {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+          },
+          status: 200,
+        }
+      );
+    }
+
+    if (parsed.hostname === "api.dexscreener.com") {
+      return jsonResponse({
+        pairs: [
+          {
+            baseToken: { symbol: "MNT" },
+            chainId: "mantle",
+            dexId: "agni",
+            liquidity: { usd: 125000 },
+            priceUsd: "1.01",
+          },
+        ],
+      });
+    }
+
+    return jsonResponse({ ok: true });
+  });
+
+  try {
+    await withEnv(authEnv, async () => {
+      const response = await handleChatStream(
+        new Request("http://localhost/api/chat/stream", {
+          body: JSON.stringify({
+            message: "Detect liquidity anomalies on Mantle DEX pairs",
+            toolMode: "onchain",
+            wallet: await buildTestWallet(),
+          }),
+          method: "POST",
+        })
+      );
+      const events = await readNdjson(response);
+      const result = events.find((event) => event.type === "result");
+      const payload = result?.payload as
+        | {
+            signals?: {
+              combined?: { status?: string };
+              onchain?: { status?: string };
+              social?: { status?: string };
+            };
+            finalAnswer?: { answerMarkdown?: string };
+            onChain?: { tools?: Array<{ provider?: string }> };
+            onChainSkippedReason?: string;
+          }
+        | undefined;
+
+      assert.equal(response.status, 200);
+      assert.ok(events.some((event) => event.type === "progress"));
+      assert.ok(events.some((event) => event.type === "tool_call"));
+      assert.ok(events.some((event) => event.type === "tool_result"));
+      assert.ok(events.some((event) => event.type === "result"));
+      assert.equal(events.some((event) => event.type === "tool_final"), false);
+      assert.equal(typeof payload?.finalAnswer?.answerMarkdown, "string");
+      assert.ok(payload?.onChain?.tools?.some((tool) => tool.provider === "dexscreener"));
+      assert.equal(payload?.onChainSkippedReason, undefined);
+      assert.equal(payload?.signals?.social?.status, "partial");
+      assert.equal(payload?.signals?.onchain?.status, "success");
+      assert.equal(payload?.signals?.combined?.status, "partial");
+    });
+  } finally {
+    restore();
+  }
 });
 
 test("direct chat honors supported body.model and returns metadata", async () => {
@@ -322,7 +425,7 @@ test("agent mode passes requested model into workflow options", () => {
   assert.equal(typeof options.onEvent, "function");
 });
 
-test("on-chain tool mode streams plan, calls, results, and final payload", async () => {
+test("research mode streams on-chain enrichment events and nests the result payload", async () => {
   let reserveCalled = false;
   let finalizeCalled = false;
   let finalizedCharge: unknown;
@@ -395,8 +498,8 @@ test("on-chain tool mode streams plan, calls, results, and final payload", async
       const response = await handleChatStream(
         new Request("http://localhost/api/chat/stream", {
           body: JSON.stringify({
-            message: "Find trending tokens on Mantle",
-            toolMode: "onchain",
+            message: "Detect liquidity anomalies on Mantle DEX pairs",
+            toolMode: "research",
             wallet: await buildTestWallet(),
           }),
           method: "POST",
@@ -417,10 +520,13 @@ test("on-chain tool mode streams plan, calls, results, and final payload", async
       assert.ok(toolEvent?.sourceUrl);
       assert.ok(toolEvent?.data);
 
-      const toolFinal = events.find((event) => event.type === "tool_final");
-      const payload = toolFinal?.payload as
+      const result = events.find((event) => event.type === "result");
+      const payload = result?.payload as
         | {
-          tools?: Array<{ data?: unknown }>;
+          onChain?: {
+            tools?: Array<{ data?: unknown }>;
+          };
+            finalAnswer?: { answerMarkdown?: string };
             usage?: {
               chargedNeuron?: string;
               costSource?: string;
@@ -432,15 +538,10 @@ test("on-chain tool mode streams plan, calls, results, and final payload", async
           }
         | undefined;
 
-      assert.ok(payload?.tools?.some((tool) => tool.data));
+      assert.ok(payload?.onChain?.tools?.some((tool) => tool.data));
+      assert.equal(typeof payload?.finalAnswer?.answerMarkdown, "string");
       assert.equal(payload?.usage?.chargedNeuron, finalizedCharge);
-      assert.equal(payload?.usage?.costSource, "token-estimate");
-      assert.ok((payload?.usage?.inputTokens ?? 0) > 0);
-      assert.ok((payload?.usage?.outputTokens ?? 0) > 0);
-      assert.equal(
-        payload?.usage?.totalTokens,
-        (payload?.usage?.inputTokens ?? 0) + (payload?.usage?.outputTokens ?? 0)
-      );
+      assert.equal(payload?.usage?.costSource, "reserved-estimate");
       assert.equal(payload?.usage?.status, "charged");
       assert.equal(reserveCalled, true);
       assert.equal(finalizeCalled, true);

@@ -83,13 +83,11 @@ test("prompt chain detection prefers explicit chain over UI fallback", () => {
   assert.equal(fallbackCelo.id, "celo");
 });
 
-test("on-chain guard detects explicit unsupported networks only", () => {
-  const unsupported = detectUnsupportedOnChainChain(
-    "Find trending tokens on Base"
+test("on-chain guard allows explicitly supported analysis networks", () => {
+  assert.equal(
+    detectUnsupportedOnChainChain("Find trending tokens on Base"),
+    null
   );
-
-  assert.equal(unsupported?.id, "base");
-  assert.equal(unsupported?.name, "Base");
   assert.equal(
     detectUnsupportedOnChainChain("Find smart-money accumulation on Celo"),
     null
@@ -115,7 +113,13 @@ test("Celo plans skip GoPlus and include a provider-gap caveat", () => {
 });
 
 test("planner routes Mantle alpha prompts into smart-money and yield domains", async () => {
-  await withEnv({ DUNE_DEFAULT_QUERY_ID: "123456" }, async () => {
+  await withEnv(
+    {
+      DUNE_DEFAULT_QUERY_ID: "123456",
+      NANSEN_API_KEY: "nansen-test-key",
+      NANSEN_ENABLED: "true",
+    },
+    async () => {
     const smartMoneyPlan = planOnChainTools({
       context: [],
       message: "Find smart-money accumulation on Mantle query 123456",
@@ -132,6 +136,7 @@ test("planner routes Mantle alpha prompts into smart-money and yield domains", a
         (item) => item.command.domain === "smart_money"
       )
     );
+    assert.equal(smartMoneyPlan.commands[0]?.command.provider, "nansen");
     assert.ok(
       yieldPlan.commands.some(
         (item) =>
@@ -144,7 +149,106 @@ test("planner routes Mantle alpha prompts into smart-money and yield domains", a
         (item) => item.command.id === "defi_tvl.defillama_protocol_detail"
       )
     );
+    }
+  );
+});
+
+test("planner does not classify smart-money token prompts as wallet analysis by default", async () => {
+  await withEnv(
+    {
+      DUNE_DEFAULT_QUERY_ID: "123456",
+      NANSEN_API_KEY: "nansen-test-key",
+      NANSEN_ENABLED: "true",
+    },
+    async () => {
+      const plan = planOnChainTools({
+        context: [],
+        message: "Analyze smart-money accumulation for MNT on Mantle",
+      });
+
+      assert.equal(plan.chain, "mantle");
+      assert.equal(plan.intent, "smart-money");
+      assert.match(plan.query ?? "", /\bMNT\b/);
+      assert.equal(plan.walletAddress, undefined);
+      assert.ok(
+        plan.commands.some(
+          (item) =>
+            item.command.domain === "smart_money" &&
+            item.command.provider === "nansen"
+        )
+      );
+    }
+  );
+});
+
+test("planner routes generic liquidity-anomaly prompts into GeckoTerminal discovery plus chain-scoped DEX search", () => {
+  const plan = planOnChainTools({
+    chain: "mantle",
+    context: [],
+    message: "Detect liquidity anomalies on Base DEX pairs",
   });
+
+  assert.equal(plan.chain, "base");
+  assert.equal(plan.query, "Base");
+  assert.ok(
+    plan.commands.some((item) => item.command.provider === "geckoterminal")
+  );
+  assert.ok(
+    plan.commands.some((item) => item.command.id === "pair_liquidity.liquidity_pair_search")
+  );
+});
+
+test("planner keeps Celo liquidity anomaly intent while adding DEX search fallback", () => {
+  const plan = planOnChainTools({
+    chain: "mantle",
+    context: [],
+    message: "Detect liquidity anomalies on Celo DEX pairs",
+  });
+
+  assert.equal(plan.chain, "celo");
+  assert.equal(plan.intent, "trading-signal");
+  assert.equal(plan.query, "Celo");
+  assert.ok(
+    plan.commands.some(
+      (item) => item.command.id === "pair_liquidity.geckoterminal_network_trending_pools"
+    )
+  );
+  assert.ok(
+    plan.commands.some((item) => item.command.id === "pair_liquidity.liquidity_pair_search")
+  );
+});
+
+test("planner records premium provider scope skips for Celo", () => {
+  const plan = planOnChainTools({
+    chain: "celo",
+    context: [],
+    message: "Find smart-money accumulation on Celo",
+  });
+
+  assert.ok(
+    plan.providerTrace?.some(
+      (entry) =>
+        entry.provider === "nansen" &&
+        entry.status === "skipped" &&
+        entry.scope === "out-of-scope"
+    )
+  );
+  assert.ok(
+    plan.providerTrace?.some(
+      (entry) =>
+        entry.provider === "surf" &&
+        entry.status === "skipped" &&
+        entry.scope === "out-of-scope"
+    )
+  );
+  assert.ok(
+    plan.providerTrace?.some(
+      (entry) =>
+        entry.provider === "elfa" &&
+        entry.status === "skipped" &&
+        entry.scope === "out-of-scope"
+    )
+  );
 });
 
 test("planner only requests DeFiLlama protocol detail when a concrete slug is present", () => {
@@ -166,6 +270,20 @@ test("planner only requests DeFiLlama protocol detail when a concrete slug is pr
     protocolPlan.commands.some(
       (item) => item.command.executor === "defillama.protocol"
     )
+  );
+});
+
+test("planner keeps meaningful DeFi ranking query context", () => {
+  const plan = planOnChainTools({
+    context: [],
+    message: "Rank Mantle protocols by TVL and yield momentum",
+  });
+
+  assert.equal(plan.rawQuery, "Rank Mantle protocols by TVL and yield momentum");
+  assert.equal(plan.query, plan.rawQuery);
+  assert.equal(plan.intent, "defi");
+  assert.ok(
+    plan.commands.some((item) => item.command.domain === "yield_pools")
   );
 });
 

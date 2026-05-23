@@ -1,10 +1,14 @@
 import {
-  detectChainWithFallback,
+  getChainLookupTerms,
+  inferAnalysisChain,
   isProviderSupportedForChain,
 } from "./chains";
 import { normalizeProtocolSlug } from "./providers/defillama";
+import { resolveProductChain } from "../chain-config";
+import { readPremiumProviderConfig } from "../premium-providers";
 import {
   getCommandsByDomain,
+  onChainCommandById,
   onChainCommands,
   onChainDomainLabels,
 } from "./registry";
@@ -30,7 +34,9 @@ export function planOnChainTools({
   message: string;
 }): OnChainPlan {
   const text = buildPlanningText(message, context);
-  const chain = detectChainWithFallback(message, requestedChain);
+  const productChain = resolveProductChain(requestedChain);
+  const chainResolution = inferAnalysisChain(message, productChain.id);
+  const chain = chainResolution.chain;
   const messageAddresses = extractAddresses(message);
   const addresses = messageAddresses.length ? messageAddresses : extractAddresses(text);
   const addressInferenceText = messageAddresses.length ? message : text;
@@ -40,14 +46,27 @@ export function planOnChainTools({
     messageIntent === "token-discovery" ? text : message,
     intent
   );
-  const query = buildQuery(message, addresses);
+  const rawQuery = buildRawQuery(message, addresses);
+  const focusedQuery = buildFocusedQuery(rawQuery, chain.id);
   const tokenAddress = inferTokenAddress(addressInferenceText, addresses);
   const walletAddress = inferWalletAddress(addressInferenceText, addresses, tokenAddress);
+  const pairFocused = isPairFocused(addressInferenceText);
+  const query = isGenericLiquidityAnomalyRequest({
+    intent,
+    pairFocused,
+    focusedQuery,
+    tokenAddress,
+    walletAddress,
+  })
+    ? chain.name
+    : focusedQuery ?? rawQuery;
   const planned = selectCommands({
     chain: chain.id,
     domains,
     intent,
-    pairFocused: isPairFocused(addressInferenceText),
+    pairFocused,
+    focusedQuery,
+    rawQuery,
     query,
     tokenAddress,
     walletAddress,
@@ -57,11 +76,17 @@ export function planOnChainTools({
     chain: chain.id as OnChainPlan["chain"],
     chainId: chain.etherscanId,
     chainName: chain.name,
+    analysisSource: chainResolution.source,
     commands: planned,
     domainCount: onChainDomains.length,
     intent,
     nativeSymbol: chain.nativeSymbol ?? "ETH",
     providerGaps: buildProviderGaps(chain.id, domains),
+    providerTrace: buildPlanProviderTrace(chain.id),
+    productChain: productChain.id,
+    productChainId: productChain.chainId,
+    productChainName: productChain.name,
+    rawQuery,
     query,
     registryCommandCount: onChainCommands.length,
     tokenAddress,
@@ -138,6 +163,9 @@ function selectDomains(text: string, intent: string): OnChainDomain[] {
     if (intent === "wallet") {
       domains.add("wallet_portfolio");
       domains.add("smart_money");
+    } else if (intent === "smart-money") {
+      domains.add("smart_money");
+      domains.add("market_data");
     } else {
       domains.add("token_discovery");
       domains.add("market_data");
@@ -153,6 +181,8 @@ function selectCommands({
   domains,
   intent,
   pairFocused,
+  focusedQuery,
+  rawQuery,
   query,
   tokenAddress,
   walletAddress,
@@ -161,10 +191,46 @@ function selectCommands({
   domains: OnChainDomain[];
   intent: string;
   pairFocused: boolean;
+  focusedQuery?: string;
+  rawQuery?: string;
   query?: string;
   tokenAddress?: string;
   walletAddress?: string;
 }) {
+  if (pairFocused && tokenAddress) {
+    return pickCommands(
+      [
+        "pair_liquidity.geckoterminal_pool_data",
+        "pair_liquidity.pair_details",
+        "pair_liquidity.token_pools",
+        "pair_liquidity.liquidity_risk_synthesis",
+        "trading_signal_analysis.trading_signal_synthesis",
+      ],
+      intent
+    );
+  }
+
+  if (
+    isGenericLiquidityAnomalyRequest({
+      intent,
+      pairFocused,
+      focusedQuery,
+      tokenAddress,
+      walletAddress,
+    })
+  ) {
+    return pickCommands(
+      [
+        "pair_liquidity.geckoterminal_network_trending_pools",
+        "pair_liquidity.geckoterminal_network_new_pools",
+        "pair_liquidity.liquidity_pair_search",
+        "token_discovery.latest_boosts",
+        "trading_signal_analysis.trading_signal_synthesis",
+      ],
+      intent
+    );
+  }
+
   const candidates = domains.flatMap((domain) => getCommandsByDomain(domain));
   const selected: OnChainPlannedCommand[] = [];
 
@@ -173,6 +239,7 @@ function selectCommands({
       !canRun(command, {
         chain,
         pairFocused,
+        rawQuery,
         query,
         tokenAddress,
         walletAddress,
@@ -213,6 +280,12 @@ function fallbackCommands(intent: string) {
           "wallet_portfolio.wallet_recent_transfers",
           "wallet_portfolio.portfolio_signal_synthesis",
         ]
+      : intent === "smart-money"
+        ? [
+            "smart_money.nansen_smart_money_netflow",
+            "smart_money.smart_money_dune",
+            "smart_money.smart_money_signal_synthesis",
+          ]
       : [
           "token_discovery.trending_boosted_tokens",
           "token_discovery.latest_token_profiles",
@@ -233,6 +306,7 @@ function canRun(
   values: {
     chain: string;
     pairFocused?: boolean;
+    rawQuery?: string;
     query?: string;
     tokenAddress?: string;
     walletAddress?: string;
@@ -241,6 +315,10 @@ function canRun(
   const required = command.paramsSchema.required ?? [];
 
   if (!isProviderSupportedForChain(values.chain, command.provider)) {
+    return false;
+  }
+
+  if (isPremiumProvider(command.provider) && !readPremiumProviderConfig(command.provider).enabled) {
     return false;
   }
 
@@ -270,11 +348,46 @@ function canRun(
     }
 
     if (field === "queryId") {
-      return /\bquery\s+\d{3,12}\b/i.test(values.query ?? "") || Boolean(process.env.DUNE_DEFAULT_QUERY_ID);
+      return (
+        /\bquery\s+\d{3,12}\b/i.test(values.rawQuery ?? values.query ?? "") ||
+        Boolean(process.env.DUNE_DEFAULT_QUERY_ID)
+      );
     }
 
     return true;
   });
+}
+
+function buildPlanProviderTrace(chain: string) {
+  if (chain !== "mantle") {
+    return [
+      skippedPremiumTrace("nansen"),
+      skippedPremiumTrace("surf"),
+      skippedPremiumTrace("elfa"),
+    ];
+  }
+
+  return (["nansen", "surf", "elfa"] as const)
+    .filter((provider) => !readPremiumProviderConfig(provider).enabled)
+    .map((provider) => ({
+      message: `${provider.toUpperCase()} is not configured for this backend.`,
+      provider,
+      scope: "mantle-premium" as const,
+      status: "skipped" as const,
+    }));
+}
+
+function skippedPremiumTrace(provider: "nansen" | "surf" | "elfa") {
+  return {
+    message: "Premium on-chain provider rollout is Mantle-only in this phase.",
+    provider,
+    scope: "out-of-scope" as const,
+    status: "skipped" as const,
+  };
+}
+
+function isPremiumProvider(provider: string): provider is "nansen" | "surf" | "elfa" {
+  return provider === "nansen" || provider === "surf" || provider === "elfa";
 }
 
 function buildProviderGaps(chain: string, domains: OnChainDomain[]) {
@@ -300,8 +413,16 @@ function reasonFor(command: OnChainCommand, intent: string) {
 }
 
 function classifyIntent(text: string) {
-  if (/\b(wallet|portfolio|balance|address|pnl|smart[-\s]money|whale)\b/i.test(text)) {
+  if (/\b(wallet|portfolio|balance|address|pnl)\b/i.test(text)) {
     return "wallet";
+  }
+
+  if (
+    /\b(smart[-\s]money|whale|accumulat\w*|holder(?:\s+flow)?|netflow|token flow)\b/i.test(
+      text
+    )
+  ) {
+    return "smart-money";
   }
 
   if (/\b(tvl|yield|defi|stablecoin|protocol)\b/i.test(text)) {
@@ -379,7 +500,7 @@ function inferWalletAddress(
   return addresses.find((address) => address !== tokenAddress);
 }
 
-function buildQuery(message: string, addresses: string[]) {
+function buildRawQuery(message: string, addresses: string[]) {
   let query = message.trim();
 
   for (const address of addresses) {
@@ -389,4 +510,107 @@ function buildQuery(message: string, addresses: string[]) {
   query = query.replace(/\s+/g, " ").trim();
 
   return query || undefined;
+}
+
+function buildFocusedQuery(
+  rawQuery: string | undefined,
+  chain: string
+) {
+  if (!rawQuery) {
+    return undefined;
+  }
+
+  const uppercaseTicker = Array.from(
+    rawQuery.matchAll(/\b[A-Z][A-Z0-9]{1,9}\b/g)
+  )
+    .map((match) => match[0])
+    .find((value) => !genericTickerStopwords.has(value));
+
+  if (uppercaseTicker) {
+    return uppercaseTicker;
+  }
+
+  let cleaned = rawQuery;
+
+  for (const term of getChainLookupTerms(chain)) {
+    cleaned = cleaned.replace(
+      new RegExp(`\\b${escapeRegExp(term)}\\b`, "ig"),
+      " "
+    );
+  }
+
+  cleaned = cleaned
+    .replace(/\bquery\s+\d{3,12}\b/gi, " ")
+    .replace(/\b(find|show|detect|analy[sz]e?|check|screen|rank|compare|track|watch|scan|read|review|inspect)\b/gi, " ")
+    .replace(/\b(smart[-\s]?money|accumulat\w*|liquidity|anomal(?:y|ies)|dex|pair|pairs|pool|pools|token|tokens|price|market|volume|yield|momentum|trend(?:ing)?|new|holders?|security|risk|signal|signals|trade|trading|entry|exit|flow|flows|protocol|protocols|detail|details|tvl|wallet)\b/gi, " ")
+    .replace(/\b(at|by|for|from|in|into|of|on|to|and|with|the|my|a|an)\b/gi, " ")
+    .replace(/[.,:;()[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || focusedQueryConnectorStopwords.has(cleaned.toLowerCase())) {
+    return undefined;
+  }
+
+  return cleaned;
+}
+
+function isGenericLiquidityAnomalyRequest({
+  intent,
+  pairFocused,
+  focusedQuery,
+  tokenAddress,
+  walletAddress,
+}: {
+  intent: string;
+  pairFocused: boolean;
+  focusedQuery?: string;
+  tokenAddress?: string;
+  walletAddress?: string;
+}) {
+  return (
+    intent === "trading-signal" &&
+    pairFocused &&
+    !tokenAddress &&
+    !walletAddress &&
+    !focusedQuery
+  );
+}
+
+function pickCommands(ids: string[], intent: string) {
+  return ids
+    .map((id) => onChainCommandById.get(id))
+    .filter((command): command is OnChainCommand => Boolean(command))
+    .map((command) => ({
+      command,
+      reason: reasonFor(command, intent),
+    }));
+}
+
+const genericTickerStopwords = new Set([
+  "APY",
+  "DEX",
+  "ETH",
+  "EVM",
+  "TVL",
+  "USD",
+]);
+
+const focusedQueryConnectorStopwords = new Set([
+  "and",
+  "at",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "of",
+  "on",
+  "the",
+  "to",
+  "with",
+]);
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
