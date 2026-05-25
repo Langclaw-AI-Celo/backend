@@ -32,6 +32,7 @@ import type {
   ResearchReport,
   SourceCard,
   WorkflowChainContext,
+  AlphaSignal,
   ZeroGChainProof,
   ZeroGProof,
   ZeroGStorageProof,
@@ -51,9 +52,10 @@ type PersistProofInput = {
   finalConclusion: FinalConclusion;
   finalAnswer: FinalAnswer;
   agentOutputs: AgentOutputs;
+  alphaSignal?: AlphaSignal;
 };
 
-type PersistGenericMantleProofInput = {
+type PersistGenericProductProofInput = {
   chain?: ProductChainId;
   evidence: Record<string, unknown>;
   generatedAt: string;
@@ -125,14 +127,14 @@ export async function persistLangclawProof(
   };
 }
 
-export async function persistGenericMantleProof({
-  chain: chainInput = "mantle",
+export async function persistGenericProductProof({
+  chain: chainInput = "celo",
   evidence,
   generatedAt,
   runId,
   signalType,
   topic,
-}: PersistGenericMantleProofInput): Promise<ZeroGProof> {
+}: PersistGenericProductProofInput): Promise<ZeroGProof> {
   const chainConfig = resolveProductChain(chainInput);
   const evidenceBundle = {
     schema: "langclaw.onchain-tools.evidence.v1",
@@ -173,6 +175,7 @@ function buildEvidenceBundle(input: PersistProofInput) {
     orchestrationSteps: input.steps,
     signals: input.signals,
     report: input.report,
+    alphaSignal: input.alphaSignal,
     agentOutputs: input.agentOutputs,
     finalConclusion: input.finalConclusion,
     finalAnswer: input.finalAnswer,
@@ -296,9 +299,11 @@ async function anchorAgentDecision({
       args: [agentId, runId, decisionHash, evidenceUri, signalType],
       account,
     });
-    const txHash = await walletClient.writeContract(
-      withCeloFeeCurrency(chainConfig, request)
-    );
+    const txHash = await writeContractWithCeloFeeFallback({
+      chainConfig,
+      request,
+      walletClient: walletClient as unknown as WriteContractClient,
+    });
     const explorerUrl = `${explorerBase}/tx/${txHash}`;
     submittedTxHash = txHash;
     submittedExplorerUrl = explorerUrl;
@@ -469,9 +474,11 @@ async function recordErc8004ReputationFeedback({
       args: [agentId, 100n, 0, tag1, tag2, endpoint, evidenceUri, decisionHash],
       account: feedbackAccount,
     });
-    const txHash = await walletClient.writeContract(
-      withCeloFeeCurrency(chainConfig, request as Record<string, unknown>) as any
-    );
+    const txHash = await writeContractWithCeloFeeFallback({
+      chainConfig,
+      request: request as Record<string, unknown>,
+      walletClient: walletClient as unknown as WriteContractClient,
+    });
     submittedTxHash = txHash;
     submittedExplorerUrl = `${explorerBase}/tx/${txHash}`;
     const receipt = await waitForSubmittedTransactionReceipt({
@@ -535,11 +542,13 @@ export async function waitForSubmittedTransactionReceipt({
   publicClient,
   txHash,
   attempts = readPositiveInt(
-    process.env.MANTLE_CHAIN_RECEIPT_POLL_ATTEMPTS,
+    process.env.CELO_CHAIN_RECEIPT_POLL_ATTEMPTS ??
+      process.env.MANTLE_CHAIN_RECEIPT_POLL_ATTEMPTS,
     defaultReceiptPollAttempts
   ),
   intervalMs = readPositiveInt(
-    process.env.MANTLE_CHAIN_RECEIPT_POLL_INTERVAL_MS,
+    process.env.CELO_CHAIN_RECEIPT_POLL_INTERVAL_MS ??
+      process.env.MANTLE_CHAIN_RECEIPT_POLL_INTERVAL_MS,
     defaultReceiptPollIntervalMs
   ),
 }: {
@@ -635,7 +644,7 @@ function readReputationRegistryAddress(chain: ProductChainConfig) {
   return readChainEnv(chain, "ERC8004_REPUTATION_REGISTRY_ADDRESS", fallback);
 }
 
-function inferSignalType(topic: string, chain = getProductChain("mantle")) {
+function inferSignalType(topic: string, chain = getProductChain("celo")) {
   if (/\b(smart[-\s]money|whale|accumulat\w*|holder|flow)\b/i.test(topic)) {
     return "smart-money";
   }
@@ -702,6 +711,54 @@ function withCeloFeeCurrency<T extends Record<string, unknown>>(
     ...request,
     feeCurrency: chainConfig.billingCurrency.feeCurrencyAddress,
   } as T;
+}
+
+type WriteContractClient = {
+  writeContract: (request: Record<string, unknown>) => Promise<Hex>;
+};
+
+export async function writeContractWithCeloFeeFallback<T extends Record<string, unknown>>({
+  chainConfig,
+  request,
+  walletClient,
+}: {
+  chainConfig: ProductChainConfig;
+  request: T;
+  walletClient: WriteContractClient;
+}) {
+  const requestWithFeeCurrency = withCeloFeeCurrency(chainConfig, request);
+
+  try {
+    return await walletClient.writeContract(requestWithFeeCurrency);
+  } catch (error) {
+    if (
+      !shouldRetryWithoutCeloFeeCurrency(
+        chainConfig,
+        requestWithFeeCurrency,
+        error
+      )
+    ) {
+      throw error;
+    }
+
+    return walletClient.writeContract(request);
+  }
+}
+
+function shouldRetryWithoutCeloFeeCurrency(
+  chainConfig: ProductChainConfig,
+  request: Record<string, unknown>,
+  error: unknown
+) {
+  if (chainConfig.id !== "celo" || !("feeCurrency" in request)) {
+    return false;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+
+  return /fee[-\s]?currency|gas required exceeds allowance|allowance \(0\)|insufficient.+fee/i.test(
+    message
+  );
 }
 
 function toBytes32Tag(value: string): Hex {

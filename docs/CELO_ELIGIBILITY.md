@@ -22,6 +22,7 @@ This document tracks the repo-side work needed to keep Langclaw eligible for the
 | Current Celo ERC-8004 agent ID | `9109` |
 | Current Celo agent wallet | `0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c` |
 | Current ERC-8004 registration tx | `0x1b7cb74378db42551a3cbc81dcd560f337df1593d4ef1cd70ee44ff269bdc7f3` |
+| Latest Celo decision proof | `#0` smart-money, tx `0x0e48bd059c782dd59a7834279388e0b2d305f9aba758c8fdb412e8eb55d2dc7d` |
 
 ## Current Verification Status
 
@@ -29,12 +30,13 @@ This document tracks the repo-side work needed to keep Langclaw eligible for the
 - `LangclawTradingJournal`: verified on Celoscan with `solc 0.8.35`, optimizer `200`, `viaIR: true`
 - `LangclawUsageVault`: live Celo vault is now the USDT-backed deployment at `0x837a2948586de4e7638c742f99e520ffc049bcf7`, verified on Celoscan
 - Legacy Celo vault: the older native-only deployment at `0x6e1f381458229e8d1ee66d2a0121d4017596b97d` remains verified for historical reference via `backend/verification/celo-legacy-vault/src/LangclawUsageVault.sol`
+- `LangclawRegistry` now has a recorded Celo demo decision for agent `9109`: decision `#0`, signal `smart-money`, tx `0x0e48bd059c782dd59a7834279388e0b2d305f9aba758c8fdb412e8eb55d2dc7d`
 
 ## Remaining Eligibility Gaps
 
 - `Self Agent ID` is still not registered in the current environment.
 - Verified Self registration still needs `CELO_SELF_HUMAN_PROOF` and `CELO_SELF_HUMAN_PROVIDER_DATA` from the Self proof flow.
-- Public GitHub proof is evaluated from the actual GitHub organization and repositories. This local workspace snapshot is not a Git clone, so missing local `git remote origin` metadata is not treated as a contract blocker.
+- Public GitHub proof is evaluated from the actual GitHub organization and repositories. Backend and frontend are local Git clones with public origins. Optional `contracts` and `.github` repos should be verified separately if they are part of the public submission.
 
 ## Commands
 

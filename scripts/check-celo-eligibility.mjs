@@ -44,6 +44,13 @@ const pending = [];
 const manual = [];
 
 for (const repo of repos) {
+  if (!existsSync(repo.path)) {
+    manual.push(
+      `${repo.name}: local folder is not present in this split workspace; verify this repo separately if it is part of the public submission.`
+    );
+    continue;
+  }
+
   const licensePath = join(repo.path, "LICENSE");
   if (existsSync(licensePath)) {
     eligible.push(`${repo.name}: LICENSE present`);

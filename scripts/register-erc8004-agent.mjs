@@ -204,9 +204,11 @@ const { request, result: simulatedAgentId } =
     account,
   });
 
-const hash = await walletClient.writeContract(
-  withCeloFeeCurrency(chainConfig, request)
-);
+const hash = await writeContractWithCeloFeeFallback({
+  chainConfig,
+  request,
+  walletClient,
+});
 console.log(`Registration tx: ${hash}`);
 console.log(`Explorer: ${explorerBase}/tx/${hash}`);
 
@@ -364,4 +366,34 @@ function withCeloFeeCurrency(chainConfig, request) {
     ...request,
     feeCurrency: chainConfig.billingCurrency.feeCurrencyAddress,
   };
+}
+
+async function writeContractWithCeloFeeFallback({
+  chainConfig,
+  request,
+  walletClient,
+}) {
+  const requestWithFeeCurrency = withCeloFeeCurrency(chainConfig, request);
+
+  try {
+    return await walletClient.writeContract(requestWithFeeCurrency);
+  } catch (error) {
+    if (
+      chainConfig.id !== "celo" ||
+      !("feeCurrency" in requestWithFeeCurrency) ||
+      !isFeeCurrencyPaymentError(error)
+    ) {
+      throw error;
+    }
+
+    return walletClient.writeContract(request);
+  }
+}
+
+function isFeeCurrencyPaymentError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+
+  return /fee[-\s]?currency|gas required exceeds allowance|allowance \(0\)|insufficient.+fee/i.test(
+    message
+  );
 }
