@@ -108,10 +108,12 @@ if (agentWallet && agentId && agentTx) {
 
 const selfAgentId = readChainEnv(celo, "SELF_AGENT_ID", "");
 const selfAgentTx = readChainEnv(celo, "SELF_AGENT_ONCHAIN_TX", "");
+let selfAgentRegistered = false;
 
 if (selfAgentId && selfAgentTx) {
   const receipt = await rpc("eth_getTransactionReceipt", [selfAgentTx]).catch(() => null);
   if (receipt?.status === "0x1") {
+    selfAgentRegistered = true;
     eligible.push(`Self Agent ID: id ${selfAgentId}, tx ${selfAgentTx}`);
   } else {
     pending.push(`Self Agent ID: tx receipt missing or failed for ${selfAgentTx}`);
@@ -125,6 +127,8 @@ if (
   process.env.CELO_SELF_HUMAN_PROVIDER_DATA?.trim()
 ) {
   eligible.push("Self human proof inputs are loaded in process env");
+} else if (selfAgentRegistered) {
+  eligible.push("Self human proof: satisfied by verified Self Agent ID registration");
 } else {
   pending.push("Self human proof inputs are not loaded in process env");
 }

@@ -1,18 +1,18 @@
 # Langclaw Backend
 
-Node.js HTTP API (`langclaw-backend`) for **Langclaw Mantle Alpha Sentinel**: Mantle-first on-chain intelligence with Celo and MiniPay support for agent proof, usage billing, and eligibility operations.
+Node.js HTTP API (`langclaw-backend`) for **Langclaw Celo Alpha Sentinel**: Celo-first on-chain intelligence with MiniPay support for agent proof, USDT-backed usage billing, and eligibility operations.
 
-**Organization:** [Langclaw-AI-Mantle](https://github.com/Langclaw-AI-Mantle) · **Frontend:** [Langclaw-AI-Mantle/frontend](https://github.com/Langclaw-AI-Mantle/frontend) · **Contracts:** [Langclaw-AI-Mantle/contracts](https://github.com/Langclaw-AI-Mantle/contracts)
+**Product chain:** Celo mainnet `42220` · **Default billing asset:** Celo USDT · **Proof:** Celo `LangclawRegistry`
 
 ## Responsibilities
 
-- **Strategy Lab** - Dune-backed Mantle liquidity momentum backtests, paper trades, and trading journal proofs
-
-- **Mantle Alpha** — `runLangclawWorkflow(topic)` via `POST /api/discover` and `/api/discover/stream`
-- **Chat** — `POST /api/chat/stream`, session sync to Supabase
-- **Account** — wallet auth, API keys (HMAC), memory, automation, usage ledger
-- **Proof** — evidence bundles and Mantle `LangclawRegistry` agent decision records
-- **On-chain tools** — Mantle-first Dune, DEX Screener, DeFiLlama, Alchemy, Etherscan-style, GoPlus, plus Mantle-only premium Surf, Nansen, and Elfa adapters with legacy fallback
+- **Strategy Lab** - Dune-backed Celo liquidity momentum backtests, paper trades, and trading journal proofs.
+- **Celo Alpha**: `runLangclawWorkflow(topic)` via `POST /api/discover` and `/api/discover/stream`
+- **Chat**: `POST /api/chat/stream`, session sync to Supabase
+- **Account**: wallet auth, API keys (HMAC), memory, automation, usage ledger
+- **Proof**: evidence bundles and Celo `LangclawRegistry` agent decision records
+- **Research reports**: deterministic report objects with ranked entities, tables, caveats, and recommendations.
+- **On-chain tools**: Surf-first smart-money research with Dune SQL and Nansen fallback, plus DEX Screener, DeFiLlama, Alchemy, Etherscan-style, GoPlus, CoinGecko, GeckoTerminal, Elfa, and local synthesis.
 
 ## Local setup
 
@@ -48,8 +48,11 @@ Defined in [`src/server.ts`](src/server.ts):
 | API keys | `POST /api/api-keys` |
 | Usage | `POST /api/usage/balance`, `quote`, `deposit/verify`, `withdraw/request` |
 | Automation | `POST /api/automation/*`, webhooks, Telegram |
+| Proof | `POST /api/proofs/decisions`, `POST /api/proofs/readiness` |
 
 Full request/response shapes: [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md).
+
+Chat and research routes require both a wallet session and a linked Telegram chat. Users can link Telegram from automation notification settings before running the agent.
 
 ## Langclaw + OpenClaw
 
@@ -62,15 +65,15 @@ runLangclawWorkflow(topic)
   → Combined signals (TS: social, onchain, combined summaries)
   → Structured report (TS: deterministic report core with ranked tables when real metrics exist)
   → Source normalizer (TS)
-  → On-chain enrichment (TS: Nansen, Surf, DEX Screener, Dune, DeFiLlama, Alchemy, Etherscan, GoPlus by scope)
-  → Mantle alpha scorer (OpenClaw)
+  → On-chain enrichment (TS: Surf, Dune, Nansen, DEX Screener, DeFiLlama, Alchemy, Etherscan, GoPlus by scope)
+  → Celo alpha scorer (OpenClaw)
   → Evidence packager (OpenClaw)
   → Verifier (OpenClaw)
   → Final conclusion (OpenAI Responses → deterministic fallback)
-  → Evidence bundle → LangclawRegistry agent decision proof on Mantle
+  → Evidence bundle → LangclawRegistry agent decision proof on Celo
 ```
 
-Skills: [`openclaw/skills/`](openclaw/skills/) — see [`openclaw/README.md`](openclaw/README.md).
+Skills: [`openclaw/skills/`](openclaw/skills/). See [`openclaw/README.md`](openclaw/README.md).
 
 X discovery defaults to Brave (`X_DISCOVERY_PROVIDER=brave`). Use `x-api` only with `X_BEARER_TOKEN` and credits.
 
@@ -106,19 +109,63 @@ Copy [`.env.example`](.env.example). Minimum for a useful dev server:
 
 Langclaw providers: `BRAVE_SEARCH_API_KEY`, `GITHUB_TOKEN`, `TAVILY_API_KEY`, …
 
-Mantle premium intelligence rollout: `SURF_ENABLED`, `SURF_API_KEY`, `NANSEN_ENABLED`, `NANSEN_API_KEY`, `ELFA_ENABLED`, `ELFA_API_KEY`, plus optional `*_TIMEOUT_MS` overrides. In this phase, shared research runs default to a combined Mantle workflow: Surf and Elfa feed the social/public side, Nansen feeds Mantle smart-money analysis, and legacy/public providers remain as supplemental context. Non-Mantle requests keep the same shared response schema but degrade honestly through legacy or out-of-scope behavior.
+Celo premium intelligence rollout: `SURF_ENABLED`, `SURF_API_KEY`, `ELFA_ENABLED`, `ELFA_API_KEY`, plus optional `*_TIMEOUT_MS` overrides. Shared research runs default to a combined workflow: Surf feeds social/public research and is the primary smart-money ability provider, Dune is the row-level SQL fallback, and legacy/public providers remain as supplemental context. Nansen remains available only for explicit Mantle analysis.
 
-Research payloads now also expose an additive `report` object. It is provider-agnostic and deterministic: the backend computes report kind, ranked entities, tables, narrative sections, caveats, and recommendations from the current run's normalized evidence. When the run does not include direct row-level metrics, the report stays narrative-first instead of fabricating a leaderboard.
+Research payloads now also expose additive `report` and `alphaSignal` objects. `report` is provider-agnostic and deterministic: the backend computes report kind, ranked entities, tables, narrative sections, caveats, and recommendations from the current run's normalized evidence. `alphaSignal` adds a score, evidence count, source coverage, and false positive checks without changing existing response fields. When the run does not include direct row-level metrics, the report stays narrative-first instead of fabricating a leaderboard.
 
-Celo/Mantle proof: `MANTLE_CHAIN_*`, `CELO_CHAIN_*`, `{MANTLE,CELO}_AGENT_PRIVATE_KEY`, `{MANTLE,CELO}_AGENT_WALLET`, `{MANTLE,CELO}_ERC8004_AGENT_ID`, `{MANTLE,CELO}_LANGCLAW_REGISTRY_ADDRESS`. Runtime proof/journal transactions prefer the agent key; `{MANTLE,CELO}_PRIVATE_KEY` remains a fallback. Celo transactions use the configured USDT fee-currency adapter when supported. Mantle legacy `LANGCLAW_REGISTRY_ADDRESS` remains supported.
+Alpha alerts: `.env.example` enables `LANGCLAW_ALPHA_ALERTS_ENABLED=true`. Set `LANGCLAW_TELEGRAM_BOT_TOKEN` and let users link Telegram from settings. `LANGCLAW_AUTOMATION_TELEGRAM_CHAT_ID` is only a fallback global chat for demo or server-level alerts. The alert gate requires Celo scope, on-chain evidence, enough source coverage, and no blocking false positive check.
+
+Celo/Mantle proof: `MANTLE_CHAIN_*`, `CELO_CHAIN_*`, `{MANTLE,CELO}_AGENT_PRIVATE_KEY`, `{MANTLE,CELO}_AGENT_WALLET`, `{MANTLE,CELO}_ERC8004_AGENT_ID`, `{MANTLE,CELO}_LANGCLAW_REGISTRY_ADDRESS`. Runtime proof/journal transactions prefer the agent key; `{MANTLE,CELO}_PRIVATE_KEY` remains a fallback. Celo transactions use the configured USDT fee-currency adapter when supported, then fall back to native CELO fee payment if the adapter path is not usable. Mantle legacy `LANGCLAW_REGISTRY_ADDRESS` remains supported.
 
 Celo ERC-8004 reputation: set `CELO_ERC8004_REPUTATION_ENABLED=true` plus `CELO_ERC8004_REPUTATION_FEEDBACK_PRIVATE_KEY` to submit `giveFeedback(...)` after a Langclaw decision proof anchors. Use a feedback key that is not the agent recorder key.
 
-Core chain data sources: `DUNE_API_KEY`, `DUNE_DEFAULT_QUERY_ID`, `DUNE_STRATEGY_QUERY_ID`, `ALCHEMY_API_KEY`, `ETHERSCAN_API_KEY`, `GOPLUS_*`; DEX Screener and DeFiLlama work without keys for public endpoints. GoPlus is skipped on Celo because the live provider does not support Celo mainnet in this workflow. Surf, Nansen, and Elfa are Mantle-only in this rollout. The shared workflow always returns `signals.social`, `signals.onchain`, `signals.combined`, and an additive `report`; outside Mantle premium scope those sections fall back or mark honest skips/failures instead of changing the payload shape.
+Core chain data sources: `DUNE_API_KEY`, optional legacy `DUNE_DEFAULT_QUERY_ID`, `DUNE_SQL_PERFORMANCE`, `DUNE_SQL_TIMEOUT_MS`, `DUNE_STRATEGY_QUERY_ID`, `ALCHEMY_API_KEY`, `ETHERSCAN_API_KEY`, `GOPLUS_*`; DEX Screener and DeFiLlama work without keys for public endpoints. Smart-money routing is Surf -> Dune, with Nansen only for explicit Mantle fallback. Surf uses backend skill abilities through the API. Dune executes generated DEX and CEX flow SQL from safe chain, token, timeframe, and threshold parameters. If Surf API balance is exhausted, `SURF_CLI_FALLBACK_ENABLED=true` lets the backend try the local Surf CLI for `search-web` and mapped `onchain-sql` calls before falling through to Dune. Dune does not need a saved query id unless the user explicitly asks for a Dune query id. GoPlus is skipped on Celo because the live provider does not support Celo mainnet in this workflow. The shared workflow always returns `signals.social`, `signals.onchain`, `signals.combined`, and an additive `report`; outside Celo premium scope those sections fall back or mark honest skips/failures instead of changing the payload shape.
+
+### Smart-money research behavior
+
+Smart-money requests preserve the user scope before choosing providers:
+
+- Chain-level prompts such as `Find smart-money accumulation on Celo` stay chain-level first.
+- Token-level prompts such as `Find smart-money accumulation for CELO on Celo` can use token-specific context.
+- Token activity on another chain is never treated as equivalent to chain activity.
+- Celo chain activity is not Ethereum token activity.
+- Arbitrum chain activity is not ARB token activity on Ethereum.
+
+The smart-money provider route is:
+
+1. Surf Chat Completions with `evm_onchain`, `market_analysis`, `search`, and `calculate` abilities.
+2. Surf local CLI fallback for mapped `search-web` and `onchain-sql` calls when the Surf API reports exhausted credits or balance.
+3. Dune dynamic SQL for row-level DEX buys and CEX withdrawals.
+4. Nansen smart-money netflow only for explicit Mantle fallback.
+5. Local synthesis as analysis-only fallback.
+
+Report rules:
+
+- DEX-only rows are labeled as large-flow watchlists, not confirmed smart money.
+- Confirmed smart money requires wallet labels plus retention or behavior checks.
+- Evidence and candidate tables are rendered only when row-level rows exist.
+- Stablecoins and wrapped majors are bucketed separately from non-stable token accumulation.
+- Final answers hide raw provider errors, billing state, HTTP details, CLI flags, and fallback internals.
+- Response language follows the user's prompt language when detected.
 
 Strategy Lab proof: `{MANTLE,CELO}_LANGCLAW_TRADING_JOURNAL_ADDRESS`, `{MANTLE,CELO}_TRADING_JOURNAL_ENABLED`, and optional `{MANTLE,CELO}_TRADING_JOURNAL_DEPLOY_BLOCK`. Mantle legacy `LANGCLAW_TRADING_JOURNAL_ADDRESS` remains supported. Without these, backtests still run and return a `prepared` proof state instead of pretending to be anchored.
 
 Billing: `{MANTLE,CELO}_LANGCLAW_USAGE_VAULT_ADDRESS`. Mantle legacy `LANGCLAW_USAGE_VAULT_ADDRESS` remains supported.
+
+## Current Celo verification
+
+| Item | Current value |
+| ---- | ------------- |
+| Celo chain | Mainnet `42220` |
+| Agent wallet | `0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c` |
+| ERC-8004 agent ID | `9109` |
+| ERC-8004 registration tx | `0x1b7cb74378db42551a3cbc81dcd560f337df1593d4ef1cd70ee44ff269bdc7f3` |
+| Self Agent ID | `133` |
+| Self Agent ID tx | `0x3c7d0cc69f77d2aef5ab21bfe703d0f33f7037d5e2162209d78b23b5c3f1cde6` |
+| Latest decision proof | Decision `#0`, signal `smart-money` |
+| Latest decision proof tx | `0x0e48bd059c782dd59a7834279388e0b2d305f9aba758c8fdb412e8eb55d2dc7d` |
+
+Run `npm run check:eligibility` to verify the live Celo contracts, ERC-8004 agent, and Self Agent ID status. A verified Self Agent ID transaction satisfies the Self human proof check. Raw `CELO_SELF_HUMAN_PROOF` and `CELO_SELF_HUMAN_PROVIDER_DATA` are only needed when registering through the local script instead of the official Self linked flow.
 
 ## Supabase
 
@@ -132,7 +179,7 @@ Apply migrations under [`supabase/migrations/`](supabase/migrations/). Clients n
 | `LangclawRegistry` | `npm run deploy:registry -- --chain mantle|celo --write-env` | Uses `{MANTLE,CELO}_DEPLOYER_PRIVATE_KEY`; writes `{MANTLE,CELO}_LANGCLAW_REGISTRY_ADDRESS` |
 | `LangclawTradingJournal` | `npm run deploy:trading-journal -- --chain mantle|celo --write-env` | Uses `{MANTLE,CELO}_DEPLOYER_PRIVATE_KEY`; writes `{MANTLE,CELO}_LANGCLAW_TRADING_JOURNAL_ADDRESS`, `{MANTLE,CELO}_TRADING_JOURNAL_ENABLED` |
 | ERC-8004 agent identity | `npm run register:agent -- --chain mantle|celo --write-env` | Uses `{MANTLE,CELO}_AGENT_PRIVATE_KEY`; writes `{MANTLE,CELO}_ERC8004_AGENT_ID`, `{MANTLE,CELO}_AGENT_WALLET`, `{MANTLE,CELO}_AGENT_ONCHAIN_TX` |
-| Self Agent ID | `npm run register:agent -- --chain celo --self-agent-id --write-env` | Uses `CELO_AGENT_PRIVATE_KEY` plus `CELO_SELF_HUMAN_PROOF` and `CELO_SELF_HUMAN_PROVIDER_DATA` from the Self proof flow; writes `CELO_SELF_AGENT_ID` |
+| Self Agent ID | Official Self linked registration flow or `npm run register:agent -- --chain celo --self-agent-id --write-env` | Current verified Celo ID is `133`. The official flow writes on-chain proof through Self. The local script needs `CELO_SELF_HUMAN_PROOF` and `CELO_SELF_HUMAN_PROVIDER_DATA` only when registering directly from this repo. |
 
 Registry source: [`../contracts/src/LangclawRegistry.sol`](../contracts/src/LangclawRegistry.sol)
 
@@ -155,6 +202,7 @@ npm run dev          # tsx watch src/server.ts
 npm run build        # tsc → dist/
 npm start            # node dist/server.js
 npm run check:eligibility
+npm run check:celo-proof
 npm test             # node --test
 npm run deploy:registry
 npm run deploy:trading-journal
