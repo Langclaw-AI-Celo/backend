@@ -14,11 +14,13 @@ Returns `{ "ok": true, "service": "langclaw-backend" }`.
 
 Streams newline-delimited JSON. Direct chat uses OpenAI Responses API. Research mode runs the Langclaw workflow and can record selected-chain decision proof. The streamed `result.payload` now includes a stable `signals` object with `social`, `onchain`, and `combined` summaries, plus an additive `report` object for native report rendering.
 
+Requires a valid wallet session or API key for that wallet user, plus a linked Telegram chat in automation notification settings.
+
 Request:
 
 ```json
 {
-  "message": "Find smart-money accumulation on Mantle",
+  "message": "Find smart-money accumulation on Celo",
   "toolMode": "research",
   "model": "gpt-5-mini",
   "wallet": {
@@ -32,58 +34,60 @@ Important stream event types:
 
 - `direct_delta`, `direct`: direct OpenAI chat.
 - `progress`, `result`: research workflow.
-- `tool_plan`, `tool_call`, `tool_result`, `tool_final`: Mantle intelligence tools.
+- `tool_plan`, `tool_call`, `tool_result`, `tool_final`: Celo intelligence tools.
 - `error`: request failure.
 
 For `tool_result` and `tool_final.payload.tools`, each tool result can now include additive metadata:
 
 - `attemptedProviders`: providers tried for that logical tool step
 - `fallbackReason`: why execution moved to a fallback provider
-- `scope`: `mantle-premium`, `legacy-fallback`, `legacy-default`, or `out-of-scope`
+- `scope`: `celo-premium`, `mantle-premium`, `legacy-fallback`, `legacy-default`, or `out-of-scope`
 
 ## Research
 
 `POST /api/discover`
 
-Runs the Mantle Alpha workflow and returns a single JSON payload.
+Runs the Celo Alpha workflow and returns a single JSON payload.
 
 `POST /api/discover/stream`
 
 Streams workflow progress before the final payload.
 
-The response includes source cards, provider trace, structured `signals`, an additive `report`, final answer, usage receipt, and proof metadata:
+Both research routes require a valid wallet session or API key for that wallet user, plus a linked Telegram chat in automation notification settings.
+
+The response includes source cards, provider trace, structured `signals`, additive `report` and `alphaSignal` objects, final answer, usage receipt, and proof metadata:
 
 ```json
 {
-  "topic": "Rank Mantle protocols by TVL and yield momentum",
+  "topic": "Rank Celo protocols by TVL and yield momentum",
   "signals": {
     "social": {
       "status": "success",
-      "summary": "Collected live social and public context evidence for mantle from Elfa, Surf, Docs, and HackQuest.",
+      "summary": "Collected live social and public context evidence for Celo from Elfa, Surf, Docs, and HackQuest.",
       "providers": ["Elfa", "Surf", "Docs", "HackQuest"],
       "sourceIds": ["surf-web-0-example", "elfa-narrative-0-example"],
       "toolIds": []
     },
     "onchain": {
       "status": "partial",
-      "summary": "On-chain enrichment produced usable evidence for mantle, but some provider coverage remained incomplete (Nansen).",
-      "providers": ["Nansen", "Dune"],
+      "summary": "On-chain enrichment produced usable evidence for Celo, but some provider coverage remained incomplete.",
+      "providers": ["Surf", "Dune"],
       "sourceIds": [],
       "toolIds": ["smart_money.nansen_smart_money_netflow"]
     },
     "combined": {
       "status": "partial",
       "summary": "Social and on-chain signals diverged: public attention was visible, but the on-chain side remained weaker or incomplete.",
-      "providers": ["Elfa", "Surf", "Nansen", "Dune"],
+      "providers": ["Elfa", "Surf", "Dune"],
       "sourceIds": ["surf-web-0-example", "elfa-narrative-0-example"],
       "toolIds": ["smart_money.nansen_smart_money_netflow"]
     }
   },
   "report": {
     "kind": "smart-money",
-    "title": "Mantle smart money report",
+    "title": "Celo smart money report",
     "asOfUtc": "2026-05-23T04:48:00.000Z",
-    "executiveSummary": "This run returned direct smart-money evidence for Mantle, but some provider coverage remained incomplete.",
+    "executiveSummary": "This run returned direct smart-money evidence for Celo, but some provider coverage remained incomplete.",
     "bottomLine": "Treat the brief as directional research until the strongest flows are confirmed with a second source.",
     "confidence": "medium",
     "entities": [],
@@ -105,11 +109,37 @@ The response includes source cards, provider trace, structured `signals`, an add
       "Confirm wallet or holder flow with a second on-chain source before escalating the claim."
     ]
   },
+  "alphaSignal": {
+    "schema": "langclaw.alpha-signal.v1",
+    "signalType": "smart-money",
+    "alertEligible": true,
+    "quality": {
+      "score": 82,
+      "label": "high",
+      "evidenceCount": 4,
+      "sourceCoverage": {
+        "social": true,
+        "onchain": true,
+        "directWalletFlow": true,
+        "proof": true,
+        "providerCount": 3
+      },
+      "falsePositiveChecks": [
+        {
+          "id": "celo_product_chain",
+          "label": "Celo product chain",
+          "status": "pass",
+          "reason": "The decision is scoped to Celo."
+        }
+      ],
+      "reasons": ["Quality score 82/100 is high."]
+    }
+  },
   "providerTrace": [
     {
       "provider": "Surf",
       "status": "success",
-      "scope": "mantle-premium",
+      "scope": "celo-premium",
       "message": "Collected 1 source card(s)."
     }
   ],
@@ -146,7 +176,49 @@ The response includes source cards, provider trace, structured `signals`, an add
 - `caveats`: source of truth for final-answer caveat text
 - `recommendations`: concrete next steps derived from the run
 
-`providerTrace` is additive metadata that explains which providers succeeded, failed, or were skipped. Premium Surf/Elfa/Nansen traces appear only for Mantle in this phase. No request flag is required; the shared research workflow now attempts combined discovery plus on-chain enrichment by default and degrades honestly when a provider is out of scope, disabled, or fails upstream.
+`providerTrace` is additive metadata that explains which providers succeeded, failed, or were skipped. Premium Surf and Elfa traces appear for Celo. Nansen traces appear only for explicit Mantle analysis. No request flag is required; the shared research workflow now attempts combined discovery plus on-chain enrichment by default and degrades honestly when a provider is out of scope, disabled, or fails upstream.
+
+## Proof
+
+`POST /api/proofs/readiness`
+
+Checks whether the selected product chain can record and read Langclaw proof records before a demo.
+
+Request:
+
+```json
+{
+  "chain": "celo"
+}
+```
+
+Response:
+
+```json
+{
+  "chain": "celo",
+  "chainId": 42220,
+  "status": "ready",
+  "ready": true,
+  "checks": [
+    {
+      "id": "registry-readable",
+      "status": "pass",
+      "summary": "LangclawRegistry is readable. nextDecisionId is 3."
+    }
+  ]
+}
+```
+
+Run the same check from the backend folder:
+
+```bash
+npm run check:celo-proof
+```
+
+`POST /api/proofs/decisions`
+
+Returns the latest recorded `LangclawRegistry` decisions for Proof Center.
 
 ## Strategy Lab
 
@@ -158,8 +230,8 @@ Request:
 
 ```json
 {
-  "chain": "mantle",
-  "pairAddress": "0xeAfc4D6d4c3391Cd4Fc10c85D2f5f972d58C0dD5",
+  "chain": "celo",
+  "pairAddress": "0x471ece3750da237f93b8e339c536989b8978a438",
   "queryId": "1234567"
 }
 ```
@@ -174,7 +246,7 @@ Request:
 
 ```json
 {
-  "chain": "mantle",
+  "chain": "celo",
   "limit": 12,
   "queryId": "1234567"
 }
@@ -254,13 +326,6 @@ Core:
 OPENAI_API_KEY=
 OPENAI_CHAT_MODEL=gpt-5-mini
 OPENAI_AGENT_MODEL=gpt-5.2
-MANTLE_CHAIN_RPC_URL=https://rpc.mantle.xyz
-MANTLE_CHAIN_ID=5000
-MANTLE_ERC8004_AGENT_ID=94
-MANTLE_LANGCLAW_REGISTRY_ADDRESS=0xe69755e4249c4978c39fbe847ca9674ce7af3505
-MANTLE_LANGCLAW_TRADING_JOURNAL_ADDRESS=0xe96e9b76af8c8f32bfa2235d647186826d92fb7d
-MANTLE_LANGCLAW_USAGE_VAULT_ADDRESS=0x7e93Ef361e7b54297cF963977bA829E47E59e8E1
-MANTLE_TRADING_JOURNAL_ENABLED=true
 CELO_CHAIN_RPC_URL=https://forno.celo.org
 CELO_CHAIN_ID=42220
 CELO_ERC8004_AGENT_ID=9109
@@ -271,6 +336,8 @@ CELO_TRADING_JOURNAL_ENABLED=true
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 ```
+
+Mantle env values remain supported for explicit Mantle analysis, but Celo is the default product chain.
 
 Provider keys:
 
@@ -295,11 +362,12 @@ GOPLUS_API_KEY=
 GOPLUS_API_SECRET=
 ```
 
-Premium provider routing is Mantle-only in v1. Celo and other non-Mantle flows continue to use the legacy provider stack and surface a skipped provider trace instead of attempting Surf, Nansen, or Elfa.
+Premium provider routing is Celo-first in this backend. Surf and Elfa run for Celo when configured. Nansen stays Mantle-only and appears as out of scope for Celo.
 
 ## Errors
 
 - `400`: malformed request.
 - `401`: wallet auth missing or expired.
 - `402`: insufficient prepaid balance.
+- `403`: Telegram chat is not linked.
 - `500`: backend/provider failure.

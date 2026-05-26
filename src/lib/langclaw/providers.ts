@@ -116,6 +116,7 @@ export async function runProviderDiscovery(
   const providerTrace: ProviderTraceEntry[] = [];
 
   if (isPremiumProviderInScope(chain)) {
+    const premiumScope = chain === "celo" ? "celo-premium" : "mantle-premium";
     const premiumResults = await Promise.all([
       runTimedDiscovery(discoverSurf(topic), "Surf"),
       runTimedDiscovery(discoverElfa(topic), "Elfa"),
@@ -124,7 +125,7 @@ export async function runProviderDiscovery(
     for (const { provider, result } of premiumResults) {
       mergeProviderResult(
         result,
-        "mantle-premium",
+        premiumScope,
         sources,
         errors,
         providerTrace,
@@ -134,7 +135,7 @@ export async function runProviderDiscovery(
     providerTrace.push({
       message: "Nansen is reserved for the structured on-chain workflow.",
       provider: "Nansen",
-      scope: "mantle-premium",
+      scope: premiumScope,
       status: "skipped",
     });
 
@@ -151,7 +152,7 @@ export async function runProviderDiscovery(
   } else {
     providerTrace.push(
       ...(["surf", "nansen", "elfa"] as const).map((provider) =>
-        skippedPremiumTrace(provider, "Premium provider rollout is Mantle-only in this phase.")
+        skippedPremiumTrace(provider, "Premium provider rollout is Celo-first in this backend.")
       )
     );
     await collectLegacyProviders(topic, sources, errors, providerTrace, "legacy-default");
@@ -467,7 +468,7 @@ async function discoverGitHub(topic: string): Promise<ProviderResult> {
 
 async function discoverDocs(topic: string): Promise<ProviderResult> {
   const response = await webSearch(
-    `${topic} Mantle on-chain data AI agent documentation`,
+    `${topic} Celo on-chain data AI agent documentation`,
     3
   );
 
@@ -720,11 +721,11 @@ async function webSearch(
 }
 
 function buildXQuery(topic: string) {
-  return `(${topic}) (agent OR AI OR Web3 OR Mantle OR product OR launch OR builder) -is:retweet lang:en`;
+  return `(${topic}) (agent OR AI OR Web3 OR Celo OR MiniPay OR product OR launch OR builder) -is:retweet lang:en`;
 }
 
 function buildBraveXQuery(topic: string) {
-  return `site:x.com ${topic} agent AI Web3 Mantle product launch builder`;
+  return `site:x.com ${topic} agent AI Web3 Celo MiniPay product launch builder`;
 }
 
 function buildGitHubQuery(topic: string) {

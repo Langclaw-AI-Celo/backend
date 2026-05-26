@@ -34,7 +34,7 @@ import {
   handleUsageVaultInfo,
   handleUsageWithdrawRequest,
 } from "./routes/usage";
-import { handleProofDecisions } from "./routes/proofs";
+import { handleProofDecisions, handleProofReadiness } from "./routes/proofs";
 import {
   handleStrategyBacktest,
   handleStrategyPaperTrade,
@@ -60,6 +60,7 @@ const routes = new Map<string, RouteHandler>([
   ["POST /api/memory", handleMemory],
   ["POST /api/memory/settings", handleMemorySettings],
   ["POST /api/proofs/decisions", handleProofDecisions],
+  ["POST /api/proofs/readiness", handleProofReadiness],
   ["POST /api/strategy/backtest", handleStrategyBacktest],
   ["POST /api/strategy/paper-trade", handleStrategyPaperTrade],
   ["POST /api/strategy/runs", handleStrategyRuns],

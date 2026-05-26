@@ -111,6 +111,45 @@ test("describeFinalAnswerParseFailure distinguishes empty and malformed outputs"
   );
 });
 
+test("buildFinalAnswerPrompt includes detected response language", () => {
+  const prompt = buildFinalAnswerPrompt({
+    agentOutputs: {},
+    errors: [],
+    runtime: "typescript",
+    signals: {
+      combined: {
+        providers: [],
+        sourceIds: [],
+        status: "partial",
+        summary: "No strong signal yet.",
+        toolIds: [],
+      },
+      onchain: {
+        providers: [],
+        sourceIds: [],
+        status: "partial",
+        summary: "On-chain coverage is partial.",
+        toolIds: [],
+      },
+      social: {
+        providers: [],
+        sourceIds: [],
+        status: "partial",
+        summary: "Social coverage is partial.",
+        toolIds: [],
+      },
+    },
+    sources: [],
+    steps: [],
+    topic: "kenapa smart-money Mantle masih jelek ya?",
+  });
+
+  assert.match(prompt, /Detected response language: Indonesian \((high|medium)\)/);
+  assert.match(prompt, /"responseLanguage"/);
+  assert.match(prompt, /Write all user-visible prose in Indonesian/);
+  assert.match(prompt, /Mirror the latest user message's language/);
+});
+
 test("compact final answer prompt is smaller than the full research payload prompt", () => {
   const defiReport = {
     asOfUtc: "2026-05-23T00:00:00.000Z",
@@ -378,12 +417,28 @@ test("buildFinalAnswerPrompt includes structured caveat and proof guardrails", (
     topic: "Analyze smart-money accumulation for MNT on Mantle",
   });
 
-  assert.match(prompt, /backend appends the exact structured caveat/i);
-  assert.match(prompt, /Do not claim.*evidenceUri.*Mantle anchoring.*transaction/i);
+  assert.match(prompt, /backend handles caveat metadata separately/i);
+  assert.doesNotMatch(prompt, /Surf-style research note/i);
+  assert.match(prompt, /Read, Evidence, Candidates, Limits, and Conclusion/i);
+  assert.match(prompt, /Never describe the answer format using competitor branding/i);
+  assert.match(prompt, /Do not expose internal snake_case labels/i);
+  assert.match(prompt, /compact top-5 shortlist/i);
+  assert.match(prompt, /Markdown table under Candidates/i);
+  assert.match(prompt, /Read, Limits, and Conclusion must be short paragraphs/i);
+  assert.match(prompt, /Limits must be specific to the analysis/i);
+  assert.match(prompt, /Do not use the phrase 'this run'/i);
+  assert.match(prompt, /smart-money signal is weak/i);
+  assert.match(prompt, /standard checks were unavailable/i);
+  assert.match(prompt, /Belum ada bukti akumulasi terverifikasi/i);
+  assert.match(prompt, /Do not turn empty smart-money rows into wallet rankings/i);
+  assert.match(prompt, /Do not end smart-money answers by telling the user to rerun the same task/i);
+  assert.match(prompt, /Do not claim.*evidenceUri.*Celo anchoring.*transaction/i);
   assert.match(prompt, /"conclusion":/);
   assert.doesNotMatch(prompt, /"answerMarkdown":/);
   assert.match(prompt, /"report"/i);
   assert.doesNotMatch(prompt, /primary structured contract/i);
-  assert.match(prompt, /402 Payment Required/i);
-  assert.match(prompt, /422 Unknown field/i);
+  assert.doesNotMatch(prompt, /402 Payment Required/i);
+  assert.match(prompt, /Source unavailable/i);
+  assert.match(prompt, /Row-level wallet-flow coverage was unavailable/i);
+  assert.doesNotMatch(prompt, /422 Unknown field/i);
 });

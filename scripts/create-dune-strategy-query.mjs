@@ -24,9 +24,9 @@ if (!apiKey) {
 const createResponse = await duneFetch("/query", {
   method: "POST",
   body: JSON.stringify({
-    name: "Langclaw Mantle Liquidity Momentum Strategy Rows",
+    name: "Langclaw Celo Liquidity Momentum Strategy Rows",
     description:
-      "Hourly Mantle DEX bars for Langclaw Strategy Lab backtesting and paper-trade proof.",
+      "Hourly Celo DEX bars for Langclaw Strategy Lab backtesting and paper-trade proof.",
     is_private: false,
     query_sql: getStrategyQuerySql(),
   }),
@@ -183,10 +183,10 @@ WITH normalized_trades AS (
         amount_usd,
         tx_hash,
         CASE
-            WHEN token_sold_symbol IN ('USDC', 'USDT', 'USDe', 'mUSD', 'USDT0')
+            WHEN token_sold_symbol IN ('USDC', 'USDT', 'USDe', 'mUSD', 'USDm', 'cUSD', 'cEUR', 'cREAL', 'USDT0')
                 AND token_bought_amount > 0
                 THEN amount_usd / token_bought_amount
-            WHEN token_bought_symbol IN ('USDC', 'USDT', 'USDe', 'mUSD', 'USDT0')
+            WHEN token_bought_symbol IN ('USDC', 'USDT', 'USDe', 'mUSD', 'USDm', 'cUSD', 'cEUR', 'cREAL', 'USDT0')
                 AND token_sold_amount > 0
                 THEN amount_usd / token_sold_amount
             WHEN token_bought_amount > 0
@@ -195,7 +195,7 @@ WITH normalized_trades AS (
                 THEN amount_usd / token_sold_amount
         END AS price_usd
     FROM dex.trades
-    WHERE blockchain = 'mantle'
+    WHERE blockchain = 'celo'
         AND block_time >= now() - interval '30' day
         AND amount_usd > 0
         AND project_contract_address IS NOT NULL

@@ -1,5 +1,6 @@
 import { executeOnChainPlan } from "./executor";
-import { persistGenericMantleProof } from "../langclaw/proof";
+import { getProductChain, readChainEnv, type ProductChainId } from "../chain-config";
+import { persistGenericProductProof } from "../langclaw/proof";
 import { planOnChainTools, summarizePlan } from "./planner";
 import {
   formatOnChainAnswer,
@@ -43,8 +44,10 @@ export async function runOnChainToolWorkflow({
     signal,
   });
   const payload = synthesizeOnChainAnswer({ plan, results });
-  if (process.env.MANTLE_INTEL_PROOF_ENABLED === "true") {
-    payload.proof = await persistGenericMantleProof({
+  const productChain = getProductChain(plan.productChain as ProductChainId);
+
+  if (readChainEnv(productChain, "INTEL_PROOF_ENABLED") === "true") {
+    payload.proof = await persistGenericProductProof({
       chain: plan.productChain,
       evidence: {
         answer: payload.answer,
@@ -178,5 +181,5 @@ function signalTypeForPlan(intent: string) {
     return "liquidity-anomaly";
   }
 
-  return "mantle-alpha";
+  return "celo-alpha";
 }

@@ -177,7 +177,7 @@ function normalizeAlphaWatchlistInput(
     addedAt: readIsoDate(input.addedAt),
     agentId: optionalText(input.agentId),
     caveat: readRequiredText(input.caveat, "Caveat", 4_000),
-    chain: readRequiredText(input.chain || "mantle", "Chain", 64),
+    chain: readRequiredText(input.chain || "celo", "Chain", 64),
     decisionHash: optionalText(input.decisionHash, 160),
     decisionId: optionalText(input.decisionId, 80),
     evidenceUri: optionalText(input.evidenceUri, 1_000),

@@ -5,7 +5,7 @@ import { runProviderDiscovery } from "./providers";
 import { runLangclawWorkflow } from "./workflow";
 import { jsonResponse, mockFetch, withEnv } from "../../test/helpers";
 
-test("Mantle workflow exposes Surf and Elfa provider trace when premium discovery is enabled", async () => {
+test("Celo workflow exposes Surf and Elfa provider trace when premium discovery is enabled", async () => {
   const restore = mockFetch((url) => {
     const parsed = new URL(url);
 
@@ -13,14 +13,14 @@ test("Mantle workflow exposes Surf and Elfa provider trace when premium discover
       parsed.hostname === "api.asksurf.ai" &&
       parsed.pathname === "/gateway/v1/search/web"
     ) {
-      assert.equal(parsed.searchParams.get("q"), "Mantle AI agent market signal");
+      assert.equal(parsed.searchParams.get("q"), "Celo AI agent market signal");
 
       return jsonResponse({
         data: [
           {
-            content: "Mantle AI agent launches are attracting market attention.",
-            title: "Mantle market signal",
-            url: "https://surf.test/mantle-market-signal",
+            content: "Celo AI agent launches are attracting market attention.",
+            title: "Celo market signal",
+            url: "https://surf.test/celo-market-signal",
           },
         ],
       });
@@ -35,8 +35,8 @@ test("Mantle workflow exposes Surf and Elfa provider trace when premium discover
           trending_narratives: [
             {
               mention_count: 42,
-              name: "AI agents on Mantle",
-              narrative: "AI agents on Mantle",
+              name: "AI agents on Celo",
+              narrative: "AI agents on Celo",
               sentiment: "bullish",
               source_links: ["https://x.com/example/status/1"],
             },
@@ -47,7 +47,7 @@ test("Mantle workflow exposes Surf and Elfa provider trace when premium discover
     }
 
     if (parsed.hostname === "www.hackquest.io") {
-      return new Response("<html><body>Mantle Turing Test Hackathon</body></html>", {
+      return new Response("<html><body>Celo builders</body></html>", {
         headers: {
           "Content-Type": "text/html",
         },
@@ -62,7 +62,7 @@ test("Mantle workflow exposes Surf and Elfa provider trace when premium discover
       {
         ELFA_API_KEY: "elfa-test-key",
         ELFA_ENABLED: "true",
-        MANTLE_CHAIN_ENABLED: "false",
+        CELO_CHAIN_ENABLED: "false",
         OPENAI_API_KEY: "",
         OPENCLAW_ENABLED: "false",
         SURF_API_KEY: "surf-test-key",
@@ -70,8 +70,8 @@ test("Mantle workflow exposes Surf and Elfa provider trace when premium discover
       },
       async () => {
         const payload = await runLangclawWorkflow(
-          "Mantle AI agent market signal",
-          { chain: "mantle" }
+          "Celo AI agent market signal",
+          { chain: "celo" }
         );
 
         assert.ok(payload.sources.some((source) => source.provider === "Surf"));
@@ -93,7 +93,7 @@ test("Mantle workflow exposes Surf and Elfa provider trace when premium discover
   }
 });
 
-test("premium research providers are skipped outside Mantle scope", async () => {
+test("premium research providers are skipped outside Celo scope", async () => {
   const restore = mockFetch((url) => {
     const parsed = new URL(url);
 
@@ -109,8 +109,8 @@ test("premium research providers are skipped outside Mantle scope", async () => 
   });
 
   try {
-    const result = await runProviderDiscovery("Find smart money on Celo", {
-      chain: "celo",
+    const result = await runProviderDiscovery("Find smart money on Mantle", {
+      chain: "mantle",
     });
 
     assert.ok(
@@ -134,7 +134,7 @@ test("premium research providers are skipped outside Mantle scope", async () => 
   }
 });
 
-test("Mantle workflow returns combined live signals for broad prompts that now run on-chain enrichment", async () => {
+test("Celo workflow returns combined live signals for broad prompts that now run on-chain enrichment", async () => {
   const restore = mockFetch((url) => {
     const parsed = new URL(url);
 
@@ -145,19 +145,19 @@ test("Mantle workflow returns combined live signals for broad prompts that now r
       return jsonResponse({
         data: [
           {
-            content: "Mantle AI agent market narratives are active.",
-            title: "Mantle market context",
-            url: "https://surf.test/mantle-market-context-1",
+            content: "Celo AI agent market narratives are active.",
+            title: "Celo market context",
+            url: "https://surf.test/celo-market-context-1",
           },
           {
-            content: "Mantle liquidity is improving across major pools.",
-            title: "Mantle liquidity context",
-            url: "https://surf.test/mantle-market-context-2",
+            content: "Celo liquidity is improving across major pools.",
+            title: "Celo liquidity context",
+            url: "https://surf.test/celo-market-context-2",
           },
           {
-            content: "Mantle builders are shipping new agent tooling.",
-            title: "Mantle builder context",
-            url: "https://surf.test/mantle-market-context-3",
+            content: "Celo builders are shipping new agent tooling.",
+            title: "Celo builder context",
+            url: "https://surf.test/celo-market-context-3",
           },
         ],
       });
@@ -172,8 +172,8 @@ test("Mantle workflow returns combined live signals for broad prompts that now r
           trending_narratives: [
             {
               mention_count: 18,
-              name: "Mantle AI agents",
-              narrative: "Mantle AI agents",
+              name: "Celo AI agents",
+              narrative: "Celo AI agents",
               sentiment: "bullish",
               source_links: ["https://x.com/example/status/2"],
             },
@@ -190,9 +190,9 @@ test("Mantle workflow returns combined live signals for broad prompts that now r
       return jsonResponse({
         pairs: [
           {
-            baseToken: { symbol: "MNT" },
-            chainId: "mantle",
-            dexId: "agni",
+            baseToken: { symbol: "CELO" },
+            chainId: "celo",
+            dexId: "ubeswap",
             liquidity: { usd: 245000 },
             priceUsd: "1.03",
           },
@@ -201,7 +201,7 @@ test("Mantle workflow returns combined live signals for broad prompts that now r
     }
 
     if (parsed.hostname === "www.hackquest.io") {
-      return new Response("<html><body>Mantle Turing Test Hackathon</body></html>", {
+      return new Response("<html><body>Celo builders</body></html>", {
         headers: {
           "Content-Type": "text/html",
         },
@@ -221,7 +221,7 @@ test("Mantle workflow returns combined live signals for broad prompts that now r
       {
         ELFA_API_KEY: "elfa-test-key",
         ELFA_ENABLED: "true",
-        MANTLE_CHAIN_ENABLED: "false",
+        CELO_CHAIN_ENABLED: "false",
         OPENAI_API_KEY: "",
         OPENCLAW_ENABLED: "false",
         SURF_API_KEY: "surf-test-key",
@@ -229,8 +229,8 @@ test("Mantle workflow returns combined live signals for broad prompts that now r
       },
       async () => {
         const payload = await runLangclawWorkflow(
-          "Mantle AI agent market narrative",
-          { chain: "mantle" }
+          "Celo AI agent market narrative",
+          { chain: "celo" }
         );
 
         assert.ok(payload.onChain);

@@ -9,7 +9,13 @@ import {
 } from "../server/account-auth";
 import type { Database, Json } from "../supabase/database.types";
 import { writeAutomationRunMemory } from "../memory";
+import {
+  readAlphaSignalFromPayload,
+  withAlphaSignalNotification,
+} from "../langclaw/alpha-quality";
 import { runLangclawWorkflow } from "../langclaw/workflow";
+import type { ResearchReport, ZeroGProof } from "../langclaw/types";
+import type { OnChainToolFinalPayload } from "../onchain-tools/types";
 import {
   refundResearchUsage,
   reserveResearchUsage,
@@ -18,8 +24,10 @@ import {
 } from "../usage";
 import { buildTriggerLabel, computeNextRunAt, getZonedParts } from "./schedule";
 import {
+  buildAlphaSignalNotificationMessage,
   buildAutomationNotificationMessage,
   sendAutomationEmail,
+  sendAlphaSignalNotification,
   sendAutomationRunNotification,
 } from "./notifications";
 import type {
@@ -120,6 +128,7 @@ export async function createAutomationTask(
 ) {
   const context = await requireAutomationContext(authInput);
   const settings = await readAutomationSettingsForContext(context);
+  requireTelegramLinkedSettings(settings);
   const task = normalizeTaskInput(input, {
     requireName: true,
     settings,
@@ -189,6 +198,11 @@ export async function updateAutomationTask(
     settings,
   });
   const status = patch.status ?? existing.status;
+
+  if (status === "active") {
+    requireTelegramLinkedSettings(settings);
+  }
+
   const triggerType = patch.triggerType ?? existing.trigger_type;
   const scheduleFrequency =
     patch.scheduleFrequency ?? existing.schedule_frequency ?? "daily";
@@ -287,6 +301,11 @@ export async function setAllAutomationStatus(
   status: Extract<AutomationTaskStatus, "active" | "paused">
 ) {
   const context = await requireAutomationContext(authInput);
+
+  if (status === "active") {
+    requireTelegramLinkedSettings(await readAutomationSettingsForContext(context));
+  }
+
   const tasks = await readAutomationTaskRows(context);
   const updates = await Promise.all(
     tasks
@@ -884,6 +903,26 @@ async function runTaskWithRetries(
         tokenUsage: proof?.compute?.usage,
         topic: prompt,
       });
+      const alphaSignal = readAlphaSignalFromPayload(payload);
+
+      if (alphaSignal) {
+        const settings = await readAutomationSettingsRow(context);
+        const notification = await sendAlphaSignalNotification({
+          alphaSignal,
+          onChain: payload.onChain,
+          project: task.project,
+          proof: proof as ZeroGProof | undefined,
+          report: payload.report,
+          runId: run.id,
+          settings: rowToSettings(settings),
+          taskName: task.name,
+        });
+
+        payload.alphaSignal = withAlphaSignalNotification(
+          alphaSignal,
+          notification
+        );
+      }
 
       return finishRun(context, task, run, {
         result: withAutomationAttemptMetadata(
@@ -1033,6 +1072,35 @@ async function finishRun(
     await sendAutomationRunNotification(notification).catch(() => undefined);
   }
 
+  if (status === "completed") {
+    const alphaSignal = readAlphaSignalFromPayload(result);
+
+    if (
+      alphaSignal?.alertEligible &&
+      alphaSignal.notification?.status === "sent" &&
+      rowToSettings(settings).notificationChannels.includes("in-app")
+    ) {
+      const message = buildAlphaSignalNotificationMessage({
+        alphaSignal,
+        completedAt: finishedRun.completedAt,
+        onChain: readOnChainFromAutomationResult(result),
+        project: task.project,
+        proof: readProofFromAutomationResult(result),
+        report: readReportFromAutomationResult(result),
+        runId: finishedRun.id,
+        taskName: task.name,
+      });
+
+      await writeInAppAlphaSignalNotification(
+        context,
+        task,
+        finishedRun,
+        message,
+        alphaSignal
+      ).catch(() => undefined);
+    }
+  }
+
   return finishedRun;
 }
 
@@ -1089,6 +1157,87 @@ function shouldWriteInAppNotification(settings: AutomationSettings) {
   );
 }
 
+async function writeInAppAlphaSignalNotification(
+  context: AutomationContext,
+  task: AutomationTaskRow,
+  run: AutomationRun,
+  message: {
+    subject: string;
+    text: string;
+  },
+  alphaSignal: ReturnType<typeof readAlphaSignalFromPayload>
+) {
+  if (!alphaSignal) {
+    return;
+  }
+
+  const { error } = await context.supabase
+    .from("langclaw_automation_notifications")
+    .insert({
+      body: message.text,
+      metadata: {
+        falsePositiveChecks: alphaSignal.quality.falsePositiveChecks,
+        label: alphaSignal.quality.label,
+        score: alphaSignal.quality.score,
+        signalType: alphaSignal.signalType,
+        type: "alpha_signal",
+      },
+      run_id: run.id,
+      task_id: task.id,
+      title: message.subject,
+      wallet_user_id: context.walletUser.id,
+    });
+
+  if (error) {
+    throw new AutomationHttpError(500, error.message);
+  }
+}
+
+function readProofFromAutomationResult(result?: Json): ZeroGProof | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return undefined;
+  }
+
+  const record = result as Record<string, unknown>;
+  const proof = record.proof ?? record.zeroG;
+
+  if (!proof || typeof proof !== "object") {
+    return undefined;
+  }
+
+  return proof as ZeroGProof;
+}
+
+function readReportFromAutomationResult(result?: Json): ResearchReport | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return undefined;
+  }
+
+  const report = (result as Record<string, unknown>).report;
+
+  if (!report || typeof report !== "object" || Array.isArray(report)) {
+    return undefined;
+  }
+
+  return report as ResearchReport;
+}
+
+function readOnChainFromAutomationResult(
+  result?: Json
+): OnChainToolFinalPayload | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return undefined;
+  }
+
+  const onChain = (result as Record<string, unknown>).onChain;
+
+  if (!onChain || typeof onChain !== "object" || Array.isArray(onChain)) {
+    return undefined;
+  }
+
+  return onChain as OnChainToolFinalPayload;
+}
+
 async function createRun(
   context: AutomationContext,
   task: AutomationTaskRow,
@@ -1126,6 +1275,15 @@ async function readGuardrailDecision(
   const settings = await readAutomationSettingsRow(context);
   const account = await readUsageAccount(context);
   const now = new Date();
+
+  if (!settings.telegram_verified || !settings.telegram_chat_id?.trim()) {
+    return {
+      allowed: false,
+      pauseTask: false,
+      reason: "Telegram connection is required.",
+    };
+  }
+
   const dailyTotal = await readUsageTotalSince(
     context,
     startOfLocalDay(now, task.timezone)
@@ -1189,6 +1347,12 @@ async function readGuardrailDecision(
 
 async function readAutomationSettingsForContext(context: AutomationContext) {
   return rowToSettings(await readAutomationSettingsRow(context));
+}
+
+function requireTelegramLinkedSettings(settings: AutomationSettings) {
+  if (!settings.telegramVerified || !settings.telegramChatId?.trim()) {
+    throw new AutomationHttpError(403, "Telegram connection is required.");
+  }
 }
 
 async function readAutomationSettingsRow(context: AutomationContext) {
@@ -1260,6 +1424,10 @@ async function updateTaskStatus(
   task: AutomationTaskRow,
   status: Extract<AutomationTaskStatus, "active" | "paused">
 ) {
+  if (status === "active") {
+    requireTelegramLinkedSettings(await readAutomationSettingsForContext(context));
+  }
+
   const nextRunAt =
     status === "active" &&
     task.trigger_type === "schedule" &&

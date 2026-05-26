@@ -199,7 +199,7 @@ export async function runVerifierAgentStep(
           evidence,
           sources: compactSources(sources),
           proofConstraint:
-            "Return prepared proof inputs only. Do not claim real storage upload or Mantle decision anchoring.",
+            "Return prepared proof inputs only. Do not claim real storage upload or Celo decision anchoring.",
         },
         requiredShape: {
           verificationSummary: fallback.verificationSummary,
@@ -299,12 +299,12 @@ function buildPrompt({
 
 function buildFallbackPlannerOutput(topic: string): PlannerOutput {
   return {
-    summary: `Created a provider plan for "${topic}" across Mantle premium and supporting public research providers.`,
+    summary: `Created a provider plan for "${topic}" across Surf and supporting public research providers.`,
     providerPlan: [
       {
         provider: "X",
-        query: `${topic} Mantle AI alpha on-chain data smart money protocol signal`,
-        purpose: "Find public Mantle alpha, smart-money, and ecosystem discussion signals.",
+        query: `${topic} Celo AI alpha on-chain data smart money protocol signal`,
+        purpose: "Find public Celo alpha, smart-money, and ecosystem discussion signals.",
       },
       {
         provider: "GitHub",
@@ -313,7 +313,7 @@ function buildFallbackPlannerOutput(topic: string): PlannerOutput {
       },
       {
         provider: "Tavily",
-        query: `${topic} Mantle DeFi protocol data AI agent documentation`,
+        query: `${topic} Celo DeFi protocol data AI agent documentation`,
         purpose: "Find documentation and reference pages that explain the technical context.",
       },
       {
@@ -327,7 +327,7 @@ function buildFallbackPlannerOutput(topic: string): PlannerOutput {
       "evidence strength",
       "buildability",
       "demo potential",
-      "Mantle fit",
+      "Celo fit",
       "market relevance",
     ],
   };

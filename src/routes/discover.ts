@@ -1,4 +1,10 @@
 import { runLangclawWorkflow } from "../lib/langclaw/workflow";
+import {
+  AccountAuthError,
+  accountAuthErrorResponse,
+  requireAccountAuth,
+  requireTelegramLinkedAccount,
+} from "../lib/server/account-auth";
 import type { WalletAuthInput } from "../lib/server/wallet-auth";
 import {
   refundResearchUsage,
@@ -35,7 +41,10 @@ export async function handleDiscover(request: Request) {
   }
 
   try {
-    reservation = await reserveResearchUsage({ request, wallet });
+    const account = await requireAccountAuth({ request, wallet });
+
+    await requireTelegramLinkedAccount(account);
+    reservation = await reserveResearchUsage({ account });
     const payload = await runLangclawWorkflow(topic);
     const proof = payload.proof ?? payload.zeroG;
     payload.usage = await settleResearchUsage({
@@ -60,6 +69,10 @@ export async function handleDiscover(request: Request) {
         reservation,
         error instanceof Error ? error.message : "Discovery failed."
       ).catch(() => undefined);
+    }
+
+    if (error instanceof AccountAuthError) {
+      return accountAuthErrorResponse(error);
     }
 
     return usageErrorResponse(error);

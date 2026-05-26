@@ -23,6 +23,20 @@ type WalletAccountOptions = {
   requireChallenge?: boolean;
   requiredPurpose?: WalletAuthPurpose;
 };
+type TelegramSettingsRow = Pick<
+  Database["public"]["Tables"]["langclaw_automation_settings"]["Row"],
+  | "telegram_chat_id"
+  | "telegram_linked_at"
+  | "telegram_username"
+  | "telegram_verified"
+>;
+
+export type AccountTelegramLinkStatus = {
+  chatId?: string;
+  linked: boolean;
+  linkedAt?: string;
+  username?: string;
+};
 
 export type WalletUserContext = {
   id: string;
@@ -44,10 +58,12 @@ export type AccountAuthInput = {
 };
 
 export class AccountAuthError extends Error {
+  code?: string;
   status: number;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message);
+    this.code = code;
     this.status = status;
   }
 }
@@ -125,6 +141,52 @@ export async function createVerifiedWalletAccount(
   };
 }
 
+export async function readAccountTelegramLinkStatus(
+  account: AuthenticatedAccount
+): Promise<AccountTelegramLinkStatus> {
+  const { data, error } = await account.supabase
+    .from("langclaw_automation_settings")
+    .select(
+      "telegram_chat_id,telegram_linked_at,telegram_username,telegram_verified"
+    )
+    .eq("wallet_user_id", account.walletUser.id)
+    .maybeSingle();
+
+  if (error) {
+    throw new AccountAuthError(
+      500,
+      error.message || "Unable to read Telegram link status."
+    );
+  }
+
+  const settings = data as TelegramSettingsRow | null;
+  const chatId = settings?.telegram_chat_id?.trim();
+  const linked = Boolean(settings?.telegram_verified && chatId);
+
+  return {
+    chatId: linked ? chatId : undefined,
+    linked,
+    linkedAt: linked ? settings?.telegram_linked_at ?? undefined : undefined,
+    username: linked ? settings?.telegram_username ?? undefined : undefined,
+  };
+}
+
+export async function requireTelegramLinkedAccount(
+  account: AuthenticatedAccount
+): Promise<AuthenticatedAccount> {
+  const telegram = await readAccountTelegramLinkStatus(account);
+
+  if (!telegram.linked) {
+    throw new AccountAuthError(
+      403,
+      "Telegram connection is required.",
+      "telegram_link_required"
+    );
+  }
+
+  return account;
+}
+
 export function requireSupabaseAdmin() {
   const supabase = getSupabaseAdmin();
   const config = getSupabaseConfigStatus();
@@ -147,7 +209,7 @@ export function accountAuthErrorResponse(
 ) {
   if (error instanceof AccountAuthError) {
     return Response.json(
-      { ...payload, error: error.message },
+      { ...payload, ...(error.code ? { code: error.code } : {}), error: error.message },
       { status: error.status }
     );
   }

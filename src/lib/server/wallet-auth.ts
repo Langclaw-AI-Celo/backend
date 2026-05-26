@@ -61,7 +61,7 @@ export class WalletAuthError extends Error {
 
 const WALLET_LOGIN_STATEMENT = "Login to Langclaw";
 const WALLET_AUTH_VERSION = "1";
-const DEFAULT_CHAIN_ID = 5000;
+const DEFAULT_CHAIN_ID = 42220;
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const SESSION_TOKEN_PREFIX = "lws_v1";

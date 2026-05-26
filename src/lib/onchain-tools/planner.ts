@@ -3,6 +3,7 @@ import {
   inferAnalysisChain,
   isProviderSupportedForChain,
 } from "./chains";
+import { buildChainResearchCapabilities } from "./capabilities";
 import { normalizeProtocolSlug } from "./providers/defillama";
 import { resolveProductChain } from "../chain-config";
 import { readPremiumProviderConfig } from "../premium-providers";
@@ -15,6 +16,7 @@ import {
 import type {
   OnChainCommand,
   OnChainContextMessage,
+  ChainResearchCapabilities,
   OnChainDomain,
   OnChainPlan,
   OnChainPlannedCommand,
@@ -71,17 +73,26 @@ export function planOnChainTools({
     tokenAddress,
     walletAddress,
   });
+  const capabilities = buildChainResearchCapabilities({
+    chain: chain.id,
+    domains,
+    intent,
+    query,
+    rawQuery,
+    tokenAddress,
+  });
 
   return {
     chain: chain.id as OnChainPlan["chain"],
     chainId: chain.etherscanId,
     chainName: chain.name,
     analysisSource: chainResolution.source,
+    capabilities,
     commands: planned,
     domainCount: onChainDomains.length,
     intent,
     nativeSymbol: chain.nativeSymbol ?? "ETH",
-    providerGaps: buildProviderGaps(chain.id, domains),
+    providerGaps: buildProviderGaps(chain.id, domains, capabilities),
     providerTrace: buildPlanProviderTrace(chain.id),
     productChain: productChain.id,
     productChainId: productChain.chainId,
@@ -122,7 +133,7 @@ function selectDomains(text: string, intent: string): OnChainDomain[] {
     domains.add("market_data");
   }
 
-  if (/\b(wallet|portfolio|balance|address)\b/i.test(normalized)) {
+  if (hasWalletDomainIntent(normalized)) {
     domains.add("wallet_portfolio");
     domains.add("address_approval_risk");
   }
@@ -236,6 +247,16 @@ function selectCommands({
 
   for (const command of candidates) {
     if (
+      intent === "smart-money" &&
+      selected.some(
+        (item) => isPrimarySmartMoneyProviderCommand(item.command.id)
+      ) &&
+      isPrimarySmartMoneyProviderCommand(command.id)
+    ) {
+      continue;
+    }
+
+    if (
       !canRun(command, {
         chain,
         pairFocused,
@@ -282,8 +303,9 @@ function fallbackCommands(intent: string) {
         ]
       : intent === "smart-money"
         ? [
-            "smart_money.nansen_smart_money_netflow",
+            "smart_money.surf_smart_money_research",
             "smart_money.smart_money_dune",
+            "smart_money.nansen_smart_money_netflow",
             "smart_money.smart_money_signal_synthesis",
           ]
       : [
@@ -299,6 +321,14 @@ function fallbackCommands(intent: string) {
       command,
       reason: reasonFor(command, intent),
     }));
+}
+
+function isPrimarySmartMoneyProviderCommand(commandId: string) {
+  return (
+    commandId === "smart_money.smart_money_dune" ||
+    commandId === "smart_money.surf_smart_money_research" ||
+    commandId === "smart_money.nansen_smart_money_netflow"
+  );
 }
 
 function canRun(
@@ -359,27 +389,59 @@ function canRun(
 }
 
 function buildPlanProviderTrace(chain: string) {
-  if (chain !== "mantle") {
+  if (chain === "celo") {
+    const missing = (["surf", "elfa"] as const)
+      .filter((provider) => !readPremiumProviderConfig(provider).enabled)
+      .map((provider) => ({
+        message: `${provider.toUpperCase()} is not configured for this backend.`,
+        provider,
+        scope: "celo-premium" as const,
+        status: "skipped" as const,
+      }));
+
     return [
-      skippedPremiumTrace("nansen"),
-      skippedPremiumTrace("surf"),
-      skippedPremiumTrace("elfa"),
+      ...missing,
+      skippedPremiumTrace(
+        "nansen",
+        "Nansen direct smart-money netflow is Mantle-only in this workflow."
+      ),
     ];
   }
 
-  return (["nansen", "surf", "elfa"] as const)
-    .filter((provider) => !readPremiumProviderConfig(provider).enabled)
-    .map((provider) => ({
-      message: `${provider.toUpperCase()} is not configured for this backend.`,
-      provider,
-      scope: "mantle-premium" as const,
-      status: "skipped" as const,
-    }));
+  if (chain === "mantle") {
+    return (["surf", "nansen", "elfa"] as const)
+      .filter((provider) => !readPremiumProviderConfig(provider).enabled)
+      .map((provider) => ({
+        message: `${provider.toUpperCase()} is not configured for this backend.`,
+        provider,
+        scope: "mantle-premium" as const,
+        status: "skipped" as const,
+      }));
+  }
+
+  return [
+    ...(readPremiumProviderConfig("surf").enabled
+      ? []
+      : [
+          skippedPremiumTrace(
+            "surf",
+            "Surf is not configured for this backend."
+          ),
+        ]),
+    skippedPremiumTrace(
+      "nansen",
+      "Nansen direct smart-money netflow is Mantle-only in this workflow."
+    ),
+    skippedPremiumTrace("elfa", "Premium provider rollout is Celo-first in this backend."),
+  ];
 }
 
-function skippedPremiumTrace(provider: "nansen" | "surf" | "elfa") {
+function skippedPremiumTrace(
+  provider: "surf" | "nansen" | "elfa",
+  message: string
+) {
   return {
-    message: "Premium on-chain provider rollout is Mantle-only in this phase.",
+    message,
     provider,
     scope: "out-of-scope" as const,
     status: "skipped" as const,
@@ -390,20 +452,28 @@ function isPremiumProvider(provider: string): provider is "nansen" | "surf" | "e
   return provider === "nansen" || provider === "surf" || provider === "elfa";
 }
 
-function buildProviderGaps(chain: string, domains: OnChainDomain[]) {
-  if (isProviderSupportedForChain(chain, "goplus")) {
-    return [];
-  }
+function buildProviderGaps(
+  chain: string,
+  domains: OnChainDomain[],
+  capabilities: ChainResearchCapabilities
+) {
+  const gaps: string[] = [];
 
   const goplusWouldHaveRun = domains
     .flatMap((domain) => getCommandsByDomain(domain))
     .some((command) => command.provider === "goplus");
 
-  return goplusWouldHaveRun
-    ? [
-        "GoPlus security checks are not available for Celo in this workflow, so those commands were skipped.",
-      ]
-    : [];
+  if (!isProviderSupportedForChain(chain, "goplus") && goplusWouldHaveRun) {
+    gaps.push(
+      `GoPlus security checks are not available for ${capabilities.chainName} in this workflow, so those commands were skipped.`
+    );
+  }
+
+  if (domains.includes("smart_money")) {
+    gaps.push(...capabilities.smartMoney.limitations);
+  }
+
+  return Array.from(new Set(gaps));
 }
 
 function reasonFor(command: OnChainCommand, intent: string) {
@@ -413,16 +483,16 @@ function reasonFor(command: OnChainCommand, intent: string) {
 }
 
 function classifyIntent(text: string) {
-  if (/\b(wallet|portfolio|balance|address|pnl)\b/i.test(text)) {
-    return "wallet";
-  }
-
   if (
     /\b(smart[-\s]money|whale|accumulat\w*|holder(?:\s+flow)?|netflow|token flow)\b/i.test(
       text
     )
   ) {
     return "smart-money";
+  }
+
+  if (/\b(wallet|portfolio|balance|address|pnl)\b/i.test(text)) {
+    return "wallet";
   }
 
   if (/\b(tvl|yield|defi|stablecoin|protocol)\b/i.test(text)) {
@@ -442,6 +512,17 @@ function classifyIntent(text: string) {
   }
 
   return "token-discovery";
+}
+
+function hasWalletDomainIntent(text: string) {
+  const addressIntent =
+    /\baddress\b/i.test(text) && !/\btoken[-\s]?address\b/i.test(text);
+
+  return (
+    /\b(portfolio|balance)\b/i.test(text) ||
+    addressIntent ||
+    /\bwallet\b(?![-\s]?flow\b)/i.test(text)
+  );
 }
 
 function isPairFocused(text: string) {

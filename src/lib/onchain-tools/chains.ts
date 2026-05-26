@@ -123,6 +123,15 @@ const chains: Record<string, ChainConfig> = {
   },
 };
 
+const knownUnsupportedChains: Record<string, string> = {
+  aptos: "Aptos",
+  berachain: "Berachain",
+  monad: "Monad",
+  near: "NEAR",
+  sei: "Sei",
+  sui: "Sui",
+};
+
 export function resolveChain(input: string | undefined): ResolvedChainConfig {
   const normalized = input?.trim().toLowerCase() || defaultChain;
 
@@ -187,8 +196,16 @@ export function isProviderSupportedForChain(
 ) {
   const resolved = resolveChain(chain);
 
-  if (provider === "nansen" || provider === "surf" || provider === "elfa") {
+  if (provider === "surf") {
+    return true;
+  }
+
+  if (provider === "nansen") {
     return resolved.id === "mantle";
+  }
+
+  if (provider === "elfa") {
+    return resolved.product === true;
   }
 
   if (provider === "goplus") {
@@ -238,29 +255,68 @@ function escapeRegExp(value: string) {
 
 function detectExplicitChain(text: string) {
   const normalized = text.toLowerCase();
+  const candidates: Array<{ id: string; index: number; term: string }> = [];
 
   for (const [key, value] of Object.entries(chains)) {
-    if (new RegExp(`\\b${escapeRegExp(key)}\\b`, "i").test(normalized)) {
-      return resolveChain(key);
+    const keyMatch = matchChainTerm(normalized, key);
+
+    if (keyMatch && !isNegatedChainMention(normalized, keyMatch.index)) {
+      candidates.push({
+        id: key,
+        index: keyMatch.index,
+        term: key,
+      });
     }
   }
 
   for (const [key, value] of Object.entries(chains)) {
-    if (
-      value.aliases.some((alias) =>
-        new RegExp(`\\b${escapeRegExp(alias)}\\b`, "i").test(normalized)
-      )
-    ) {
-      return resolveChain(key);
+    for (const alias of value.aliases) {
+      const aliasMatch = matchChainTerm(normalized, alias);
+
+      if (aliasMatch && !isNegatedChainMention(normalized, aliasMatch.index)) {
+        candidates.push({
+          id: key,
+          index: aliasMatch.index,
+          term: alias,
+        });
+      }
     }
   }
 
-  return undefined;
+  const earliest = candidates.sort((left, right) => {
+    if (left.index !== right.index) {
+      return left.index - right.index;
+    }
+
+    return right.term.length - left.term.length;
+  })[0];
+
+  return earliest ? resolveChain(earliest.id) : undefined;
+}
+
+function matchChainTerm(text: string, term: string) {
+  const match = new RegExp(`\\b${escapeRegExp(term)}\\b`, "i").exec(text);
+
+  return match ? { index: match.index } : undefined;
+}
+
+function isNegatedChainMention(text: string, index: number) {
+  const lookback = text.slice(Math.max(0, index - 42), index);
+
+  return /(?:\bdo\s+not|\bdon't|\bdont|\bnever|\bwithout|\bexclude|\bexcluding|\bavoid|\bignore|\bnot|\bno)\s+(?:use\s+|using\s+|include\s+|including\s+|route\s+to\s+|fallback\s+to\s+|from\s+|on\s+|the\s+)?$/i.test(
+    lookback
+  );
 }
 
 function detectPotentialUnsupportedChain(
   text: string
 ): UnsupportedChainHint | undefined {
+  const named = detectNamedUnsupportedChain(text);
+
+  if (named) {
+    return named;
+  }
+
   const patterns = [
     /\bon\s+([a-z][a-z0-9\s-]{1,30}?)\s+(?:dex|pairs?|pools?|tokens?|protocols?|chain|network)\b/i,
     /\b([a-z][a-z0-9\s-]{1,30}?)\s+(?:chain|network)\b/i,
@@ -278,6 +334,29 @@ function detectPotentialUnsupportedChain(
       id: candidate.replace(/\s+/g, "-"),
       name: toTitleCase(candidate),
     };
+  }
+
+  return undefined;
+}
+
+function detectNamedUnsupportedChain(text: string) {
+  for (const [id, name] of Object.entries(knownUnsupportedChains)) {
+    const term = escapeRegExp(id);
+    const relationPattern = new RegExp(
+      `\\b(?:on|for|from|in|into)\\s+${term}(?:\\s+(?:chain|network|mainnet))?\\b`,
+      "i"
+    );
+    const chainPattern = new RegExp(
+      `\\b${term}\\s+(?:chain|network|mainnet)\\b`,
+      "i"
+    );
+
+    if (relationPattern.test(text) || chainPattern.test(text)) {
+      return {
+        id,
+        name,
+      };
+    }
   }
 
   return undefined;

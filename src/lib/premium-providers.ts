@@ -35,7 +35,7 @@ export function readPremiumProviderConfig(
 }
 
 export function isPremiumProviderInScope(chain: string | undefined) {
-  return resolveProductChain(chain).id === "mantle";
+  return resolveProductChain(chain).id === "celo";
 }
 
 export function premiumProviderLabel(id: PremiumProviderId) {

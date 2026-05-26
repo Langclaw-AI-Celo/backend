@@ -35,7 +35,10 @@ import {
   getStablecoins,
   getYieldPools,
 } from "./providers/defillama";
-import { getLatestResult } from "./providers/dune";
+import {
+  getLatestResult,
+  getSmartMoneyDexBuyCandidates,
+} from "./providers/dune";
 import { getTrendingNarratives } from "./providers/elfa";
 import {
   getNetworkNewPools,
@@ -45,6 +48,10 @@ import {
   getTokenInfo,
   getTokenTopHolders,
 } from "./providers/geckoterminal";
+import {
+  describeEmptySmartMoneyEvidence,
+  shouldRejectEmptySmartMoneyEvidence,
+} from "./evidence";
 import type {
   OnChainExecuteInput,
   OnChainExecutorId,
@@ -55,7 +62,10 @@ import type {
   OnChainToolResult,
 } from "./types";
 import { getSmartMoneyNetflow } from "./providers/nansen";
-import { getSurfWebSearch } from "./providers/surf";
+import {
+  getSurfSmartMoneyResearch,
+  getSurfWebSearch,
+} from "./providers/surf";
 
 type Executor = (input: OnChainExecuteInput) => Promise<OnChainProviderResponse>;
 
@@ -137,6 +147,14 @@ const executors: Record<OnChainExecutorId, Executor> = {
     getTopBoostedTokens({ chain: input.chain, query: input.query, signal: input.signal }),
   "dune.latest_result": (input) =>
     getLatestResult({ query: input.rawQuery ?? input.query, signal: input.signal }),
+  "dune.smart_money_sql": (input) =>
+    getSmartMoneyDexBuyCandidates({
+      chain: input.chain,
+      query: input.query,
+      rawQuery: input.rawQuery,
+      signal: input.signal,
+      tokenAddress: input.tokenAddress,
+    }),
   "elfa.trending_narratives": (input) =>
     getTrendingNarratives({ signal: input.signal }),
   "etherscan.account_balance": (input) =>
@@ -223,6 +241,14 @@ const executors: Record<OnChainExecutorId, Executor> = {
       chain: input.chain,
       signal: input.signal,
     }),
+  "surf.chat_completions": (input) =>
+    getSurfSmartMoneyResearch({
+      chain: input.chain,
+      query: input.query ?? input.rawQuery,
+      signal: input.signal,
+      tokenAddress: input.tokenAddress,
+      walletAddress: input.walletAddress,
+    }),
   "local.signal_synthesis": async (input) => ({
     data: {
       completedTools: input.previousResults.filter((result) => result.status === "success").length,
@@ -304,6 +330,11 @@ async function executeCommand(input: OnChainExecuteInput): Promise<OnChainToolRe
   ];
   const attemptedProviders: OnChainProvider[] = [];
   const errors: Array<{ message: string; provider: OnChainProvider }> = [];
+  const emptyResponses: Array<{
+    message: string;
+    provider: OnChainProvider;
+    response: OnChainProviderResponse;
+  }> = [];
 
   for (const attempt of attempts) {
     const executor = executors[attempt.executor];
@@ -321,6 +352,27 @@ async function executeCommand(input: OnChainExecuteInput): Promise<OnChainToolRe
 
     try {
       const response = await executor(input);
+
+      if (
+        shouldRejectEmptySmartMoneyEvidence({
+          command: input.command,
+          data: response.data,
+          provider: attempt.provider,
+        })
+      ) {
+        const message = describeEmptySmartMoneyEvidence(attempt.provider);
+        errors.push({
+          message,
+          provider: attempt.provider,
+        });
+        emptyResponses.push({
+          message,
+          provider: attempt.provider,
+          response,
+        });
+        continue;
+      }
+
       const result: OnChainToolResult = {
         attemptedProviders,
         commandId: input.command.id,
@@ -350,18 +402,24 @@ async function executeCommand(input: OnChainExecuteInput): Promise<OnChainToolRe
     }
   }
 
+  const primaryEmptyResponse = emptyResponses[0];
+
   return {
     attemptedProviders,
     commandId: input.command.id,
+    data: primaryEmptyResponse?.response.data,
     domain: input.command.domain,
     error: errors[0]?.message ?? "Tool execution failed.",
     fallbackReason: buildFallbackReason(errors),
     latencyMs: Date.now() - startedAt,
     provider: errors[0]?.provider ?? input.command.provider,
     scope: errors.length > 1 ? "legacy-fallback" : input.command.scope ?? "legacy-default",
-    sourceUrl: input.command.docsUrl,
+    sourceUrl: primaryEmptyResponse?.response.sourceUrl || input.command.docsUrl,
     status: "failed",
-    summary: errors[0]?.message ?? "Tool execution failed.",
+    summary:
+      primaryEmptyResponse?.response.summary ||
+      errors[0]?.message ||
+      "Tool execution failed.",
     title: input.command.title,
   };
 }

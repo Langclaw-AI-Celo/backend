@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildAlphaSignalNotificationMessage,
   buildAutomationNotificationMessage,
   resolveNotificationChannels,
+  sendAlphaSignalNotification,
   sendAutomationEmail,
   sendAutomationRunNotification,
 } from "./notifications";
+import type { AlphaSignal, ResearchReport } from "../langclaw/types";
+import type { OnChainToolFinalPayload } from "../onchain-tools/types";
 import type { AutomationSettings } from "./types";
 
 const settings: AutomationSettings = {
@@ -40,10 +44,152 @@ test("automation notification message includes run context", () => {
 
   assert.equal(
     message.subject,
-    "Langclaw Mantle alert Skipped: Usage digest sync"
+    "Langclaw Celo alert Skipped: Usage digest sync"
   );
   assert.match(message.text, /Project: Langclaw Website/);
   assert.match(message.text, /Reason: Daily automation MNT limit reached\./);
+});
+
+test("rich alpha signal notification includes target, warning, proof, and action", () => {
+  const alphaSignal = buildTestAlphaSignal();
+  const message = buildAlphaSignalNotificationMessage({
+    alphaSignal,
+    completedAt: "2026-05-24T12:00:00.000Z",
+    onChain: buildTestOnChainPayload(),
+    project: "Celo Alpha Sentinel",
+    proof: {
+      chain: {
+        chain: "mantle",
+        chainName: "Mantle",
+        briefHash: "0xbrief",
+        decisionId: "194",
+        explorerUrl: "https://explorer.mantle.xyz/tx/0xabc",
+        status: "anchored",
+        txHash: "0xabc",
+      },
+      storage: {
+        evidenceUri: "langclaw://evidence/run/hash",
+        status: "prepared",
+      },
+    },
+    report: buildTestReport(),
+    runId: "run-alpha-1",
+    taskName: "Mantle smart-money scan",
+  });
+
+  assert.equal(message.subject, "Langclaw Alpha Alert: Smart Money on Mantle");
+  assert.match(message.text, /Target: 0xbdb3\.\.\.47b6, MNT, CEX withdrawal/);
+  assert.match(message.text, /Confidence: high, 82\/100/);
+  assert.match(message.text, /Why now: Dune returned usable wallet-flow evidence\./);
+  assert.match(message.text, /Warnings: 1, provider gap/);
+  assert.match(message.text, /Proof: anchored, decision 194/);
+  assert.match(message.text, /TX: https:\/\/explorer\.mantle\.xyz\/tx\/0xabc/);
+  assert.match(message.text, /Action: Review candidate wallets before escalation\./);
+  assert.match(message.text, /Run: run-alpha-1/);
+});
+
+test("alpha signal notification falls back to minimal message without report context", () => {
+  const message = buildAlphaSignalNotificationMessage({
+    alphaSignal: buildTestAlphaSignal(),
+    completedAt: "2026-05-24T12:00:00.000Z",
+    project: "Celo Alpha Sentinel",
+    proof: {
+      chain: {
+        briefHash: "0xbrief",
+        status: "anchored",
+      },
+      storage: {
+        evidenceUri: "langclaw://evidence/run/hash",
+        status: "prepared",
+      },
+    },
+    runId: "run-alpha-1",
+    taskName: "Mantle smart-money scan",
+  });
+
+  assert.equal(message.subject, "Langclaw Alpha Alert: smart-money");
+  assert.match(message.text, /Quality score: 82\/100/);
+  assert.match(message.text, /Proof: anchored/);
+  assert.match(message.text, /Run ID: run-alpha-1/);
+});
+
+test("alpha signal Telegram notification is disabled unless the flag is enabled", async () => {
+  const originalFlag = process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
+  delete process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
+
+  try {
+    const notification = await sendAlphaSignalNotification({
+      alphaSignal: buildTestAlphaSignal(),
+      project: "Celo Alpha Sentinel",
+      runId: "run-alpha-1",
+      settings,
+      taskName: "Mantle smart-money scan",
+    });
+
+    assert.deepEqual(notification, {
+      channel: "none",
+      reason: "LANGCLAW_ALPHA_ALERTS_ENABLED is not true.",
+      status: "disabled",
+    });
+  } finally {
+    if (originalFlag === undefined) {
+      delete process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
+    } else {
+      process.env.LANGCLAW_ALPHA_ALERTS_ENABLED = originalFlag;
+    }
+  }
+});
+
+test("alpha signal Telegram notification posts when enabled", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalFlag = process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
+  const originalToken = process.env.LANGCLAW_TELEGRAM_BOT_TOKEN;
+  let requestBody: unknown;
+
+  globalThis.fetch = (async (_url, init) => {
+    requestBody = JSON.parse(String(init?.body));
+
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+
+  process.env.LANGCLAW_ALPHA_ALERTS_ENABLED = "true";
+  process.env.LANGCLAW_TELEGRAM_BOT_TOKEN = "test-token";
+
+  try {
+    const notification = await sendAlphaSignalNotification({
+      alphaSignal: buildTestAlphaSignal(),
+      project: "Celo Alpha Sentinel",
+      runId: "run-alpha-1",
+      settings,
+      taskName: "Mantle smart-money scan",
+    });
+
+    const body = requestBody as {
+      chat_id: string;
+      disable_web_page_preview: boolean;
+      text: string;
+    };
+
+    assert.equal(notification.status, "sent");
+    assert.equal(body.chat_id, "123");
+    assert.equal(body.disable_web_page_preview, true);
+    assert.match(
+      body.text,
+      /Langclaw Alpha Alert: smart-money/
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalFlag === undefined) {
+      delete process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
+    } else {
+      process.env.LANGCLAW_ALPHA_ALERTS_ENABLED = originalFlag;
+    }
+    if (originalToken === undefined) {
+      delete process.env.LANGCLAW_TELEGRAM_BOT_TOKEN;
+    } else {
+      process.env.LANGCLAW_TELEGRAM_BOT_TOKEN = originalToken;
+    }
+  }
 });
 
 test("notification channels exclude in-app and honor disabled notifications", () => {
@@ -63,6 +209,124 @@ test("notification channels exclude in-app and honor disabled notifications", ()
     ["telegram"]
   );
 });
+
+function buildTestAlphaSignal(): AlphaSignal {
+  return {
+    alertEligible: true,
+    generatedAt: "2026-05-24T12:00:00.000Z",
+    quality: {
+      alertEligible: true,
+      evidenceCount: 4,
+      falsePositiveChecks: [
+        {
+          id: "celo_product_chain",
+          label: "Celo product chain",
+          reason: "The decision is scoped to Celo.",
+          status: "pass",
+        },
+        {
+          id: "provider_gap_guard",
+          label: "Provider gap guard",
+          reason: "No blocking provider gap was detected.",
+          status: "warn",
+        },
+      ],
+      label: "high",
+      reasons: ["Quality score 82/100 is high."],
+      score: 82,
+      sourceCoverage: {
+        directWalletFlow: true,
+        onchain: true,
+        proof: true,
+        providerCount: 2,
+        social: true,
+      },
+    },
+    schema: "langclaw.alpha-signal.v1",
+    signalType: "smart-money",
+  };
+}
+
+function buildTestReport(): ResearchReport {
+  return {
+    asOfUtc: "2026-05-24T12:00:00.000Z",
+    bottomLine: "Direct wallet-flow evidence supports a Mantle alpha watch.",
+    caveats: [],
+    confidence: "high",
+    entities: [
+      {
+        category: "candidate-smart-money",
+        id: "wallet-1",
+        label: "0xbdb3...47b6",
+        metrics: {
+          signal: "CEX withdrawal",
+          token: "MNT",
+        },
+        rank: 1,
+        severity: "high",
+        sourceIds: [],
+        summary: "Candidate smart-money wallet-flow.",
+        toolIds: ["smart_money.surf_smart_money_research"],
+      },
+    ],
+    executiveSummary: "Dune returned row-level Mantle wallet-flow evidence.",
+    kind: "smart-money",
+    recommendations: ["Review candidate wallets before escalation."],
+    sections: [],
+    tables: [
+      {
+        columns: ["Wallet", "Token", "Signal"],
+        id: "smart-money-table",
+        rows: [
+          {
+            Signal: "CEX withdrawal",
+            Token: "MNT",
+            Wallet: "0xbdb3...47b6",
+          },
+        ],
+        title: "Candidate Smart-Money Wallets",
+      },
+    ],
+    title: "Mantle Smart-Money Accumulation Watch",
+  };
+}
+
+function buildTestOnChainPayload(): OnChainToolFinalPayload {
+  return {
+    answer: "Dune returned row-level Mantle wallet-flow evidence.",
+    bullets: [],
+    caveat: "Analysis only.",
+    generatedAt: "2026-05-24T12:00:00.000Z",
+    plan: {
+      analysisSource: "prompt",
+      chain: "mantle",
+      chainId: 5000,
+      chainName: "Mantle",
+      commands: [],
+      domainCount: 14,
+      intent: "smart-money",
+      nativeSymbol: "MNT",
+      productChain: "mantle",
+      productChainId: 5000,
+      productChainName: "Mantle",
+      registryCommandCount: 84,
+    },
+    recommendation: "Review candidate wallets before escalation.",
+    title: "Mantle smart-money report",
+    tools: [
+      {
+        attemptedProviders: ["surf", "dune"],
+        commandId: "smart_money.surf_smart_money_research",
+        domain: "smart_money",
+        latencyMs: 100,
+        provider: "dune",
+        status: "success",
+        summary: "Dune returned row-level Mantle wallet-flow evidence.",
+        title: "Surf smart-money research",
+      },
+    ],
+  };
+}
 
 test("sendAutomationEmail posts the requested payload to Resend", async () => {
   const originalFetch = globalThis.fetch;

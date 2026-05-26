@@ -1,18 +1,18 @@
 # Smart Contract Team Notes
 
-Langclaw uses Mantle and Celo contracts for prepaid usage balance and agent decision proof.
+Langclaw uses Celo contracts by default for prepaid usage balance and agent decision proof. Mantle env values remain optional for explicit Mantle analysis.
 
 ## Scope
 
-- `LangclawUsageVault`: accepts user MNT deposits on Mantle or USDT deposits on Celo, emits deposit events, and lets the backend-authorized signer approve withdrawals.
+- `LangclawUsageVault`: accepts user USDT deposits on Celo, emits deposit events, and lets the backend-authorized signer approve withdrawals.
 - `LangclawRegistry`: records verifiable agent decisions on the selected product chain with `agentId`, `runId`, `decisionHash`, `evidenceUri`, `signalType`, recorder, and timestamp.
 - `LangclawTradingJournal`: records verifiable strategy backtests and paper trades on the selected product chain with `agentId`, `runId`, `strategyId`, market, action, PnL bps, status, evidence URI, decision hash, and result hash.
-- OpenAI is the inference provider. User MNT/USDT deposits are app credits, not model-provider account funding.
+- OpenAI is the inference provider. User USDT deposits are app credits, not model-provider account funding.
 
 ## Required Environment
 
 ```bash
-MANTLE_CHAIN_ENABLED=true
+MANTLE_CHAIN_ENABLED=false
 MANTLE_CHAIN_RPC_URL=https://rpc.mantle.xyz
 MANTLE_CHAIN_ID=5000
 MANTLE_CHAIN_EXPLORER_URL=https://explorer.mantle.xyz
@@ -62,7 +62,7 @@ CELO_SELF_REPUTATION_REGISTRY_ADDRESS=0x69Da18CF4Ac27121FD99cEB06e38c3DC78F363f4
 
 ## Usage Vault Flow
 
-1. User deposits MNT on Mantle or USDT on Celo into the selected chain's `LangclawUsageVault`; Celo transactions use USDT fee abstraction where supported.
+1. User deposits USDT on Celo into `LangclawUsageVault`; Celo transactions use USDT fee abstraction where supported.
 2. Backend verifies the `Deposit` event through the selected chain RPC.
 3. Backend credits the internal Supabase usage ledger.
 4. Research/chat usage is deducted from the internal balance.

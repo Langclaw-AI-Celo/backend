@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { isExecutorAvailable } from "./executor";
+import { buildChainResearchCapabilities } from "./capabilities";
 import {
   detectChain,
   detectChainWithFallback,
@@ -12,7 +13,10 @@ import { planOnChainTools } from "./planner";
 import { getTokenBalances } from "./providers/alchemy";
 import { getYieldPools } from "./providers/defillama";
 import { searchPairs } from "./providers/dexscreener";
-import { getLatestResult } from "./providers/dune";
+import {
+  getLatestResult,
+  getSmartMoneyDexBuyCandidates,
+} from "./providers/dune";
 import { getAccountBalance } from "./providers/etherscan";
 import { getTokenSecurity } from "./providers/goplus";
 import { assertRegistryShape, onChainCommands } from "./registry";
@@ -38,14 +42,14 @@ test("on-chain registry commands have schemas, executors, providers, and risk le
   }
 });
 
-test("Mantle is the default on-chain intelligence network", () => {
+test("Celo is the default on-chain intelligence network", () => {
   const defaultChain = resolveChain(undefined);
   const detected = detectChain("Find smart-money accumulation on Mantle");
   const mainnetDetected = detectChain("Find smart-money on Mantle mainnet");
 
-  assert.equal(defaultChain.id, "mantle");
-  assert.equal(defaultChain.etherscanId, 5000);
-  assert.equal(defaultChain.dexScreenerId, "mantle");
+  assert.equal(defaultChain.id, "celo");
+  assert.equal(defaultChain.etherscanId, 42220);
+  assert.equal(defaultChain.dexScreenerId, "celo");
   assert.equal(detected.id, "mantle");
   assert.equal(detected.etherscanId, 5000);
   assert.equal(mainnetDetected.id, "mantle");
@@ -83,6 +87,15 @@ test("prompt chain detection prefers explicit chain over UI fallback", () => {
   assert.equal(fallbackCelo.id, "celo");
 });
 
+test("prompt chain detection ignores negated chain mentions", () => {
+  const detected = detectChainWithFallback(
+    "Find smart-money accumulation across Mantle chain only. Use Mantle wallet-flow rows. Do not use Ethereum MNT or external token fallback.",
+    "mantle"
+  );
+
+  assert.equal(detected.id, "mantle");
+});
+
 test("on-chain guard allows explicitly supported analysis networks", () => {
   assert.equal(
     detectUnsupportedOnChainChain("Find trending tokens on Base"),
@@ -95,6 +108,83 @@ test("on-chain guard allows explicitly supported analysis networks", () => {
   assert.equal(
     detectUnsupportedOnChainChain("Find trending tokens without naming a chain"),
     null
+  );
+  assert.equal(
+    detectUnsupportedOnChainChain("Analyze SUI token on Ethereum"),
+    null
+  );
+});
+
+test("on-chain guard catches named unsupported chains without falling back to Mantle", () => {
+  assert.deepEqual(
+    detectUnsupportedOnChainChain("Find smart-money accumulation on Sui"),
+    {
+      id: "sui",
+      name: "Sui",
+    }
+  );
+  assert.deepEqual(
+    detectUnsupportedOnChainChain("Find smart-money accumulation on Sui chain"),
+    {
+      id: "sui",
+      name: "Sui",
+    }
+  );
+});
+
+test("chain capability registry marks configured Surf SQL chains as candidate ranking", async () => {
+  await withEnv(
+    {
+      SURF_API_KEY: "surf-test-key",
+      SURF_ENABLED: "true",
+    },
+    async () => {
+      const capabilities = buildChainResearchCapabilities({
+        chain: "arbitrum",
+        domains: ["smart_money"],
+        intent: "smart-money",
+        query: "Find smart-money accumulation on Arbitrum",
+      });
+
+      assert.equal(capabilities.chain, "arbitrum");
+      assert.equal(capabilities.smartMoney.status, "available");
+      assert.equal(capabilities.smartMoney.mode, "candidate-ranking");
+      assert.ok(
+        capabilities.smartMoney.providers.some(
+          (provider) =>
+            provider.provider === "surf" &&
+            provider.configured &&
+            provider.status === "available" &&
+            /SQL fallback/.test(provider.coverage)
+        )
+      );
+    }
+  );
+});
+
+test("chain capability registry downgrades chains without Surf SQL fallback", async () => {
+  await withEnv(
+    {
+      SURF_API_KEY: "surf-test-key",
+      SURF_ENABLED: "true",
+    },
+    async () => {
+      const capabilities = buildChainResearchCapabilities({
+        chain: "avalanche",
+        domains: ["smart_money"],
+        intent: "smart-money",
+        query: "Find smart-money accumulation on Avalanche",
+      });
+
+      assert.equal(capabilities.chain, "avalanche");
+      assert.equal(capabilities.smartMoney.status, "partial");
+      assert.equal(capabilities.smartMoney.mode, "dynamic-ability");
+      assert.ok(
+        capabilities.smartMoney.limitations.some((item) =>
+          /SQL fallback is not mapped/.test(item)
+        )
+      );
+    }
   );
 });
 
@@ -111,6 +201,32 @@ test("Celo plans skip GoPlus and include a provider-gap caveat", () => {
   assert.ok(!plan.commands.some((item) => item.command.provider === "goplus"));
   assert.ok(plan.providerGaps?.some((gap) => /GoPlus/.test(gap)));
 });
+
+test("planner attaches chain capability diagnostics to smart-money plans", async () => {
+  await withEnv(
+    {
+      SURF_API_KEY: "surf-test-key",
+      SURF_ENABLED: "true",
+    },
+    async () => {
+      const plan = planOnChainTools({
+        chain: "mantle",
+        context: [],
+        message: "Find smart-money accumulation on Avalanche",
+      });
+
+      assert.equal(plan.chain, "avalanche");
+      assert.equal(plan.capabilities?.smartMoney.status, "partial");
+      assert.equal(plan.capabilities?.smartMoney.mode, "dynamic-ability");
+      assert.ok(
+        plan.providerGaps?.some((gap) =>
+          /row-level SQL fallback is not mapped/.test(gap)
+        )
+      );
+    }
+  );
+});
+
 
 test("planner routes Mantle alpha prompts into smart-money and yield domains", async () => {
   await withEnv(
@@ -136,7 +252,7 @@ test("planner routes Mantle alpha prompts into smart-money and yield domains", a
         (item) => item.command.domain === "smart_money"
       )
     );
-    assert.equal(smartMoneyPlan.commands[0]?.command.provider, "nansen");
+    assert.equal(smartMoneyPlan.commands[0]?.command.provider, "dune");
     assert.ok(
       yieldPlan.commands.some(
         (item) =>
@@ -149,6 +265,92 @@ test("planner routes Mantle alpha prompts into smart-money and yield domains", a
         (item) => item.command.id === "defi_tvl.defillama_protocol_detail"
       )
     );
+    }
+  );
+});
+
+test("planner routes configured Mantle smart-money prompts through Surf first", async () => {
+  await withEnv(
+    {
+      DUNE_DEFAULT_QUERY_ID: "123456",
+      NANSEN_API_KEY: "nansen-test-key",
+      NANSEN_ENABLED: "true",
+      SURF_API_KEY: "surf-test-key",
+      SURF_ENABLED: "true",
+    },
+    async () => {
+      const plan = planOnChainTools({
+        context: [],
+        message: "Find smart-money accumulation on Mantle query 123456",
+      });
+
+      assert.equal(plan.intent, "smart-money");
+      assert.equal(plan.commands[0]?.command.id, "smart_money.surf_smart_money_research");
+      assert.equal(plan.commands[0]?.command.provider, "surf");
+      assert.deepEqual(
+        plan.commands[0]?.command.fallback?.map((item) => item.provider),
+        ["dune", "nansen"]
+      );
+      assert.ok(
+        !plan.commands.some(
+          (item) => item.command.id === "smart_money.nansen_smart_money_netflow"
+        )
+      );
+    }
+  );
+});
+
+test("planner preserves Mantle smart-money scope with negated Ethereum fallback text", async () => {
+  await withEnv(
+    {
+      SURF_API_KEY: "surf-test-key",
+      SURF_ENABLED: "true",
+    },
+    async () => {
+      const plan = planOnChainTools({
+        chain: "mantle",
+        context: [],
+        message:
+          "Find smart-money accumulation across Mantle chain only. Use Mantle on-chain wallet-flow rows only. Do not use Ethereum MNT, token-address fallback, or external low-confidence token context.",
+      });
+
+      assert.equal(plan.chain, "mantle");
+      assert.equal(plan.intent, "smart-money");
+      assert.equal(plan.analysisSource, "prompt");
+      assert.ok(
+        !plan.commands.some(
+          (item) => item.command.domain === "wallet_portfolio"
+        )
+      );
+      assert.ok(
+        plan.commands.some((item) => item.command.domain === "smart_money")
+      );
+    }
+  );
+});
+
+test("planner routes configured Arbitrum smart-money prompts through Surf first", async () => {
+  await withEnv(
+    {
+      SURF_API_KEY: "surf-test-key",
+      SURF_ENABLED: "true",
+    },
+    async () => {
+      const plan = planOnChainTools({
+        chain: "mantle",
+        context: [],
+        message: "Find smart-money accumulation on Arbitrum",
+      });
+
+      assert.equal(plan.intent, "smart-money");
+      assert.equal(plan.chain, "arbitrum");
+      assert.equal(plan.commands[0]?.command.id, "smart_money.surf_smart_money_research");
+      assert.equal(plan.commands[0]?.command.provider, "surf");
+      assert.ok(
+        !plan.providerTrace?.some(
+          (entry) => entry.provider === "surf" && entry.status === "skipped"
+        )
+      );
     }
   );
 });
@@ -174,7 +376,7 @@ test("planner does not classify smart-money token prompts as wallet analysis by 
         plan.commands.some(
           (item) =>
             item.command.domain === "smart_money" &&
-            item.command.provider === "nansen"
+            item.command.provider === "dune"
         )
       );
     }
@@ -238,7 +440,7 @@ test("planner records premium provider scope skips for Celo", () => {
       (entry) =>
         entry.provider === "surf" &&
         entry.status === "skipped" &&
-        entry.scope === "out-of-scope"
+        entry.scope === "celo-premium"
     )
   );
   assert.ok(
@@ -246,7 +448,7 @@ test("planner records premium provider scope skips for Celo", () => {
       (entry) =>
         entry.provider === "elfa" &&
         entry.status === "skipped" &&
-        entry.scope === "out-of-scope"
+        entry.scope === "celo-premium"
     )
   );
 });
@@ -519,6 +721,261 @@ test("Dune provider fetches latest configured query result", async () => {
 
       assert.match(result.summary ?? "", /Dune query result/);
     });
+  } finally {
+    restore();
+  }
+});
+
+test("Dune provider executes generated smart-money SQL from prompt parameters", async () => {
+  const seenPaths: string[] = [];
+  const restore = mockFetch((url, init) => {
+    const parsed = new URL(url);
+    seenPaths.push(parsed.pathname);
+
+    if (parsed.pathname === "/api/v1/sql/execute") {
+      assert.equal(init?.method, "POST");
+
+      const body = JSON.parse(String(init?.body)) as {
+        performance: string;
+        sql: string;
+      };
+
+      assert.equal(body.performance, "small");
+      assert.match(body.sql, /FROM dex\.trades/);
+      assert.match(body.sql, /FROM cex\.flows/);
+      assert.match(body.sql, /blockchain = 'ethereum'/);
+      assert.match(body.sql, /upper\(token_bought_symbol\) = 'ENA'/);
+      assert.match(body.sql, /upper\(token_symbol\) = 'ENA'/);
+      assert.match(
+        body.sql,
+        /lower\(flow_type\) IN \('withdrawal', 'deposit', 'outflow', 'inflow'\)/
+      );
+      assert.match(body.sql, /date_add\('day', -30, current_timestamp\)/);
+
+      return jsonResponse({
+        execution_id: "01KSQL",
+        state: "QUERY_STATE_PENDING",
+      });
+    }
+
+    if (parsed.pathname === "/api/v1/execution/01KSQL/status") {
+      return jsonResponse({
+        execution_id: "01KSQL",
+        is_execution_finished: true,
+        state: "QUERY_STATE_COMPLETED",
+      });
+    }
+
+    if (parsed.pathname === "/api/v1/execution/01KSQL/results") {
+      return jsonResponse({
+        result: {
+          rows: [
+            {
+              amount: 1000,
+              category: "non-stable token accumulation",
+              signal: "DEX buy",
+              status: "large-flow watchlist",
+              token: "ENA",
+              trades: 4,
+              usd_value: 250000,
+              wallet: "0x1111111111111111111111111111111111111111",
+              window: "2026-05-01 to 2026-05-23",
+            },
+            {
+              amount: 1200,
+              category: "non-stable token accumulation",
+              signal: "CEX withdrawal",
+              sourceCex: "Bybit",
+              status: "candidate smart-money",
+              token: "ENA",
+              transfers: 2,
+              usd_value: 300000,
+              wallet: "0x2222222222222222222222222222222222222222",
+              window: "2026-05-20 to 2026-05-23",
+            },
+          ],
+        },
+      });
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  try {
+    await withEnv(
+      {
+        DUNE_API_KEY: "dune-test-key",
+        DUNE_SQL_POLL_INTERVAL_MS: "1",
+        DUNE_SQL_PERFORMANCE: "small",
+      },
+      async () => {
+        const result = await getSmartMoneyDexBuyCandidates({
+          chain: "ethereum",
+          query: "Find smart-money accumulation for ENA on Ethereum last 30 days",
+        });
+
+        assert.match(result.summary ?? "", /DEX and CEX flow SQL/);
+        assert.match(result.summary ?? "", /returned 2 row/);
+        assert.deepEqual(seenPaths, [
+          "/api/v1/sql/execute",
+          "/api/v1/execution/01KSQL/status",
+          "/api/v1/execution/01KSQL/results",
+        ]);
+      }
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("Dune smart-money provider retries same-chain relaxed SQL before cross-scope fallback", async () => {
+  const executedSql: string[] = [];
+  const restore = mockFetch((url, init) => {
+    const parsed = new URL(url);
+
+    if (parsed.pathname === "/api/v1/sql/execute") {
+      const body = JSON.parse(String(init?.body)) as { sql: string };
+      executedSql.push(body.sql);
+
+      return jsonResponse({
+        execution_id:
+          executedSql.length === 1
+            ? "01KPRIMARYEMPTY"
+            : executedSql.length === 2
+              ? "01KRELAXEDROWS"
+              : "01KEXTERNALCEX",
+        state: "QUERY_STATE_PENDING",
+      });
+    }
+
+    if (parsed.pathname === "/api/v1/execution/01KPRIMARYEMPTY/status") {
+      return jsonResponse({
+        execution_id: "01KPRIMARYEMPTY",
+        is_execution_finished: true,
+        state: "QUERY_STATE_COMPLETED",
+      });
+    }
+
+    if (parsed.pathname === "/api/v1/execution/01KPRIMARYEMPTY/results") {
+      return jsonResponse({ result: { rows: [] } });
+    }
+
+    if (parsed.pathname === "/api/v1/execution/01KRELAXEDROWS/status") {
+      return jsonResponse({
+        execution_id: "01KRELAXEDROWS",
+        is_execution_finished: true,
+        state: "QUERY_STATE_COMPLETED",
+      });
+    }
+
+    if (parsed.pathname === "/api/v1/execution/01KRELAXEDROWS/results") {
+      return jsonResponse({
+        result: {
+          rows: [
+            {
+              amount: 5228973.96,
+              category: "non-stable token accumulation",
+              signal: "DEX buy",
+              smartMoneyStatus: "large_flow_watchlist",
+              sourceChain: "mantle",
+              sourceTable: "dex.trades",
+              status: "large-flow watchlist",
+              token: "WMNT",
+              trades: 1566,
+              usd_value: 3485162.25,
+              wallet: "0xbd41474c37a551a6e735cfc59bdd1d2d6071ae0f",
+              window: "2026-04-23 to 2026-05-23",
+            },
+          ],
+        },
+      });
+    }
+
+    if (parsed.pathname === "/api/v1/execution/01KEXTERNALCEX/status") {
+      return jsonResponse({
+        execution_id: "01KEXTERNALCEX",
+        is_execution_finished: true,
+        state: "QUERY_STATE_COMPLETED",
+      });
+    }
+
+    if (parsed.pathname === "/api/v1/execution/01KEXTERNALCEX/results") {
+      return jsonResponse({
+        result: {
+          rows: [
+            {
+              amount: 177700,
+              category: "external token CEX withdrawal",
+              signal: "CEX withdrawal",
+              smartMoneyStatus: "candidate_smart_money",
+              sourceCex: "Bybit",
+              sourceChain: "ethereum",
+              sourceTable: "cex token transfers: tokens.transfers + labels.addresses",
+              status: "candidate smart-money",
+              token: "MNT",
+              transfers: 3,
+              usd_value: 120900,
+              wallet: "0xbdb30000000000000000000000000000000047b6",
+              window: "2026-05-21 to 2026-05-21",
+            },
+          ],
+        },
+      });
+    }
+
+    throw new Error(`Unexpected request: ${url}`);
+  });
+
+  try {
+    await withEnv(
+      {
+        DUNE_API_KEY: "dune-test-key",
+        DUNE_SQL_POLL_INTERVAL_MS: "1",
+      },
+      async () => {
+        const result = await getSmartMoneyDexBuyCandidates({
+          chain: "mantle",
+          query: "Find smart-money accumulation on Mantle",
+        });
+        const data = result.data as {
+          result?: { rows?: Array<Record<string, unknown>> };
+          routeDebug?: {
+            fallbackAttempts?: Array<Record<string, unknown>>;
+            preservationCheck?: string;
+          };
+        };
+
+        assert.equal(data.result?.rows?.[0]?.token, "WMNT");
+        assert.equal(data.result?.rows?.[1]?.signal, "CEX withdrawal");
+        assert.match(result.summary ?? "", /retried the same chain/i);
+        assert.match(result.summary ?? "", /Supplemental Ethereum MNT CEX transfer lookup returned 1 row/i);
+        assert.match(executedSql[0] ?? "", /blockchain = 'mantle'/);
+        assert.match(executedSql[0] ?? "", /amount_usd >= 10000/);
+        assert.match(executedSql[0] ?? "", /date_add\('day', -7, current_timestamp\)/);
+        assert.match(executedSql[1] ?? "", /blockchain = 'mantle'/);
+        assert.match(executedSql[1] ?? "", /amount_usd >= 1000/);
+        assert.match(executedSql[1] ?? "", /date_add\('day', -30, current_timestamp\)/);
+        assert.match(executedSql[2] ?? "", /tokens\.transfers/);
+        assert.match(executedSql[2] ?? "", /labels\.addresses/);
+        assert.match(executedSql[2] ?? "", /blockchain = 'ethereum'/);
+        assert.match(
+          executedSql[2] ?? "",
+          /0x3c3a81e81dc49a522a592e7622a7e711c06bf354/i
+        );
+        assert.equal(
+          data.routeDebug?.fallbackAttempts?.[0]?.route,
+          "dune.smart_money_sql.same_chain_relaxed"
+        );
+        assert.equal(
+          data.routeDebug?.fallbackAttempts?.[1]?.route,
+          "dune.smart_money_sql.external_cex_transfers"
+        );
+        assert.match(
+          data.routeDebug?.preservationCheck ?? "",
+          /external token signal is labeled context/i
+        );
+      }
+    );
   } finally {
     restore();
   }

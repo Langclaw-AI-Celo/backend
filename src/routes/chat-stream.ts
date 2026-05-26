@@ -3,6 +3,7 @@ import { readProductChainId, resolveProductChain } from "../lib/chain-config";
 import {
   accountAuthErrorResponse,
   requireAccountAuth,
+  requireTelegramLinkedAccount,
 } from "../lib/server/account-auth";
 import type { WalletAuthInput } from "../lib/server/wallet-auth";
 import { runLangclawWorkflow } from "../lib/langclaw/workflow";
@@ -69,7 +70,8 @@ export async function handleChatStream(request: Request) {
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
   const context = readContextMessages(body.messages);
-  const toolMode = readToolMode(body.toolMode, body.researchTrend);
+  const requestedToolMode = readToolMode(body.toolMode, body.researchTrend);
+  const toolMode = resolveEffectiveToolMode(message, requestedToolMode);
   const selectedChain = resolveProductChain(readProductChainId(body.chain));
   const useAgent = toolMode === "research" || body.useAgent === true;
   const shouldBillUsage = useAgent;
@@ -85,6 +87,14 @@ export async function handleChatStream(request: Request) {
 
   if ("error" in account) {
     return accountAuthErrorResponse(account.error);
+  }
+
+  const telegram = await requireTelegramLinkedAccount(account).catch((error) => ({
+    error,
+  }));
+
+  if ("error" in telegram) {
+    return accountAuthErrorResponse(telegram.error);
   }
 
   let reservation: UsageReservation | undefined;
@@ -386,6 +396,24 @@ function readToolMode(toolMode: unknown, researchTrend: unknown) {
   }
 
   return "chat";
+}
+
+export function resolveEffectiveToolMode(message: string, requestedToolMode: string) {
+  if (requestedToolMode === "chat" && isSmartMoneyResearchPrompt(message)) {
+    return "research";
+  }
+
+  return requestedToolMode;
+}
+
+function isSmartMoneyResearchPrompt(message: string) {
+  const normalized = message.trim();
+
+  return (
+    /\b(find|analy[sz]e|rank|track|detect|show|monitor|watch)\b/i.test(normalized) &&
+    /\bsmart[-\s]?money\b/i.test(normalized) &&
+    /\b(accumulat\w*|flow|wallet|whale|dex|holder|buy|sell|netflow|net\s*flow)\b/i.test(normalized)
+  );
 }
 
 function buildDirectReasoningSummary({

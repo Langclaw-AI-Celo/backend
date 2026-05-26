@@ -4,6 +4,7 @@ import {
   streamOpenAITextResponse,
   type OpenAITextMessage,
 } from "./openai/responses";
+import { detectResponseLanguage } from "./response-language";
 import { buildUsageMeter, mapUiTokenUsage } from "./usage-pricing";
 
 export type DirectChatContextMessage = {
@@ -55,7 +56,7 @@ export async function streamDirectChatWithOpenAI({
   try {
     const result = await streamOpenAITextResponse({
       input: buildMessages(message, context),
-      instructions: buildDirectChatInstructions(),
+      instructions: buildDirectChatInstructions(message),
       maxOutputTokens: readPositiveInt(process.env.OPENAI_CHAT_MAX_OUTPUT_TOKENS, 1800),
       model,
       onDelta,
@@ -169,10 +170,14 @@ function buildMessages(
   ];
 }
 
-function buildDirectChatInstructions() {
+function buildDirectChatInstructions(message: string) {
+  const language = detectResponseLanguage(message);
+
   return [
     "You are Langclaw, a concise and helpful chat assistant.",
     "Answer naturally in the user's language.",
+    `Detected response language: ${language.label} (${language.confidence}). ${language.instruction}`,
+    "If the user switches language in a later message, follow the latest user message.",
     "If the message is Indonesian or casual Indonesian spelling such as hay, hai, halo, or makasih, reply in Indonesian.",
     "Format every answer like a polished ChatGPT response: short paragraphs, clear section breaks, blank lines between sections, bullets or numbered lists for scannable details, and valid Markdown tables only when a table genuinely helps.",
     "Never return dense unbroken prose. Never compress words together.",
@@ -188,19 +193,25 @@ function buildLocalFallback(
   message: string,
   context: DirectChatContextMessage[]
 ) {
+  const language = detectResponseLanguage(message);
+  const isIndonesian = language.label === "Indonesian";
   const previousUser = [...context]
     .reverse()
     .find((item) => item.role === "user" && item.content !== message);
 
   if (/^(hai|halo|hello|hi|hay|hey|pagi|siang|malam)\b/i.test(message)) {
-    return "Hai. Ada yang bisa aku bantu?";
+    return isIndonesian ? "Hai. Ada yang bisa aku bantu?" : "Hi. How can I help?";
   }
 
   if (/konteks|context|sebelumnya|tadi/i.test(message) && previousUser) {
-    return `Konteks terakhir dari sesi ini adalah: "${previousUser.content}".`;
+    return isIndonesian
+      ? `Konteks terakhir dari sesi ini adalah: "${previousUser.content}".`
+      : `The last context from this session is: "${previousUser.content}".`;
   }
 
-  return "Aku belum bisa menghubungi model chat sekarang. Coba lagi sebentar.";
+  return isIndonesian
+    ? "Aku belum bisa menghubungi model chat sekarang. Coba lagi sebentar."
+    : "I cannot reach the chat model right now. Try again shortly.";
 }
 
 function readPositiveInt(value: string | undefined, fallback: number) {

@@ -4,6 +4,6 @@ import { config } from "dotenv";
 
 for (const path of [".env.local", ".env"]) {
   if (existsSync(path)) {
-    config({ path });
+    config({ path, quiet: true });
   }
 }

@@ -1,4 +1,5 @@
 import type { OpenAITextFormat } from "../openai/responses";
+import { detectResponseLanguage } from "../response-language";
 import {
   isRecord,
   parseLooseJson,
@@ -22,7 +23,10 @@ import type {
   ResearchReport,
   SourceCard,
 } from "./types";
-import type { OnChainToolFinalPayload } from "../onchain-tools/types";
+import type {
+  OnChainToolFinalPayload,
+  OnChainToolResult,
+} from "../onchain-tools/types";
 
 export type OpenClawFinalAnswerInput = {
   topic: string;
@@ -142,6 +146,7 @@ export function buildFinalAnswerPrompt(
     report: input.report,
     signals: input.signals,
   });
+  const responseLanguage = detectResponseLanguage(input.topic);
   const excerptLimit = compact ? 320 : 700;
   const sources = (compact ? input.sources.slice(0, 10) : input.sources).map(
     (source) => ({
@@ -158,8 +163,12 @@ export function buildFinalAnswerPrompt(
   );
   const evidence = {
     topic: input.topic,
+    responseLanguage,
     providerCoverage: summarizeProviderCoverage(input.sources),
-    providerErrors: input.errors,
+    providerErrors: input.errors.map((error) => ({
+      message: sanitizeProviderIssueForPrompt(error.message),
+      provider: error.provider,
+    })),
     sources,
     orchestration: {
       runtime: input.runtime,
@@ -184,19 +193,15 @@ export function buildFinalAnswerPrompt(
       : input.onChain
         ? {
             answer: input.onChain.answer,
-            attemptedProviders: input.onChain.tools.map((tool) => ({
-              attemptedProviders: tool.attemptedProviders,
-              fallbackReason: tool.fallbackReason,
-              provider: tool.provider,
-              scope: tool.scope,
-              status: tool.status,
-              summary: tool.summary,
-              title: tool.title,
-            })),
+            attemptedProviders: input.onChain.tools.map(compactOnChainToolForSynthesis),
             caveat: input.onChain.caveat,
             chain: input.onChain.plan.chain,
+            capabilities: input.onChain.plan.capabilities,
             intent: input.onChain.plan.intent,
-            providerTrace: input.onChain.providerTrace,
+            providerTrace: input.onChain.providerTrace?.map((entry) => ({
+              ...entry,
+              message: sanitizeProviderIssueForPrompt(entry.message),
+            })),
             recommendation: input.onChain.recommendation,
             toolCount: input.onChain.tools.length,
           }
@@ -213,7 +218,7 @@ export function buildFinalAnswerPrompt(
     ...(compact && input.providerTrace?.length
       ? {
           providerTrace: input.providerTrace.slice(0, 12).map((entry) => ({
-            message: cleanText(entry.message).slice(0, 120),
+            message: sanitizeProviderIssueForPrompt(entry.message),
             provider: entry.provider,
             scope: entry.scope,
             status: entry.status,
@@ -225,15 +230,35 @@ export function buildFinalAnswerPrompt(
   return [
     "You are Langclaw's Final Conclusion Agent.",
     "Write the final answer as a natural AI chat response, not a dashboard card.",
-    "Write natural Markdown with flexible structure. Short paragraphs and bullets are allowed when they help readability, but do not force a rigid template.",
+    "Write natural Markdown with flexible structure. Short paragraphs and bullets are allowed when they help readability.",
+    "For smart-money accumulation requests, write a title line, short opening read, then Read, Evidence, Candidates, Limits, and Conclusion sections.",
+    "For smart-money answers with direct rows, Evidence should include a compact Markdown evidence table that summarizes source, rows parsed, token bucket, flow type, classification, and unavailable checks.",
+    "For smart-money answers with direct rows, include only the wallets, token flows, amounts, labels, categories, diagnostics, and time windows present in the report entities or tables. Put the compact top-5 shortlist as a Markdown table under Candidates.",
+    "Do not render smart-money candidate rows as bullet lists when row data exists. Use the table from report.tables instead.",
+    "Read, Limits, and Conclusion must be short paragraphs, not bullet lists.",
+    "Limits must be specific to the analysis: mention chain or token coverage gaps, wallet labeling gaps, sample window, unavailable checks, and why the classification is watchlist or candidate rather than confirmed.",
+    "Do not use the phrase 'this run' in titles, paragraphs, caveats, or conclusions.",
+    "Do not expose internal provider errors, billing errors, HTTP status codes, stack traces, fallback route names, API keys, raw JSON errors, or provider setup problems in user-visible prose.",
+    "If the only evidence is DEX buy rows without wallet labels, retention, or sell-pressure checks, call them large DEX-buy candidates or large-flow watchlist rows, not smart-money candidates.",
+    "For smart-money answers with empty direct wallet-flow rows, keep the same section shape, say the signal is weak, and explain which standard checks were unavailable. Do not ask the user to rerun the same task for standard checks.",
+    "Never describe the answer format using competitor branding or style labels.",
+    "Do not expose internal snake_case labels in visible prose. Use human-readable section titles and status labels.",
+    "Use a hyphen, not an em dash.",
     "Do not write dense paragraphs. Do not put markdown tables into JSON string fields unless they are necessary and valid.",
     "Use only the evidence in the input JSON. Do not invent facts, numbers, dates, providers, URLs, or claims.",
     "Treat the report object as supporting context for the answer. Use it to stay grounded, but keep conclusion user-facing rather than report-shaped.",
-    "If a provider failed or evidence is weak, say that clearly in the conclusion.",
+    "Use onChainEnrichment.capabilities to decide whether the answer should present a candidate ranking, dynamic ability research, directional research, or a coverage gap.",
+    "If evidence is weak, explain the coverage gap clearly in the conclusion without raw provider error logs.",
+    "For smart-money requests with empty direct wallet-flow rows, keep the answer useful: say the smart-money signal is weak, name the missing row-level source, and list unavailable checks.",
+    "Do not write hard-negative smart-money phrasing such as 'Belum ada bukti akumulasi terverifikasi' or 'no verified accumulation evidence'.",
+    "For empty smart-money rows, do not write raw fallback text such as 'no usable smart-money rows', 'provider failed', or 'failed providers'.",
+    "Do not turn empty smart-money rows into wallet rankings, token flow claims, or confirmation language.",
+    "Do not end smart-money answers by telling the user to rerun the same task for wallet label lookup, retention, sell pressure, exchange-flow checks, wallet net worth, wallet history, or second-source validation.",
     "If ranked entities exist, prefer a best-effort shortlist with explicit gaps instead of saying no ranking is available.",
-    "The backend appends the exact structured caveat after synthesis, so do not add a caveat field.",
-    "Do not claim any evidenceUri, storage upload, prepared or anchored Mantle proof, Mantle anchoring, chain write, or transaction submission state in conclusion. Proof state is reported separately by the workflow payload.",
-    "Answer in the same language as the user topic. If the topic mixes Indonesian and English, prefer Indonesian.",
+    "The backend handles caveat metadata separately, so do not add a caveat field or a trailing Caveat paragraph.",
+    "Do not claim any evidenceUri, storage upload, prepared or anchored Celo proof, Celo anchoring, chain write, or transaction submission state in conclusion. Proof state is reported separately by the workflow payload.",
+    `Detected response language: ${responseLanguage.label} (${responseLanguage.confidence}). ${responseLanguage.instruction}`,
+    "Mirror the latest user message's language for all user-visible headings, bullets, caveats, and next steps.",
     "Return only valid JSON. Do not wrap it in markdown. Do not add commentary outside JSON.",
     "",
     "Required JSON shape:",
@@ -404,7 +429,7 @@ function buildLegacyAnswerMarkdown({
     bullets.length
       ? ["", ...bullets.map((bullet) => `- ${bullet}`)].join("\n")
       : "",
-    recommendation ? `\nNext step: ${recommendation}` : "",
+    recommendation ? `\nWhat would improve confidence: ${recommendation}` : "",
     caveat ? `\nCaveat: ${caveat}` : "",
   ]
     .filter(Boolean)
@@ -470,7 +495,7 @@ function compactResearchReport(report: ResearchReport | undefined) {
     recommendations: report.recommendations
       .slice(0, 3)
       .map((recommendation) => cleanText(recommendation).slice(0, 200)),
-    sections: report.sections.slice(0, 4).map((section) => ({
+    sections: report.sections.slice(0, 12).map((section) => ({
       markdown: cleanText(section.markdown).slice(0, 280),
       title: section.title,
     })),
@@ -481,6 +506,24 @@ function compactResearchReport(report: ResearchReport | undefined) {
     })),
     title: report.title,
   };
+}
+
+function sanitizeProviderIssueForPrompt(message: string) {
+  const compact = cleanText(message);
+
+  if (
+    /\b(?:401|402|403|429|5\d\d)\b|payment|required|credit|billing|api[_\s-]?key|token|unauthorized|forbidden/i.test(
+      compact
+    )
+  ) {
+    return "Source unavailable.";
+  }
+
+  if (/row-level smart-money|wallet-flow coverage/i.test(compact)) {
+    return "Row-level wallet-flow coverage was unavailable.";
+  }
+
+  return compact.slice(0, 120);
 }
 
 function compactOnChainEnrichment(
@@ -498,6 +541,7 @@ function compactOnChainEnrichment(
     answer: cleanText(onChain.answer).slice(0, 500),
     caveat: cleanText(onChain.caveat).slice(0, 240),
     chain: onChain.plan.chain,
+    capabilities: onChain.plan.capabilities,
     intent: onChain.plan.intent,
     rankingBasis:
       onChain.report?.sections
@@ -522,14 +566,28 @@ function compactOnChainEnrichment(
       severity: entity.severity,
     })),
     toolCount: onChain.tools.length,
-    tools: onChain.tools.slice(0, 8).map((tool) => ({
-      commandId: tool.commandId,
-      fallbackReason: tool.fallbackReason,
-      provider: tool.provider,
-      status: tool.status,
-      summary: cleanText(tool.summary).slice(0, 160),
-      title: tool.title,
-    })),
+    tools: onChain.tools.slice(0, 8).map(compactOnChainToolForSynthesis),
+  };
+}
+
+function compactOnChainToolForSynthesis(tool: OnChainToolResult) {
+  const isSmartMoneyGap =
+    tool.domain === "smart_money" &&
+    tool.provider !== "local" &&
+    tool.status !== "success";
+  const summary = isSmartMoneyGap
+    ? "Row-level wallet-flow coverage was unavailable."
+    : cleanText(tool.summary).slice(0, 160);
+
+  return {
+    attemptedProviders: tool.attemptedProviders,
+    commandId: tool.commandId,
+    fallbackReason: isSmartMoneyGap ? undefined : tool.fallbackReason,
+    provider: tool.provider,
+    scope: tool.scope,
+    status: tool.status,
+    summary,
+    title: tool.title,
   };
 }
 
@@ -559,6 +617,22 @@ function cleanText(value: string) {
 function compactMetricRecord(metrics: Record<string, string | number | null>) {
   const priorityKeys = [
     "score",
+    "wallet",
+    "address",
+    "token",
+    "symbol",
+    "signal",
+    "netMnt",
+    "netUsd",
+    "netAmount",
+    "net_amount",
+    "amount",
+    "usd",
+    "trades",
+    "transfers",
+    "window",
+    "sourceCex",
+    "confidence",
     "tvlUsd",
     "bestApy",
     "momentumScore",

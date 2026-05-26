@@ -63,6 +63,7 @@ export type OnChainExecutorId =
   | "dexscreener.token_snapshot"
   | "dexscreener.top_boosts"
   | "dune.latest_result"
+  | "dune.smart_money_sql"
   | "elfa.trending_narratives"
   | "etherscan.account_balance"
   | "etherscan.get_code"
@@ -79,6 +80,7 @@ export type OnChainExecutorId =
   | "goplus.token_security"
   | "local.signal_synthesis"
   | "nansen.smart_money_netflow"
+  | "surf.chat_completions"
   | "surf.web_search";
 
 export type OnChainFallbackStep = {
@@ -121,12 +123,51 @@ export type OnChainContextMessage = {
 
 export type OnChainToolMode = "chat" | "onchain" | "research";
 
+export type ChainCapabilityStatus = "available" | "partial" | "unavailable";
+
+export type SmartMoneyCapabilityMode =
+  | "candidate-ranking"
+  | "dynamic-ability"
+  | "directional-only"
+  | "coverage-gap";
+
+export type ChainCapabilityProvider = {
+  configured: boolean;
+  coverage: string;
+  provider: OnChainProvider;
+  status: ChainCapabilityStatus;
+};
+
+export type ChainSmartMoneyCapability = {
+  limitations: string[];
+  mode: SmartMoneyCapabilityMode;
+  providers: ChainCapabilityProvider[];
+  status: ChainCapabilityStatus;
+};
+
+export type ChainResearchCapabilities = {
+  chain: string;
+  chainName: string;
+  marketData: {
+    providers: ChainCapabilityProvider[];
+    status: ChainCapabilityStatus;
+  };
+  notes: string[];
+  security: {
+    providers: ChainCapabilityProvider[];
+    status: ChainCapabilityStatus;
+  };
+  smartMoney: ChainSmartMoneyCapability;
+  structuredOnChain: ChainCapabilityStatus;
+};
+
 export type OnChainPlan = {
   intent: string;
   chain: string;
   chainId: number;
   chainName: string;
   analysisSource: "product-fallback" | "prompt";
+  capabilities?: ChainResearchCapabilities;
   commands: OnChainPlannedCommand[];
   domainCount: number;
   nativeSymbol: string;

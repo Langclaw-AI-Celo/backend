@@ -103,7 +103,7 @@ const strategyRecordEvent = parseAbiItem(
 export async function persistTradingJournalRecord(
   input: PersistTradingJournalInput
 ): Promise<TradingJournalProof> {
-  const chainConfig = getProductChain(input.chain ?? "mantle");
+  const chainConfig = getProductChain(input.chain ?? "celo");
   const agentId = readAgentId(chainConfig);
   const chainId = readChainId(chainConfig);
   const journalAddress = readJournalAddress(chainConfig);

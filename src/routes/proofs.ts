@@ -12,6 +12,7 @@ import {
   readChainEnv,
   readProductChainId,
 } from "../lib/chain-config";
+import { buildProofReadinessReport } from "../lib/proof-readiness";
 
 type ProofDecision = {
   agentId: string;
@@ -147,6 +148,27 @@ export async function handleProofDecisions(request: Request) {
     nativeSymbol: chain.nativeCurrency.symbol,
     nextDecisionId: nextDecisionId.toString(),
     registryAddress: address,
+  });
+}
+
+export async function handleProofReadiness(request: Request) {
+  let body: { chain?: unknown } = {};
+
+  try {
+    body = await request.json().catch(() => ({}));
+  } catch {
+    return Response.json(
+      { error: "Request body must be valid JSON." },
+      { status: 400 }
+    );
+  }
+
+  const report = await buildProofReadinessReport({
+    chain: body.chain,
+  });
+
+  return Response.json(report, {
+    status: report.ready ? 200 : 503,
   });
 }
 

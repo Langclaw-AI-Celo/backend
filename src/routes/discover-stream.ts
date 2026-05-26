@@ -1,4 +1,9 @@
 import { runLangclawWorkflow } from "../lib/langclaw/workflow";
+import {
+  accountAuthErrorResponse,
+  requireAccountAuth,
+  requireTelegramLinkedAccount,
+} from "../lib/server/account-auth";
 import type { WalletAuthInput } from "../lib/server/wallet-auth";
 import {
   refundResearchUsage,
@@ -32,11 +37,25 @@ export async function handleDiscoverStream(request: Request) {
     );
   }
 
-  const reservation = await reserveResearchUsage({ request, wallet }).catch(
-    (error) => ({
-      error,
-    })
-  );
+  const account = await requireAccountAuth({ request, wallet }).catch((error) => ({
+    error,
+  }));
+
+  if ("error" in account) {
+    return accountAuthErrorResponse(account.error);
+  }
+
+  const telegram = await requireTelegramLinkedAccount(account).catch((error) => ({
+    error,
+  }));
+
+  if ("error" in telegram) {
+    return accountAuthErrorResponse(telegram.error);
+  }
+
+  const reservation = await reserveResearchUsage({ account }).catch((error) => ({
+    error,
+  }));
 
   if ("error" in reservation) {
     return usageErrorResponse(reservation.error);

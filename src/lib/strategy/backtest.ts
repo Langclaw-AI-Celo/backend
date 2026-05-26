@@ -14,8 +14,8 @@ import type {
   StrategyTrade,
 } from "./types";
 
-export const liquidityMomentumStrategyId = "mantle-liquidity-momentum-v1";
-export const liquidityMomentumTitle = "Mantle Liquidity Momentum Strategy";
+export const liquidityMomentumStrategyId = "celo-liquidity-momentum-v1";
+export const liquidityMomentumTitle = "Celo Liquidity Momentum Strategy";
 
 export const defaultStrategyParams: StrategyBacktestParams = {
   initialCapitalUsd: 10_000,
@@ -64,7 +64,7 @@ export function parseDuneHistoricalRows(value: unknown): StrategyMarketBar[] {
 export function scanLiquidityMomentumPairs({
   bars,
   candidateLimit = 12,
-  chain = "mantle",
+  chain = "celo",
   generatedAt = new Date().toISOString(),
   params,
   queryId,
@@ -144,7 +144,7 @@ export function scanLiquidityMomentumPairs({
 
 export function runLiquidityMomentumBacktest({
   bars,
-  chain = "mantle",
+  chain = "celo",
   generatedAt = new Date().toISOString(),
   pairAddress,
   params,

@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { synthesizeFinalAnswerWithOpenClaw } from "./openclaw-ai";
 import { synthesizeFinalAnswerWithOpenAI } from "./openai-synthesis";
 import { applyFinalAnswerGuardrails } from "./final-answer-guardrails";
+import { buildAlphaSignal } from "./alpha-quality";
 import {
   createRunId,
   createStepSessionId,
@@ -18,6 +19,10 @@ import { persistLangclawProof } from "./proof";
 import { buildWorkflowResearchReport } from "./report";
 import { resolveProductChain } from "../chain-config";
 import { detectUnsupportedOnChainChain, inferAnalysisChain } from "../onchain-tools/chains";
+import {
+  isDirectProviderIssue,
+  isUsableDirectProviderResult,
+} from "../onchain-tools/evidence";
 import { summarizePlan } from "../onchain-tools/planner";
 import { runOnChainToolWorkflow } from "../onchain-tools/workflow";
 import type {
@@ -162,10 +167,10 @@ const workflowSteps: WorkflowStepDefinition[] = [
     pendingSummary: "Waiting to prepare the evidence bundle.",
   },
   {
-    stepId: "mantle-chain",
-    agent: "Mantle Decision Anchor",
+    stepId: "chain-proof",
+    agent: "Celo Decision Anchor",
     skill: "contracts/src/LangclawRegistry.sol",
-    pendingSummary: "Waiting to record the agent decision proof on Mantle.",
+    pendingSummary: "Waiting to record the agent decision proof on Celo.",
   },
 ];
 
@@ -488,6 +493,17 @@ export async function runLangclawWorkflow(
     `Preparing the agent decision hash and submitting it to LangclawRegistry on ${chain.name} when enabled.`
   );
   const generatedAt = new Date().toISOString();
+  const preProofAlphaSignal = buildAlphaSignal({
+    chainContext,
+    errors,
+    generatedAt,
+    onChain: onChainEnrichment.payload,
+    providerTrace,
+    report,
+    signals,
+    sources,
+    topic,
+  });
   const proof = await persistLangclawProof({
     chain: chain.id,
     runId,
@@ -509,11 +525,28 @@ export async function runLangclawWorkflow(
     finalConclusion,
     finalAnswer,
     agentOutputs,
+    alphaSignal: preProofAlphaSignal,
+  });
+  const proofWithCompute = {
+    ...proof,
+    compute: computeSynthesis.compute,
+  };
+  const alphaSignal = buildAlphaSignal({
+    chainContext,
+    errors,
+    generatedAt,
+    onChain: onChainEnrichment.payload,
+    providerTrace,
+    proof: proofWithCompute,
+    report,
+    signals,
+    sources,
+    topic,
   });
 
   updateAgentOutputsWithProof(agentOutputs, proof);
   traceOverrides["evidence-bundle"] = traceFromStorageProof(proof.storage);
-  traceOverrides["mantle-chain"] = traceFromChainProof(proof.chain);
+  traceOverrides["chain-proof"] = traceFromChainProof(proof.chain);
   await emitProgress(
     options,
     workflowSteps[9],
@@ -555,14 +588,9 @@ export async function runLangclawWorkflow(
     finalAnswer,
     finalAnswerMeta,
     agentOutputs,
-    proof: {
-      ...proof,
-      compute: computeSynthesis.compute,
-    },
-    zeroG: {
-      ...proof,
-      compute: computeSynthesis.compute,
-    },
+    proof: proofWithCompute,
+    zeroG: proofWithCompute,
+    alphaSignal,
   };
 }
 
@@ -720,7 +748,7 @@ function buildTraceSteps(
       agent: "Planner Agent",
       skill: "openclaw/skills/planner.md",
       status: "complete",
-      summary: `Created a provider plan for "${topic}" across Mantle premium and supporting public research providers.`,
+      summary: `Created a provider plan for "${topic}" across Surf and supporting public research providers.`,
       execution: "deterministic-fallback",
     }),
     withTraceOverride("discovery", traceOverrides, {
@@ -785,15 +813,15 @@ function buildTraceSteps(
       skill: "evidence/storage",
       status: "complete",
       summary:
-        "Prepared the canonical evidence bundle for Mantle alpha evidence.",
+        "Prepared the canonical evidence bundle for Celo alpha evidence.",
       execution: "deterministic-fallback",
     }),
-    withTraceOverride("mantle-chain", traceOverrides, {
-      agent: "Mantle Decision Anchor",
+    withTraceOverride("chain-proof", traceOverrides, {
+      agent: "Celo Decision Anchor",
       skill: "contracts/src/LangclawRegistry.sol",
       status: "complete",
       summary:
-        "Prepared the agent decision hash. Set MANTLE_CHAIN_ENABLED=true and LANGCLAW_REGISTRY_ADDRESS to record it.",
+        "Prepared the agent decision hash. Set CELO_CHAIN_ENABLED=true and CELO_LANGCLAW_REGISTRY_ADDRESS to record it.",
       execution: "deterministic-fallback",
     }),
   ];
@@ -1004,7 +1032,7 @@ function traceFromChainProof(chain: ZeroGChainProof): Partial<OrchestrationStep>
       chain.status === "anchored" ||
       chain.status === "pending" ||
       chain.status === "failed"
-      ? "mantle-chain"
+      ? "chain-proof"
       : "deterministic-fallback",
     error: chain.error,
   };
@@ -1025,7 +1053,7 @@ function proofMetaFromChain(chain: ZeroGChainProof) {
       chain.status === "anchored" ||
       chain.status === "pending" ||
       chain.status === "failed"
-      ? ("mantle-chain" as const)
+      ? ("chain-proof" as const)
       : ("deterministic-fallback" as const),
     error: chain.error,
   };
@@ -1051,22 +1079,22 @@ function summarizeStorageProof(storage: ZeroGStorageProof) {
 
 function summarizeChainProof(chain: ZeroGChainProof) {
   if (chain.status === "anchored") {
-    return `Agent decision recorded on Mantle through LangclawRegistry. Transaction: ${chain.txHash}.`;
+    return `Agent decision recorded on ${chain.chainName ?? "Celo"} through LangclawRegistry. Transaction: ${chain.txHash}.`;
   }
 
   if (chain.status === "pending") {
-    return `Agent decision transaction submitted to Mantle and is waiting for confirmation. Transaction: ${chain.txHash}.`;
+    return `Agent decision transaction submitted to ${chain.chainName ?? "Celo"} and is waiting for confirmation. Transaction: ${chain.txHash}.`;
   }
 
   if (chain.status === "failed") {
-    return `Mantle decision proof failed. ${chain.error || "Review chain envs and wallet balance."}`;
+    return `${chain.chainName ?? "Celo"} decision proof failed. ${chain.error || "Review chain envs and wallet balance."}`;
   }
 
   if (chain.status === "skipped") {
-    return "Mantle decision proof skipped.";
+    return `${chain.chainName ?? "Celo"} decision proof skipped.`;
   }
 
-  return `Agent decision hash prepared for Mantle: ${chain.decisionHash ?? chain.briefHash}. ${chain.error || "Anchoring not submitted."}`;
+  return `Agent decision hash prepared for ${chain.chainName ?? "Celo"}: ${chain.decisionHash ?? chain.briefHash}. ${chain.error || "Anchoring not submitted."}`;
 }
 
 function updateAgentOutputsWithProof(
@@ -1127,7 +1155,7 @@ function buildFinalConclusion(
       ? `${topic} shows useful live signal across ${providerText}.`
       : `${topic} did not return enough live signal for a confident conclusion.`,
     summary: sources.length
-      ? `Langclaw found ${sources.length} live sources and routed the Mantle Alpha run through ${runtimeText}. The strongest ranked direction is ${topTrend}.`
+      ? `Langclaw found ${sources.length} live sources and routed the Celo Alpha run through ${runtimeText}. The strongest ranked direction is ${topTrend}.`
       : `Langclaw could not build a strong final conclusion because no live source cards were returned. Review provider setup, topic wording, or provider availability before using this run as evidence.`,
     keySignals: [
       buildConclusionSignal("Public signal", xSource, "No X signal returned for this topic."),
@@ -1148,7 +1176,7 @@ function buildFinalConclusion(
       ),
     ],
     recommendation: sources.length
-      ? "Frame the demo around a verifiable Mantle on-chain intelligence workflow: Langclaw turns Mantle data and public context into an alpha brief, then records the agent decision hash for proof."
+      ? "Frame the demo around a verifiable Celo on-chain intelligence workflow: Langclaw turns Celo data and public context into an alpha brief, then records the agent decision hash for proof."
       : "Run discovery again with a more specific topic, then use the final conclusion only after at least one provider returns live evidence.",
     qualityNote: errors.length
       ? `Partial result. ${errors.length} provider issue${errors.length === 1 ? "" : "s"} returned, so treat the conclusion as directional.`
@@ -1274,12 +1302,8 @@ function buildOnChainSignals({
     };
   }
 
-  const directSuccesses = onChain.tools.filter(
-    (tool) => tool.status === "success" && tool.provider !== "local"
-  );
-  const directFailures = onChain.tools.filter(
-    (tool) => tool.status === "failed" && tool.provider !== "local"
-  );
+  const directSuccesses = onChain.tools.filter(isUsableDirectProviderResult);
+  const directFailures = onChain.tools.filter(isDirectProviderIssue);
   const toolIds = onChain.tools.map((tool) => tool.commandId);
   const attemptedProviders = Array.from(
     new Set(
@@ -1306,12 +1330,17 @@ function buildOnChainSignals({
     const failureProviders = sortSignalProviders(
       Array.from(new Set(directFailures.map((tool) => providerLabelFromOnChain(tool.provider))))
     );
+    const summary = directSuccesses.length
+      ? directFailures.length
+        ? `On-chain enrichment produced usable evidence for ${chain}, but some provider coverage remained incomplete (${failureProviders.join(", ")}).`
+        : `On-chain enrichment ran for ${chain}, but the evidence stayed analysis-level rather than direct wallet-flow evidence.`
+      : directFailures.length
+        ? `On-chain enrichment ran for ${chain}, but direct smart-money rows were not available from ${failureProviders.join(", ")}.`
+        : `On-chain enrichment ran for ${chain}, but the evidence stayed analysis-level rather than direct wallet-flow evidence.`;
 
     return {
       status: "partial",
-      summary: directFailures.length
-        ? `On-chain enrichment produced usable evidence for ${chain}, but some provider coverage remained incomplete (${failureProviders.join(", ")}).`
-        : `On-chain enrichment ran for ${chain}, but the evidence stayed analysis-level rather than fully confirmed.`,
+      summary,
       providers,
       sourceIds: [],
       toolIds,
@@ -1321,7 +1350,7 @@ function buildOnChainSignals({
 
   return {
     status: "partial",
-    summary: `On-chain enrichment ran for ${chain}, but no direct provider returned strong evidence.`,
+    summary: `On-chain enrichment ran for ${chain}, but direct wallet-flow rows were not available yet.`,
     providers,
     sourceIds: [],
     toolIds,
@@ -1493,15 +1522,15 @@ export function buildFinalAnswer(
   ].join("\n\n");
 
   return applyFinalAnswerGuardrails({
-    title: "Mantle Alpha brief",
-    answer: `Jawaban singkat: "${topic}" layak dipakai sebagai arah Mantle Alpha karena Langclaw menemukan ${sourceCount} live sources dari ${providerText}. Pola terkuatnya adalah AI agent yang mencari sinyal on-chain, merangkum evidence, lalu menyiapkan agent decision proof.`,
+    title: "Celo Alpha brief",
+    answer: `Jawaban singkat: "${topic}" layak dipakai sebagai arah Celo Alpha karena Langclaw menemukan ${sourceCount} live sources dari ${providerText}. Pola terkuatnya adalah AI agent yang mencari sinyal on-chain, merangkum evidence, lalu menyiapkan agent decision proof.`,
     answerMarkdown,
     bullets: [
       hasAllCoreSignals
         ? "Sinyalnya lengkap: ada percakapan publik, repo builder, referensi teknis, dan konteks HackQuest."
         : `Sinyalnya cukup, tetapi belum lengkap di semua provider. Provider aktif: ${providerText}.`,
       `Workflow dijalankan lewat ${runtimeText}, jadi proses agent bisa ditampilkan sebagai alur Planner, Discovery, Source, Trend, Evidence, Verifier, dan Final Conclusion.`,
-      "Arah project yang paling masuk akal adalah Mantle Alpha Sentinel: agent yang memonitor smart money, liquidity anomaly, dan protocol momentum tanpa mengeksekusi trade.",
+      "Arah project yang paling masuk akal adalah Celo Alpha Sentinel: agent yang memonitor smart money, liquidity anomaly, dan protocol momentum tanpa mengeksekusi trade.",
     ],
     recommendation,
     caveat: "Directional research only.",
@@ -1553,6 +1582,14 @@ function buildUserFacingReportAnswerMarkdown(
   onChain: OnChainToolFinalPayload | undefined,
   onChainSkippedReason: string | undefined
 ) {
+  if (report.kind === "smart-money") {
+    return buildSmartMoneyReportAnswerMarkdown(
+      report,
+      onChain,
+      onChainSkippedReason
+    );
+  }
+
   const includeOnChainRead = !(
     report.entities.length || report.tables.length
   );
@@ -1571,6 +1608,85 @@ function buildUserFacingReportAnswerMarkdown(
   ].filter(Boolean);
 
   return lines.join("\n\n");
+}
+
+function buildSmartMoneyReportAnswerMarkdown(
+  report: ResearchReport,
+  onChain: OnChainToolFinalPayload | undefined,
+  onChainSkippedReason: string | undefined
+) {
+  const includeOnChainRead = !(
+    report.entities.length || report.tables.length
+  );
+  const lines: string[] = [
+    `## ${report.title}`,
+    "",
+    report.executiveSummary,
+    "",
+  ];
+
+  for (const section of report.sections) {
+    lines.push(`### ${section.title}`, "", section.markdown, "");
+  }
+
+  for (const table of report.tables.slice(0, 1)) {
+    lines.push(`### ${table.title}`, "");
+    if (table.description) {
+      lines.push(table.description, "");
+    }
+    lines.push(renderUserFacingReportTable(table), "");
+  }
+
+  if (!report.sections.some((section) => /^(confidence|conclusion)$/i.test(section.title))) {
+    lines.push("### Confidence", "", report.bottomLine, "");
+  }
+
+  if (report.recommendations[0]) {
+    lines.push("### What would improve confidence", "", report.recommendations[0], "");
+  }
+
+  if (includeOnChainRead && onChain) {
+    lines.push(`On-chain read: ${onChain.answer}`, "");
+  } else if (includeOnChainRead && onChainSkippedReason) {
+    lines.push(`On-chain read: ${onChainSkippedReason}`, "");
+  }
+
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function renderUserFacingReportTable(table: ResearchReport["tables"][number]) {
+  if (!table.rows.length) {
+    return "_No rows available._";
+  }
+
+  const columns = table.columns.slice(0, 8);
+  const header = `| ${columns.join(" | ")} |`;
+  const divider = `| ${columns.map(() => "---").join(" | ")} |`;
+  const rows = table.rows.slice(0, 5).map((row) =>
+    `| ${columns
+      .map((column) => escapeUserFacingTableCell(formatUserFacingTableCell(row[column])))
+      .join(" | ")} |`
+  );
+
+  return [header, divider, ...rows].join("\n");
+}
+
+function formatUserFacingTableCell(value: string | number | null | undefined) {
+  if (value == null || value === "") {
+    return "Not available";
+  }
+
+  if (typeof value === "number") {
+    return Number.isInteger(value)
+      ? value.toLocaleString("en-US")
+      : value.toFixed(2).replace(/\.?0+$/, "");
+  }
+
+  return value;
+}
+
+function escapeUserFacingTableCell(value: string) {
+  return value.replace(/\|/g, "\\|");
 }
 
 function buildReportFallbackBullets(
@@ -1595,12 +1711,8 @@ function buildOnChainLedFallbackAnswer(
 ): FinalAnswer {
   const chainName = onChain.plan.chainName || onChain.plan.chain;
   const intent = onChain.plan.intent;
-  const directSuccesses = onChain.tools.filter(
-    (tool) => tool.status === "success" && tool.provider !== "local"
-  );
-  const directFailures = onChain.tools.filter(
-    (tool) => tool.status === "failed" && tool.provider !== "local"
-  );
+  const directSuccesses = onChain.tools.filter(isUsableDirectProviderResult);
+  const directFailures = onChain.tools.filter(isDirectProviderIssue);
   const localSuccesses = onChain.tools.filter(
     (tool) => tool.status === "success" && tool.provider === "local"
   );
@@ -1684,7 +1796,7 @@ function buildOnChainSummary({
     intent === "smart-money" || /\bsmart[-\s]money|whale|accumulat\w*/i.test(topic);
 
   if (isSmartMoney && !directSuccesses.length) {
-    return `Based on the collected evidence and the on-chain enrichment run, the system did not confirm verified smart-money accumulation on ${chainName}. The bundle is stronger on public, builder, and research context than on hard on-chain proof.`;
+    return `Smart-money signal is still weak on ${chainName}. The bundle is more useful as directional research because direct wallet-flow rows were not available.`;
   }
 
   if (isSmartMoney) {
@@ -1692,18 +1804,18 @@ function buildOnChainSummary({
   }
 
   if (!directSuccesses.length) {
-    return `The on-chain enrichment run for "${topic}" did not return strong direct evidence, so the result should be treated as directional research rather than a confirmed signal.`;
+    return `The on-chain enrichment for "${topic}" did not return strong direct evidence, so the result should be treated as directional research rather than a confirmed signal.`;
   }
 
   if (directFailures.length) {
-    return `The run returned usable on-chain evidence, but some providers still failed, so the conclusion is directional rather than final.`;
+    return "The analysis returned usable on-chain evidence, but some source coverage was incomplete, so the conclusion is directional rather than final.";
   }
 
   if (localSuccesses.length) {
-    return `The run returned usable direct evidence and a local synthesis summary, giving this bundle a stronger mixed research and on-chain footing.`;
+    return "The analysis returned usable direct evidence and a local synthesis summary, giving this bundle a stronger mixed research and on-chain footing.";
   }
 
-  return `The run returned usable direct evidence, so this bundle can be used as a research brief with manual follow-up.`;
+  return "The analysis returned usable direct evidence, so this bundle can be used as a research brief with manual follow-up.";
 }
 
 function buildResearchFindingBullets(sources: SourceCard[]) {
@@ -1766,11 +1878,11 @@ function buildOnChainFindingBullet({
     : "";
 
   if (!directSuccesses.length && directFailures.length) {
-    return `On-chain enrichment on ${chainName}: dedicated on-chain providers failed or lacked usable inputs (${failureProviders}).${localDetail} No transactions were signed or executed by Langclaw.`;
+    return `On-chain enrichment on ${chainName}: dedicated sources did not return wallet-flow rows.${localDetail} No transactions were signed or executed by Langclaw.`;
   }
 
   if (!directSuccesses.length) {
-    return `On-chain enrichment on ${chainName}: no direct provider returned usable evidence.${localDetail} No transactions were signed or executed by Langclaw.`;
+    return `On-chain enrichment on ${chainName}: direct wallet-flow rows were not available yet.${localDetail} No transactions were signed or executed by Langclaw.`;
   }
 
   const failureSuffix = directFailures.length
@@ -1792,7 +1904,7 @@ function buildOnChainBottomLine({
   intent: string;
 }) {
   if (intent === "smart-money" && !directSuccesses.length) {
-    return `Current evidence does not demonstrate verified smart-money accumulation on ${chainName}. The available bundle is stronger on narrative and builder context than on dedicated on-chain proof.`;
+    return "Smart-money signal is weak because direct wallet-flow rows were unavailable. Standard checks are listed as unavailable instead of asking for the same task to be rerun.";
   }
 
   if (!directSuccesses.length) {
@@ -1983,7 +2095,17 @@ function summarizeFailedSocialProviders(errors: ProviderError[]) {
 }
 
 function compactProviderIssueMessage(message: string) {
-  return message.replace(/\s+/g, " ").trim().slice(0, 120);
+  const compact = message.replace(/\s+/g, " ").trim();
+
+  if (
+    /\b(?:401|402|403|429|5\d\d)\b|payment|required|credit|billing|api[_\s-]?key|token|unauthorized|forbidden/i.test(
+      compact
+    )
+  ) {
+    return "source unavailable";
+  }
+
+  return compact.slice(0, 120);
 }
 
 function uniqueStrings(values: Array<string | undefined>) {

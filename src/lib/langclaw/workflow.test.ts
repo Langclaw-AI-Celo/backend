@@ -592,11 +592,15 @@ test("deterministic fallback appends the synthesis caveat only once", () => {
   );
   assert.match(
     answer.answerMarkdown ?? "",
-    /did not confirm verified smart-money accumulation on Mantle/i
+    /Smart-money signal is still weak on Mantle/i
+  );
+  assert.doesNotMatch(
+    answer.answerMarkdown ?? "",
+    /did not confirm verified smart-money accumulation/i
   );
   assert.match(answer.caveat ?? "", /Surf failed/i);
   assert.match(answer.caveat ?? "", /Elfa failed/i);
-  assert.match(answer.caveat ?? "", /Nansen failed/i);
+  assert.match(answer.caveat ?? "", /Nansen row-level wallet-flow coverage was unavailable/i);
   assert.match(answer.caveat ?? "", /analysis-only/i);
   assert.match(answer.caveat ?? "", /directional research/i);
   assert.equal(caveatMatches.length, 1);
@@ -1149,7 +1153,7 @@ test("summarizeFailures includes compact provider error detail", () => {
     },
   ]);
 
-  assert.match(summary, /Provider issues: Elfa \(402 Payment Required from Elfa billing\)\./);
+  assert.match(summary, /Provider issues: Elfa \(source unavailable\)\./);
 });
 
 test("buildSocialSignals returns partial when a social provider fails but others succeed", () => {

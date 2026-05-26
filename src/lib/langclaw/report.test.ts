@@ -108,6 +108,391 @@ test("on-chain liquidity report ranks pairs and computes turnover from DEX Scree
   assert.match(markdown, /BSB \/ USDT0/i);
 });
 
+test("smart-money report without direct rows stays directional and friendly", () => {
+  const report = buildOnChainResearchReport({
+    caveat: "Analysis-only.",
+    generatedAt: "2026-05-23T04:48:00.000Z",
+    plan: {
+      ...defaultPlan,
+      commands: [
+        {
+          commandId: "smart_money.nansen_smart_money_netflow",
+          domain: "smart_money",
+          provider: "nansen",
+          reason: "Read smart-money flow.",
+          title: "Smart money netflow",
+        },
+      ],
+      intent: "smart-money",
+      query: "Find smart-money accumulation on Mantle",
+    },
+    recommendation:
+      "Keep this as coverage-limited smart-money research on Mantle. Standard follow-up checks were attempted where row data existed; unavailable checks are listed in the report.",
+    tools: [
+      {
+        attemptedProviders: ["nansen", "dune"],
+        commandId: "smart_money.nansen_smart_money_netflow",
+        domain: "smart_money",
+        error: "Dune did not return row-level smart-money rows.",
+        fallbackReason:
+          "Nansen did not return row-level smart-money rows. | Dune did not return row-level smart-money rows.",
+        latencyMs: 20,
+        provider: "nansen",
+        scope: "legacy-fallback",
+        status: "failed",
+        summary: "Dune did not return row-level smart-money rows.",
+        title: "Smart money netflow",
+      },
+      {
+        commandId: "smart_money.smart_money_signal_synthesis",
+        data: {
+          completedTools: 0,
+          failedTools: 1,
+          summaries: ["Dune did not return row-level smart-money rows."],
+        },
+        domain: "smart_money",
+        latencyMs: 1,
+        provider: "local",
+        status: "success",
+        summary:
+          "Synthesized 0 successful tool results and 1 failed tool results into an analysis-only signal.",
+        title: "Smart money signal synthesis",
+      },
+    ] satisfies OnChainToolResult[],
+  });
+
+  const markdown = renderResearchReportMarkdown(report);
+
+  assert.equal(report.kind, "smart-money");
+  assert.equal(report.title, "Mantle Smart-Money Accumulation Watch");
+  assert.equal(report.entities.length, 0);
+  assert.equal(report.tables.length, 0);
+  assert.match(report.executiveSummary, /Smart-money signal is still weak/i);
+  assert.match(report.bottomLine, /Confidence is low/i);
+  assert.deepEqual(
+    report.sections.map((section) => section.title),
+    [
+	      "Read",
+	      "Evidence",
+	      "Confirmed smart money",
+	      "Candidate smart money",
+	      "Large-flow watchlist",
+	      "Excluded addresses",
+	      "Limits",
+	      "Data source diagnostics",
+	      "Follow-up checks performed",
+	      "Checks unavailable",
+	      "Conclusion",
+      "What would improve confidence",
+    ]
+  );
+  assert.match(markdown, /wallet-flow rows/i);
+  assert.match(markdown, /Direct wallet-flow rows were unavailable/i);
+  assert.match(markdown, /No wallet candidates are ranked/i);
+  assert.doesNotMatch(markdown, /Rerun with a specific/i);
+  assert.doesNotMatch(markdown, /Belum ada bukti akumulasi terverifikasi/i);
+});
+
+test("smart-money report with direct rows uses candidate sections", () => {
+  const report = buildOnChainResearchReport({
+    caveat: "Analysis-only.",
+    generatedAt: "2026-05-23T04:48:00.000Z",
+    plan: {
+      ...defaultPlan,
+      commands: [
+        {
+          commandId: "smart_money.dune_query_results",
+          domain: "smart_money",
+          provider: "dune",
+          reason: "Read configured wallet-flow query.",
+          title: "Dune wallet-flow rows",
+        },
+      ],
+      intent: "smart-money",
+      query: "Find smart-money accumulation on Mantle",
+    },
+    recommendation: "Monitor repeat buys and CEX withdrawals.",
+    tools: [
+      {
+        commandId: "smart_money.dune_query_results",
+        data: {
+          rows: [
+            {
+              wallet: "0xbdb3...47b6",
+              signal: "CEX withdrawal",
+              netMnt: 177700,
+              netUsd: 120900,
+              transfers: 3,
+              window: "2026-05-21",
+            },
+            {
+              wallet: "0xb33b...a52e",
+              signal: "DEX buy",
+              netMnt: 179400,
+              netUsd: 119400,
+              trades: 134,
+              window: "2026-05-20 to 2026-05-21",
+            },
+          ],
+        },
+        domain: "smart_money",
+        latencyMs: 20,
+        provider: "dune",
+        scope: "legacy-fallback",
+        status: "success",
+        summary: "Dune returned wallet-flow rows.",
+        title: "Dune wallet-flow rows",
+      },
+    ] satisfies OnChainToolResult[],
+  });
+
+  const markdown = renderResearchReportMarkdown(report);
+
+  assert.equal(report.kind, "smart-money");
+  assert.equal(report.title, "Mantle Smart-Money Accumulation Watch");
+  const candidateTable = report.tables.find((table) => table.id === "smart-money-table");
+  const dexTable = report.tables.find((table) => table.id === "dex-accumulation-table");
+  const cexTable = report.tables.find((table) => table.id === "cex-withdrawal-table");
+
+  assert.equal(report.entities[0]?.label, "0xbdb3...47b6");
+  assert.equal(dexTable?.title, "DEX Accumulation");
+  assert.equal(cexTable?.title, "CEX Withdrawal Signal");
+  assert.equal(candidateTable?.title, "Candidate Smart-Money Wallets");
+  assert.deepEqual(candidateTable?.columns, [
+	    "Wallet",
+	    "Token",
+	    "Signal",
+	    "Amount",
+	    "USD value",
+	    "Trades",
+	    "Window",
+	    "Category",
+	    "Status",
+	  ]);
+  assert.match(report.executiveSummary, /candidate smart-money flow/i);
+  assert.match(markdown, /Best candidate: 0xbdb3\.\.\.47b6/i);
+  assert.match(markdown, /CEX Withdrawal Signal/i);
+  assert.match(markdown, /Candidate Smart-Money Wallets/i);
+  assert.match(markdown, /Coverage gap\./i);
+  assert.match(markdown, /Sample window\..*2026-05-21/i);
+  assert.match(markdown, /Smart-money labeling gap\./i);
+  assert.doesNotMatch(markdown, /confirmed_smart_money|large_flow_watchlist|data_source_diagnostics/i);
+  assert.doesNotMatch(markdown, /No wallet candidates are ranked/i);
+});
+
+test("smart-money report replaces generic Surf limits with contextual run limits", () => {
+  const report = buildOnChainResearchReport({
+    caveat: "Analysis-only.",
+    generatedAt: "2026-05-23T04:48:00.000Z",
+    plan: {
+      ...defaultPlan,
+      intent: "smart-money",
+      query: "Find smart-money accumulation on Mantle",
+    },
+    recommendation: "Monitor repeat buys and CEX withdrawals.",
+    tools: [
+      {
+        commandId: "smart_money.surf_research",
+        data: {
+          rows: [
+            {
+              label: "0xb33b...a52e",
+              signal: "DEX buy",
+              smartMoneyStatus: "large_flow_watchlist",
+              sourceChain: "Ethereum",
+              sourceTable: "agent.ethereum_dex_trades",
+              tokenAddress: "0x3c3a81e81dc49a522a592e762a7e711c06bf354",
+              tokenAddressChainName: "Ethereum",
+              tokenSymbol: "MNT",
+              wallet: "0xb33b...a52e",
+              walletLabel: "unavailable",
+              walletNetWorth: "unavailable",
+              walletType: "unknown",
+              window: "2026-05-20 to 2026-05-21",
+            },
+          ],
+          sections: [
+            {
+              title: "Read",
+              markdown: "Surf read.",
+            },
+            {
+              title: "Limits",
+              markdown: "Generic provider limits that should be replaced.",
+            },
+            {
+              title: "Conclusion",
+              markdown: "Surf conclusion.",
+            },
+          ],
+          target: {
+            chainName: "Ethereum",
+            externalTokenSignal: true,
+            mode: "external-token-signal",
+            requestedChainName: "Mantle",
+            symbol: "MNT",
+            tokenAddress: "0x3c3a81e81dc49a522a592e762a7e711c06bf354",
+            tokenAddressChainName: "Ethereum",
+          },
+        },
+        domain: "smart_money",
+        latencyMs: 20,
+        provider: "surf",
+        scope: "legacy-fallback",
+        status: "success",
+        summary: "Surf returned wallet-flow rows.",
+        title: "Surf smart-money rows",
+      },
+    ] satisfies OnChainToolResult[],
+  });
+  const limits = report.sections.find((section) => section.title === "Limits");
+
+  assert.ok(limits);
+  assert.doesNotMatch(limits.markdown, /Generic provider limits/i);
+  assert.match(limits.markdown, /Mantle-native holder and transfer coverage was not confirmed/i);
+  assert.match(limits.markdown, /External token signal/i);
+  assert.match(limits.markdown, /not Mantle chain-level activity/i);
+  assert.match(limits.markdown, /agent\.ethereum_dex_trades/i);
+  assert.match(limits.markdown, /2026-05-20 to 2026-05-21/i);
+  assert.match(limits.markdown, /large-flow watchlist/i);
+});
+
+test("smart-money report keeps CEX deposits out of accumulation candidates", () => {
+  const report = buildOnChainResearchReport({
+    caveat: "Analysis-only.",
+    generatedAt: "2026-05-23T04:48:00.000Z",
+    plan: {
+      ...defaultPlan,
+      intent: "smart-money",
+      query: "Find smart-money accumulation on Ethereum",
+    },
+    recommendation: "Monitor exchange pressure.",
+    tools: [
+      {
+        commandId: "smart_money.dune_query_results",
+        data: {
+          result: {
+            rows: [
+              {
+                amount: 1000,
+                signal: "CEX deposit",
+                smartMoneyStatus: "sell_pressure_watchlist",
+                sourceCex: "Binance",
+                status: "sell-pressure watchlist",
+                token: "ENA",
+                transfers: 2,
+                usd_value: 400000,
+                wallet: "0x1111...2222",
+                window: "2026-05-20 to 2026-05-21",
+              },
+            ],
+          },
+        },
+        domain: "smart_money",
+        latencyMs: 20,
+        provider: "dune",
+        scope: "legacy-fallback",
+        status: "success",
+        summary: "Dune returned CEX deposit rows.",
+        title: "Dune CEX rows",
+      },
+    ] satisfies OnChainToolResult[],
+  });
+
+  assert.equal(report.entities[0]?.category, "sell-pressure-watchlist");
+  assert.ok(report.tables.some((table) => table.id === "cex-deposit-table"));
+  assert.ok(!report.tables.some((table) => table.id === "smart-money-table"));
+});
+
+test("smart-money report ignores non-wallet rows instead of rendering not-available tables", () => {
+  const report = buildOnChainResearchReport({
+    caveat: "Analysis-only.",
+    generatedAt: "2026-05-23T04:48:00.000Z",
+    plan: {
+      ...defaultPlan,
+      intent: "smart-money",
+      query: "Find smart-money accumulation on Ethereum",
+    },
+    recommendation: "Keep this directional until row-level wallet data is available.",
+    tools: [
+      {
+        commandId: "smart_money.surf_research",
+        data: {
+          rows: [
+            {
+              confidence: "low",
+              label: "Surf smart-money ability research",
+              note: "Narrative-only object without wallet-flow fields.",
+              title: "Surf smart-money ability research",
+            },
+            {
+              markdown: "This is a section-like row, not a wallet row.",
+              title: "Limits",
+            },
+          ],
+          summary: "Surf returned narrative smart-money context.",
+        },
+        domain: "smart_money",
+        latencyMs: 20,
+        provider: "surf",
+        scope: "legacy-fallback",
+        status: "success",
+        summary: "Surf returned narrative smart-money context.",
+        title: "Surf smart-money ability research",
+      },
+    ] satisfies OnChainToolResult[],
+  });
+
+  assert.equal(report.kind, "smart-money");
+  assert.equal(report.entities.length, 0);
+  assert.equal(report.tables.length, 0);
+  assert.match(report.executiveSummary, /Smart-money signal is still weak/i);
+});
+
+test("smart-money report maps aggregate netflow rows without blank candidate columns", () => {
+  const report = buildOnChainResearchReport({
+    caveat: "Analysis-only.",
+    generatedAt: "2026-05-23T04:48:00.000Z",
+    plan: {
+      ...defaultPlan,
+      intent: "smart-money",
+      query: "Find smart-money accumulation on Mantle",
+    },
+    recommendation: "Monitor repeat flow.",
+    tools: [
+      {
+        commandId: "smart_money.dune_query_results",
+        data: {
+          result: {
+            rows: [
+              {
+                address: "0x2ca9000000000000000000000000000000003a4c",
+                net_flow_7d_usd: 250000,
+                symbol: "MNT",
+              },
+            ],
+          },
+        },
+        domain: "smart_money",
+        latencyMs: 20,
+        provider: "dune",
+        scope: "legacy-fallback",
+        status: "success",
+        summary: "Dune returned aggregate netflow rows.",
+        title: "Dune wallet-flow rows",
+      },
+    ] satisfies OnChainToolResult[],
+  });
+  const row = report.tables[0]?.rows[0];
+
+  assert.equal(report.entities.length, 1);
+  assert.equal(row?.Wallet, "0x2ca9000000000000000000000000000000003a4c");
+  assert.equal(row?.Token, "MNT");
+  assert.equal(row?.Signal, "Net flow");
+  assert.equal(row?.["USD value"], "250,000");
+  assert.notEqual(row?.Status, "Not available");
+});
+
 test("liquidity report ranks chain-filtered DEX Screener search rows despite incidental token discovery commands", () => {
   const report = buildOnChainResearchReport({
     caveat: "This is analysis-only.",

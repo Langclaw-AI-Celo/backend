@@ -144,7 +144,7 @@ export async function readUsageBalance(
   authInput: AccountAuthInput,
   chainInput?: ProductChainId
 ) {
-  const chain = getProductChain(chainInput ?? "mantle");
+  const chain = getProductChain(chainInput ?? "celo");
   const context = await requireUsageContext(authInput);
   const account = await ensureUsageAccount(
     context.walletUser.id,
@@ -168,7 +168,7 @@ export async function readUsageBalance(
 export async function buildUsageQuote(
   input: UsageQuoteInput = {}
 ): Promise<UsageQuote> {
-  const chain = getProductChain(input.chain ?? "mantle");
+  const chain = getProductChain(input.chain ?? "celo");
   const price = await readActiveModelPrice(input);
   const estimatedPromptTokens =
     input.estimatedPromptTokens ??
@@ -211,7 +211,7 @@ export async function reserveResearchUsage(
   quoteInput: UsageQuoteInput = {},
   chainInput?: ProductChainId
 ): Promise<UsageReservation> {
-  const chain = getProductChain(chainInput ?? quoteInput.chain ?? "mantle");
+  const chain = getProductChain(chainInput ?? quoteInput.chain ?? "celo");
   const context = await requireUsageContext(authInput);
   const quote = await buildUsageQuote({ ...quoteInput, chain: chain.id });
   const reservationId = randomUUID();
@@ -274,7 +274,7 @@ export async function readUsageReservation(
   reservationId: string,
   chainInput?: ProductChainId
 ): Promise<UsageReservation> {
-  const chain = getProductChain(chainInput ?? "mantle");
+  const chain = getProductChain(chainInput ?? "celo");
   const context = await requireUsageContext(authInput);
   const reservations = context.supabase.from(
     "langclaw_usage_reservations"
@@ -479,7 +479,7 @@ export async function refundResearchUsage(
 }
 
 export async function verifyUsageDeposit({
-  chain: chainInput = "mantle",
+  chain: chainInput = "celo",
   reference,
   txHash,
   wallet: walletInput,
@@ -599,7 +599,7 @@ export async function verifyUsageDeposit({
 }
 
 export async function buildWithdrawRequest(walletInput: WalletAuthInput) {
-  return buildWithdrawRequestForChain(walletInput, "mantle");
+  return buildWithdrawRequestForChain(walletInput, "celo");
 }
 
 export function buildUsageVaultInfo(chainInput: ProductChainId) {

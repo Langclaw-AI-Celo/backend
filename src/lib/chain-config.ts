@@ -35,7 +35,7 @@ export type ProductChainConfig = {
   rpcUrl: string;
 };
 
-export const productChainIds = ["mantle", "celo"] as const;
+export const productChainIds = ["celo", "mantle"] as const;
 
 export const productChains: Record<ProductChainId, ProductChainConfig> = {
   mantle: {
@@ -97,7 +97,7 @@ export const productChains: Record<ProductChainId, ProductChainConfig> = {
   },
 };
 
-export const defaultProductChain: ProductChainId = "mantle";
+export const defaultProductChain: ProductChainId = "celo";
 
 export function isProductChainId(value: unknown): value is ProductChainId {
   return typeof value === "string" && value in productChains;
