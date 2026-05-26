@@ -98,9 +98,10 @@ Show:
 - Agent Decision Proof panel
 - Proof Center at `/proofs`
 - `decisionHash`
-- `agentId` = `9109`
-- latest demo decision `#0`
-- Celo proof tx `0x0e48bd059c782dd59a7834279388e0b2d305f9aba758c8fdb412e8eb55d2dc7d`
+- `agentId` = `133`
+- latest demo decision `#1`
+- Self Agent ID `133`
+- Celo proof tx `0x2a2f94c40e2b5c080bd330f43f3ce6bc6b05e054b6626ce3ab2716220f0d3211`
 - `signalType` = `smart-money` or `liquidity-anomaly`
 - Celo transaction link when configured
 - Strategy Proofs section for `LangclawTradingJournal`

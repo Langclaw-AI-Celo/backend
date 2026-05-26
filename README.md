@@ -162,8 +162,8 @@ Billing: `{MANTLE,CELO}_LANGCLAW_USAGE_VAULT_ADDRESS`. Mantle legacy `LANGCLAW_U
 | ERC-8004 registration tx | `0x1b7cb74378db42551a3cbc81dcd560f337df1593d4ef1cd70ee44ff269bdc7f3` |
 | Self Agent ID | `133` |
 | Self Agent ID tx | `0x3c7d0cc69f77d2aef5ab21bfe703d0f33f7037d5e2162209d78b23b5c3f1cde6` |
-| Latest decision proof | Decision `#0`, signal `smart-money` |
-| Latest decision proof tx | `0x0e48bd059c782dd59a7834279388e0b2d305f9aba758c8fdb412e8eb55d2dc7d` |
+| Latest decision proof | Decision `#1`, signal `smart-money`, agent `133` |
+| Latest decision proof tx | `0x2a2f94c40e2b5c080bd330f43f3ce6bc6b05e054b6626ce3ab2716220f0d3211` |
 
 Run `npm run check:eligibility` to verify the live Celo contracts, ERC-8004 agent, and Self Agent ID status. A verified Self Agent ID transaction satisfies the Self human proof check. Raw `CELO_SELF_HUMAN_PROOF` and `CELO_SELF_HUMAN_PROVIDER_DATA` are only needed when registering through the local script instead of the official Self linked flow.
 

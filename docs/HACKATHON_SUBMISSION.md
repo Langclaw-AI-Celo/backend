@@ -10,7 +10,7 @@ Langclaw is not a live-funds trading executor. It produces source-backed Celo in
 
 ## One-Liner
 
-Langclaw is a Celo-first AI intelligence and strategy agent that analyzes smart-money flow, liquidity anomalies, protocol momentum, and DEX pair history, then records each agent decision and paper-trading outcome on Celo through proof contracts linked to an ERC-8004 identity.
+Langclaw is a Celo-first AI intelligence and strategy agent that analyzes smart-money flow, liquidity anomalies, protocol momentum, and DEX pair history, then records each agent decision and paper-trading outcome on Celo through proof contracts linked to ERC-8004 and Self Agent ID records.
 
 ## Why It Fits
 
@@ -37,15 +37,16 @@ Celo builders, analysts, and MiniPay-facing teams need a fast way to screen Celo
 | LangclawUsageVault | `0x837a2948586de4e7638c742f99e520ffc049bcf7` |
 | ERC-8004 identity registry | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` |
 | Langclaw Celo ERC-8004 agent ID | `9109` |
+| Langclaw Self Agent ID | `133` |
 | Agent owner / recorder | `0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c` |
-| Latest recorded decision | `#0` smart-money, tx `0x0e48bd059c782dd59a7834279388e0b2d305f9aba758c8fdb412e8eb55d2dc7d` |
+| Latest recorded decision | `#1` smart-money, agent `133`, tx `0x2a2f94c40e2b5c080bd330f43f3ce6bc6b05e054b6626ce3ab2716220f0d3211` |
 
 ## Submission Readiness
 
 | Area | Status | Evidence |
 | --- | --- | --- |
 | Celo mainnet contracts | Ready | Registry, Trading Journal, and Usage Vault have Celo bytecode and verified explorer source |
-| AI agent proof | Ready for ERC-8004, pending Self Agent ID | ERC-8004 agent `9109`, registration tx `0x1b7cb74378db42551a3cbc81dcd560f337df1593d4ef1cd70ee44ff269bdc7f3`, latest decision proof `#0` |
+| AI agent proof | Ready | ERC-8004 agent `9109`, Self Agent ID `133`, Self registration tx `0x3c7d0cc69f77d2aef5ab21bfe703d0f33f7037d5e2162209d78b23b5c3f1cde6`, latest decision proof `#1` |
 | MiniPay support | Code ready, capture pending | MiniPay detection, Celo mainnet lock, and USDT stablecoin credits are implemented. Mobile screenshots still need to be captured |
 | Talent App | Manual follow-up | Builder profile, project page, campaign enrollment, and leaderboard evidence must be confirmed in Talent App |
 | Reward claim | Manual follow-up | Project Leader must claim through MiniPay or the program fallback before the reward deadline |
@@ -123,7 +124,7 @@ Expected result: strategy metrics, equity curve, trade log, latest AI signal, Du
 2. It uses Celo on-chain and provider data as the evidence base.
 3. It separates usable evidence from provider gaps instead of hiding missing sources.
 4. It records each AI decision hash on Celo through `LangclawRegistry`.
-5. The registry record is linked to ERC-8004 agent ID `9109`, giving the agent an on-chain performance trail.
+5. The latest registry record is linked to Self Agent ID `133`, with ERC-8004 agent ID `9109` kept as the base identity record.
 6. Strong signals can be saved to Alpha Watchlist for follow-up, while Proof Center shows registry history and Strategy Proofs.
 
 ## Local Verification
