@@ -1,85 +1,119 @@
 # Celo Eligibility Runbook
 
-This document tracks the repo-side work needed to keep Langclaw eligible for the Celo monthly requirements and gives a repeatable command path for re-checking status.
+This document tracks repo-side work needed to keep Langclaw aligned with Celo
+monthly requirements and gives a repeatable command path for rechecking status.
 
 ## Core Criteria
 
-1. Deploy the product contracts on Celo mainnet and verify their source code in the explorer.
-2. Keep the public GitHub repos clearly open source.
-3. Keep the Celo AI agent registered with ERC-8004, registered with Self Agent ID, and backed by a wallet that has on-chain transactions.
-4. Make sure the Project Leader can claim rewards in MiniPay before the next distribution window.
-5. Treat Proof of Ship / MiniPay launch evidence as a booster, not a blocker.
+1. Deploy the product contracts on Celo mainnet.
+2. Verify the deployed contract source in a public explorer.
+3. Keep the public GitHub repositories open source and aligned with the current
+   product state.
+4. Keep the Celo AI agent registered with ERC-8004.
+5. Keep the agent linked to Self Agent ID and backed by a wallet with on-chain
+   transactions.
+6. Keep MiniPay reward-claim operations ready for the Project Leader.
+7. Treat Proof of Ship and MiniPay launch artifacts as score boosters, not base
+   blockers.
 
 ## Current Celo Addresses
 
 | Item | Value |
 | --- | --- |
 | Celo chain ID | `42220` |
+| Agent wallet / recorder | `0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c` |
 | `LangclawRegistry` | `0xe69755e4249c4978c39fbe847ca9674ce7af3505` |
 | `LangclawTradingJournal` | `0x69984c20176704685236fd633192d7de1c13a5ec` |
 | `LangclawUsageVault` | `0x837a2948586de4e7638c742f99e520ffc049bcf7` |
+| Celo USDT deposit token | `0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e` |
 | ERC-8004 identity registry | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` |
-| Current Celo ERC-8004 agent ID | `9109` |
-| Current Self Agent ID | `133` |
-| Current Celo agent wallet | `0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c` |
-| Current ERC-8004 registration tx | `0x1b7cb74378db42551a3cbc81dcd560f337df1593d4ef1cd70ee44ff269bdc7f3` |
-| Current Self Agent ID registration tx | `0x3c7d0cc69f77d2aef5ab21bfe703d0f33f7037d5e2162209d78b23b5c3f1cde6` |
-| Latest Celo decision proof | `#1` smart-money, agent `133`, tx `0x2a2f94c40e2b5c080bd330f43f3ce6bc6b05e054b6626ce3ab2716220f0d3211` |
+| Celo ERC-8004 agent ID | `9109` |
+| Self Agent ID | `133` |
+| ERC-8004 registration tx | `0x1b7cb74378db42551a3cbc81dcd560f337df1593d4ef1cd70ee44ff269bdc7f3` |
+| Self Agent ID registration tx | `0x3c7d0cc69f77d2aef5ab21bfe703d0f33f7037d5e2162209d78b23b5c3f1cde6` |
+| Latest Celo decision proof | Decision `#1`, signal `smart-money`, agent `133`, tx `0x2a2f94c40e2b5c080bd330f43f3ce6bc6b05e054b6626ce3ab2716220f0d3211` |
+
+The Celo MCP live check on 2026-05-28 confirmed Celo mainnet connectivity and
+transaction status `1` for the ERC-8004 registration, Self Agent ID
+registration, and latest decision proof transactions.
 
 ## Current Verification Status
 
-- `LangclawRegistry`: verified on Celoscan with `solc 0.8.35`, optimizer `200`, `viaIR: false`
-- `LangclawTradingJournal`: verified on Celoscan with `solc 0.8.35`, optimizer `200`, `viaIR: true`
-- `LangclawUsageVault`: live Celo vault is now the USDT-backed deployment at `0x837a2948586de4e7638c742f99e520ffc049bcf7`, verified on Celoscan
-- Legacy Celo vault: the older native-only deployment at `0x6e1f381458229e8d1ee66d2a0121d4017596b97d` remains verified for historical reference via `backend/verification/celo-legacy-vault/src/LangclawUsageVault.sol`
-- `LangclawRegistry` now has a recorded Celo demo decision for Self Agent ID `133`: decision `#1`, signal `smart-money`, tx `0x2a2f94c40e2b5c080bd330f43f3ce6bc6b05e054b6626ce3ab2716220f0d3211`
+- `LangclawRegistry` is deployed on Celo and verified on Celoscan.
+- `LangclawTradingJournal` is deployed on Celo and verified on Celoscan.
+- `LangclawUsageVault` is deployed on Celo as the USDT-backed vault at
+  `0x837a2948586de4e7638c742f99e520ffc049bcf7` and verified on Celoscan.
+- The archived native-only Celo vault at
+  `0x6e1f381458229e8d1ee66d2a0121d4017596b97d` remains verified for historical
+  reference through `backend/verification/celo-legacy-vault/src/LangclawUsageVault.sol`.
+- `LangclawRegistry` has a recorded demo decision for Self Agent ID `133`:
+  decision `#1`, signal `smart-money`, tx
+  `0x2a2f94c40e2b5c080bd330f43f3ce6bc6b05e054b6626ce3ab2716220f0d3211`.
 
-## Current Eligibility Notes
+## Eligibility Notes
 
-- Self Agent ID is registered and verified on Celo in the current environment.
-- Verified Self registration is satisfied by the linked Self flow and on-chain registration tx. Raw `CELO_SELF_HUMAN_PROOF` and `CELO_SELF_HUMAN_PROVIDER_DATA` are only needed for direct local script registration.
-- Public GitHub proof is evaluated from the actual GitHub organization and repositories. Backend and frontend are local Git clones with public origins. Optional `contracts` and `.github` repos should be verified separately if they are part of the public submission.
+- Self Agent ID is registered and verified on Celo in the current project state.
+- A verified Self linked-flow transaction satisfies the Self human proof check.
+- Raw `CELO_SELF_HUMAN_PROOF` and `CELO_SELF_HUMAN_PROVIDER_DATA` are required
+  only when registering through the local script instead of the official Self
+  linked flow.
+- Public GitHub proof is evaluated from the actual GitHub organization and
+  repositories. Recheck `.github`, `backend`, `contracts`, and `frontend`
+  origins before submitting.
+- MiniPay support exists in the frontend. The reward claim itself is still an
+  external Project Leader operation.
 
 ## Commands
 
-Audit the current status from local env plus live chain and explorer data:
+Audit current status from local env plus live chain and explorer data:
 
 ```bash
 cd backend
 npm run check:eligibility
 ```
 
-Try automatic Celo contract verification. The script prefers Etherscan V2 / Celoscan when `ETHERSCAN_API_KEY` is available and falls back to Blockscout otherwise:
+Check proof-readiness for the configured Celo registry:
+
+```bash
+cd backend
+npm run check:celo-proof
+```
+
+Try automatic Celo contract verification. The script prefers Etherscan V2 /
+Celoscan when `ETHERSCAN_API_KEY` is available and falls back to Blockscout
+paths when applicable:
 
 ```bash
 cd backend
 npm run verify:celo-contracts
 ```
 
-Print the exact build plus verification commands without submitting them:
+Print build and verification commands without submitting them:
 
 ```bash
 cd backend
 npm run verify:celo-contracts -- --dry-run
 ```
 
-Export Standard JSON verification bundles for manual upload to Blockscout or Celoscan:
+Export Standard JSON verification bundles for manual upload:
 
 ```bash
 cd backend
 npm run verify:celo-contracts -- --standard-json
 ```
 
-Register or retry the Self Agent ID through the local script only when the official linked Self flow is not used:
+Register or retry Self Agent ID locally only when the official linked Self flow
+is not used:
 
 ```bash
 cd backend
 npm run register:agent -- --chain celo --self-agent-id --write-env
 ```
 
-## Required Environment For Direct Self Agent ID Registration
+## Direct Self Agent ID Environment
 
-The local registration script needs the following values in the current process environment or `backend/.env`:
+The local registration script needs the following values in the current process
+environment or `backend/.env`:
 
 ```bash
 CELO_AGENT_PRIVATE_KEY=
@@ -88,27 +122,54 @@ CELO_SELF_HUMAN_PROVIDER_DATA=
 CELO_SELF_HUMAN_PROOF_PROVIDER_ADDRESS=0x4b036aFD959B457A208F676cf44Ea3ef73Ea3E3d
 ```
 
-The current project already has `CELO_SELF_AGENT_ID=133` and `CELO_SELF_AGENT_ONCHAIN_TX=0x3c7d0cc69f77d2aef5ab21bfe703d0f33f7037d5e2162209d78b23b5c3f1cde6` from the official linked Self flow.
+The current project already has:
 
-Contract verification now also expects:
+```bash
+CELO_SELF_AGENT_ID=133
+CELO_SELF_AGENT_ONCHAIN_TX=0x3c7d0cc69f77d2aef5ab21bfe703d0f33f7037d5e2162209d78b23b5c3f1cde6
+```
+
+## Contract Verification Environment
 
 ```bash
 ETHERSCAN_API_KEY=
 ```
 
-The deploy path that produced the currently verified Celo contracts used the backend `solc` package, not Foundry's default `solc 0.8.24` profile. The verifier script rebuilds each target with the deploy-matching settings:
+The deploy path that produced the currently verified Celo contracts used the
+backend `solc` package and deploy-matching settings:
 
-- `LangclawRegistry`: `solc 0.8.35`, optimizer `200`, `viaIR: false`
-- `LangclawTradingJournal`: `solc 0.8.35`, optimizer `200`, `viaIR: true`
-- `LangclawUsageVault`: `solc 0.8.35`, optimizer `200`, `viaIR: true`; the verifier probes the live address and uses either the current USDT-backed source or the archived legacy native-only snapshot
+| Contract | Compiler | Optimizer | viaIR |
+| --- | --- | --- | --- |
+| `LangclawRegistry` | `solc 0.8.35` | `200` | `false` |
+| `LangclawTradingJournal` | `solc 0.8.35` | `200` | `true` |
+| `LangclawUsageVault` | `solc 0.8.35` | `200` | `true` |
+
+The verifier probes the live vault address and chooses the current USDT-backed
+source or the archived legacy native-only snapshot as needed.
 
 ## Explorer Targets
 
-Primary Celo explorer pages used in the monthly audit:
+- Registry:
+  [Celoscan](https://celoscan.io/address/0xe69755e4249c4978c39fbe847ca9674ce7af3505#code)
+- Trading journal:
+  [Celoscan](https://celoscan.io/address/0x69984c20176704685236fd633192d7de1c13a5ec#code)
+- Usage vault:
+  [Celoscan](https://celoscan.io/address/0x837a2948586de4e7638c742f99e520ffc049bcf7#code)
+- Blockscout fallback:
+  [celo.blockscout.com](https://celo.blockscout.com/)
 
-- Registry: [Celoscan](https://celoscan.io/address/0xe69755e4249c4978c39fbe847ca9674ce7af3505#code)
-- Trading journal: [Celoscan](https://celoscan.io/address/0x69984c20176704685236fd633192d7de1c13a5ec#code)
-- Usage vault: [Celoscan](https://celoscan.io/address/0x837a2948586de4e7638c742f99e520ffc049bcf7#code)
-- Blockscout verification surface: [celo.blockscout.com](https://celo.blockscout.com/)
+If automatic verification fails, export Standard JSON and upload it manually.
 
-If automatic verification fails, export the Standard JSON bundle and upload it manually. The verifier now probes the live vault address: modern USDT-backed vaults use `contracts/src/LangclawUsageVault.sol`, while the archived native-only Celo vault uses `backend/verification/celo-legacy-vault/src/LangclawUsageVault.sol`.
+## Monthly Evidence Pack
+
+Keep these artifacts before each claim or review window:
+
+- Public repository links for frontend, backend, contracts, and profile.
+- Celoscan code links for the three live Celo contracts.
+- ERC-8004 registration transaction.
+- Self Agent ID registration transaction.
+- Latest `LangclawRegistry` decision transaction.
+- MiniPay app screenshot or recording.
+- Celo USDT usage-credit flow screenshot or recording.
+- Proof Center screenshot showing agent decisions and strategy proofs.
+- Project Leader reward-claim confirmation when available.

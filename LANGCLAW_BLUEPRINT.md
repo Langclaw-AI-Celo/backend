@@ -1,83 +1,102 @@
-# Langclaw Mantle Hackathon Blueprint
+# Langclaw Celo Alpha Sentinel Blueprint
 
-Langclaw is repositioned for the Mantle Turing Test Hackathon as **Mantle Alpha Sentinel**.
+Langclaw is positioned for Celo as **Celo Alpha Sentinel**: an AI agent that
+turns Celo on-chain, market, and provider evidence into explainable alpha briefs,
+watchlist actions, and verifiable on-chain proof records.
 
 ## One Sentence
 
-Langclaw is a verifiable Mantle on-chain intelligence agent that monitors smart money, liquidity anomalies, protocol momentum, and risk signals, then records evidence-backed AI decisions on Mantle.
+Langclaw is a Celo-first AI intelligence agent that monitors smart-money flow,
+liquidity anomalies, protocol momentum, and strategy backtests, then records
+evidence-backed decisions on Celo through `LangclawRegistry` and
+`LangclawTradingJournal`.
 
 ## Track Fit
 
-Primary track: **AI Alpha & Data / Data & Analytics**.
+Primary narrative: **AI Alpha & Data / Celo AI agent proof**.
 
-Why this track:
+Why this fits:
 
-- Mantle on-chain data is the core input.
-- The output is an AI-generated alpha brief, not an autonomous trade claim.
-- The product can show insight value through source-backed findings and visual tool output.
-- Agent decisions are verifiable through `LangclawRegistry` records on Mantle.
+- Celo mainnet `42220` is the product chain and default evidence scope.
+- Output is an explainable AI alpha brief with confidence, caveats, and source
+  gaps, not an autonomous trade claim.
+- Celo proof contracts are live and used for decision and strategy records.
+- MiniPay is supported through the frontend wallet path and Celo USDT usage
+  credits.
+- ERC-8004 agent ID `9109` and Self Agent ID `133` connect the agent identity to
+  on-chain evidence.
 
-Trading execution is intentionally out of MVP scope until backtesting, live execution, Bybit integration, and on-chain trade records are added.
+Live-funds trading is intentionally out of scope. Strategy Lab is limited to
+backtesting and paper-trade proof records.
 
 ## Product Positioning
 
-Langclaw should be framed as:
+Frame Langclaw as:
 
 ```text
-Mantle Alpha Sentinel: an AI agent for verifiable on-chain alpha, smart-money monitoring, and anomaly alerts.
+Celo Alpha Sentinel: an AI agent for verifiable Celo alpha, smart-money monitoring, liquidity anomaly detection, and strategy proof.
 ```
 
-It should not be framed as:
+Do not frame it as:
 
 ```text
-An autonomous trading bot.
+An autonomous trading bot, market maker, arbitrage executor, or custody product.
 ```
 
-The user asks a Mantle alpha question. Langclaw runs source-backed tools, explains the signal, lists evidence and source gaps, writes a risk-aware watch action, and prepares or records the agent decision proof.
+The user asks a Celo alpha question. Langclaw runs provider-backed tools,
+normalizes evidence, generates a risk-aware answer, saves strong signals to a
+watchlist when requested, and prepares or records an on-chain proof.
 
 ## Core Demo Prompts
 
-- `Find smart-money accumulation on Mantle`
-- `Detect liquidity anomalies on Mantle DEX pairs`
-- `Rank Mantle protocols by TVL and yield momentum`
+- `Find smart-money accumulation on Celo`
+- `Detect liquidity anomalies on Celo DEX pairs`
+- `Rank Celo protocols by TVL and yield momentum`
+- `Analyze holder flow and smart-money signals on Celo token 0x471EcE3750Da237f93B8E339c536989b8978a438`
 
 ## Agent Workflow
 
 ```text
 User prompt
-  -> Mantle chain resolver
+  -> Celo chain resolver
   -> Planner
-  -> Mantle data tools
-     -> Dune Mantle query
-     -> DEX Screener Mantle pairs
-     -> DeFiLlama Mantle TVL / yields
-     -> Alchemy / Etherscan-style wallet and token reads when configured
-     -> GoPlus risk checks when configured
+  -> Discovery providers
+     -> Surf / Brave / Elfa / GitHub / Tavily / HackQuest when configured
+  -> On-chain tools
+     -> Surf smart-money research
+     -> Dune generated SQL or configured strategy query
+     -> DEX Screener Celo pairs
+     -> DeFiLlama Celo TVL / yield data
+     -> Alchemy / explorer reads when configured
+     -> GoPlus skipped honestly on Celo when unsupported
   -> Signal synthesis
+  -> Structured report and alpha quality scoring
   -> Evidence packager
   -> Verifier
-  -> Final Mantle Alpha brief
-  -> LangclawRegistry agent decision record on Mantle
+  -> Final Celo Alpha brief
+  -> Optional LangclawRegistry decision proof on Celo
+  -> Optional LangclawTradingJournal strategy proof on Celo
 ```
 
 ## Output Shape
 
-Each Mantle Intelligence run should surface:
+Each Celo Intelligence run should surface:
 
-- Signal
-- Evidence
-- Confidence
-- Risk note
-- Recommended watch/action
-- Provider source gaps
-- Evidence URI
-- Decision hash
-- Mantle transaction link when configured
-- ERC-8004-compatible agent id when configured
+- Signal type, such as `smart-money`, `liquidity-anomaly`, `defi-yield`, or
+  `mixed-research`.
+- Executive summary and bottom line.
+- Evidence cards, tool results, and provider trace.
+- Ranked entities or tables only when row-level metrics exist.
+- Confidence label and quality score.
+- False-positive checks and source gaps.
+- Risk note and recommended watch action.
+- Usage receipt when the request is billed.
+- Evidence URI, decision hash, agent ID, and Celo transaction link when proof
+  anchoring is configured.
 
-## Proof Contract
+## Proof Contracts
 
-`LangclawRegistry` records:
+`LangclawRegistry` records agent decisions:
 
 ```solidity
 struct AgentDecision {
@@ -91,44 +110,61 @@ struct AgentDecision {
 }
 ```
 
-The primary event is:
+`LangclawTradingJournal` records Strategy Lab runs:
 
 ```solidity
-event AgentDecisionRecorded(
-    uint256 indexed decisionId,
-    uint256 indexed agentId,
-    address indexed recorder,
-    bytes32 decisionHash,
-    string runId,
-    string evidenceUri,
-    string signalType
-);
+struct StrategyRecord {
+    uint256 agentId;
+    string runId;
+    string strategyId;
+    string market;
+    bytes32 decisionHash;
+    bytes32 resultHash;
+    string evidenceUri;
+    string action;
+    int256 pnlBps;
+    string status;
+    address recorder;
+    uint256 createdAt;
+}
 ```
+
+`LangclawUsageVault` accepts Celo USDT deposits, emits deposit events, and lets
+the backend-authorized withdrawal authority approve withdrawals.
 
 ## UI Scope
 
-Keep the existing chat layout. Adjust only:
+Keep the product surface focused on the working app:
 
-- Suggested prompts
-- Mode labels: `Mantle Alpha`, `Mantle Intel`
-- Proof copy: `Agent Decision Proof`
-- Badges: `Mantle`, `AI Alpha`, `Evidence-backed`, `On-chain recorded`
-- Automation copy for smart-money and anomaly alerts
+- Chat and Celo Intelligence mode.
+- Wallet + Telegram gate for research runs.
+- Alpha Watchlist for saved signals.
+- Usage page for Celo USDT credits and vault interactions.
+- Strategy Lab for scan, backtest, equity curve, trades, and paper proof.
+- Proof Center for registry decisions and strategy journal records.
+- MiniPay detection and Celo mainnet path.
 
 ## Scoring Narrative
 
-- **Data source quality:** Mantle chain, Dune Mantle queries, DEX Screener Mantle pairs, DeFiLlama Mantle TVL/yields, wallet/token reads.
-- **AI analysis depth:** signal synthesis, confidence, risk note, source gaps, recommended watch/action.
-- **Technical completeness:** backend workflow, frontend chat, on-chain tools, automation, proof contract.
-- **Insight value:** smart-money tracking, liquidity anomaly detection, protocol momentum ranking.
-- **Sustainability:** scheduled monitors and Telegram/in-app alert channels.
-- **Verifiability:** every decision has a hash, evidence URI, agent id, recorder, timestamp, and optional Mantle tx.
+- **Data source quality:** Celo chain, Surf, Dune, DEX Screener, DeFiLlama,
+  explorer reads, and provider trace metadata.
+- **AI analysis depth:** signal synthesis, confidence, false-positive checks,
+  risk notes, source gaps, and recommended next actions.
+- **Technical completeness:** backend workflow, frontend app, wallet auth,
+  usage billing, automation, proof contracts, and eligibility scripts.
+- **Insight value:** smart-money tracking, liquidity anomaly detection,
+  protocol/yield ranking, watchlist, and strategy backtesting.
+- **Verifiability:** every anchored decision has a hash, evidence URI, agent ID,
+  recorder, timestamp, and Celo transaction.
 
 ## MVP Acceptance
 
-- Prompt mentioning Mantle resolves to chain ID `5000`.
-- Mantle Intelligence mode returns signal/evidence/confidence/risk/action bullets.
-- Provider failures are shown as source gaps.
-- `LangclawRegistry` records and returns an agent decision.
-- Frontend loads with Mantle-first wallet config and updated labels.
-- Docs explain AI Alpha & Data positioning without claiming live trade execution.
+- Celo is the default product chain; chain ID resolves to `42220`.
+- Celo Intelligence returns signal, evidence, confidence, caveats, risk, and
+  action guidance.
+- Provider failures are visible as source gaps.
+- Research requests reserve and settle usage balance when billing is enabled.
+- `LangclawRegistry` returns recorded agent decisions for Proof Center.
+- `LangclawTradingJournal` returns strategy records when configured.
+- Frontend loads with Celo-first wallet config and MiniPay-aware UX.
+- Docs explain analysis-first scope without claiming live trade execution.

@@ -1,22 +1,27 @@
 # Langclaw OpenClaw Workflow
 
-Langclaw uses this folder as the OpenClaw skill workspace.
+Langclaw uses this folder as the local OpenClaw skill workspace for agent
+reasoning. Provider calls remain in TypeScript so API keys stay server-side and
+tool responses can be normalized before the agent sees them.
 
-OpenClaw acts as the agent reasoning and orchestration layer. It does not call X, GitHub, Tavily, Brave Search, or HackQuest directly. The Next.js server keeps those provider tools in TypeScript so API keys stay server-side.
+## Runtime Role
 
-Langclaw reads each local skill file and runs these reasoning steps through `openclaw agent --json`:
+OpenClaw is the reasoning and orchestration layer. The backend owns:
 
-- Planner Agent
-- Trend Scorer Agent
-- Evidence Packager Agent
-- Verifier Agent
-- Final Conclusion Agent
+- Wallet/API authentication and Telegram-link checks.
+- Usage reservation and settlement.
+- Provider calls to Surf, Brave, Elfa, GitHub, Tavily, HackQuest, Dune, DEX
+  Screener, DeFiLlama, Alchemy, explorer APIs, CoinGecko, GeckoTerminal, and
+  chain-specific tools.
+- Proof preparation and Celo anchoring.
 
-Discovery and Source Normalizer stay as TypeScript tools. That keeps provider credentials outside the agent prompt while still showing a real OpenClaw-driven workflow.
+OpenClaw steps consume normalized context and return structured planning,
+scoring, evidence, verification, and final-answer material.
 
-Current X discovery defaults to Brave Search. The official X API remains available behind `X_DISCOVERY_PROVIDER=x-api`.
+## Skill Order
 
-The public API calls `runLangclawWorkflow(topic)`. That workflow routes the topic through these skills:
+The public workflow calls `runLangclawWorkflow(topic)`. A research run routes the
+topic through these conceptual steps:
 
 1. Planner Skill
 2. Discovery Skill
@@ -26,40 +31,69 @@ The public API calls `runLangclawWorkflow(topic)`. That workflow routes the topi
 6. Verifier Skill
 7. Final Conclusion Skill
 
-Default runtime:
+The TypeScript workflow may produce deterministic fallback output for any step
+that is unavailable. Fallback output must keep provider gaps explicit and must
+not invent source rows, wallet labels, or chain transactions.
 
-```text
-OPENCLAW_ENABLED=true
-OPENCLAW_WORKFLOW_ENABLED=true
-OPENCLAW_AI_SYNTHESIS=true
-OPENCLAW_STEP_TIMEOUT_SECONDS=60
-OPENAI_API_KEY=
-OPENAI_AGENT_MODEL=gpt-5.2
-```
+## Default Environment
 
-With the default setting, Langclaw probes the OpenClaw CLI, runs the reasoning steps through OpenClaw when available, returns execution metadata for each step, and uses OpenClaw for the final chat answer when `OPENCLAW_AI_SYNTHESIS=true`. OpenAI remains the fallback path if the OpenClaw final synthesis step is disabled or fails.
-
-Optional runtime:
-
-```text
+```bash
 OPENCLAW_ENABLED=true
 OPENCLAW_CLI_PATH=openclaw
 OPENCLAW_WORKFLOW_ENABLED=true
 OPENCLAW_AI_SYNTHESIS=true
 OPENCLAW_STEP_TIMEOUT_SECONDS=60
 OPENCLAW_MODEL=
+OPENAI_API_KEY=
 OPENAI_CHAT_MODEL=gpt-5-mini
 OPENAI_AGENT_MODEL=gpt-5.2
 ```
 
-When enabled, Langclaw probes the OpenClaw CLI. If the CLI responds, the API marks the run as `runtime: "openclaw"`. If the CLI is missing, the API falls back to `runtime: "typescript"` and keeps the run live.
+The frontend currently sends the fixed chat model ID `gpt-5.4-nano`. The backend
+honors a requested model when supplied, otherwise it falls back to
+`OPENAI_CHAT_MODEL` for direct chat and `OPENAI_AGENT_MODEL` for agent
+synthesis.
 
-If an OpenClaw step fails, the API still returns deterministic fallback output and marks that step as `execution: "deterministic-fallback"`. The evidence and verifier steps prepare proof fields only. They do not claim that a Mantle transaction has happened unless the registry transaction is actually submitted or confirmed.
+## Proof Behavior
 
-The Mantle proof work runs after the reasoning steps:
+Proof work runs after the reasoning steps:
 
-- `src/lib/openai-direct-chat.ts` calls OpenAI Responses API for direct chat.
-- `src/lib/langclaw/openai-synthesis.ts` calls OpenAI Responses API for final-answer inference.
-- `src/lib/langclaw/proof.ts` prepares the canonical evidence bundle hash and anchors the agent decision through `LangclawRegistry` when `MANTLE_CHAIN_ENABLED=true`.
+- `src/lib/openai-direct-chat.ts` calls the OpenAI Responses API for direct chat.
+- `src/lib/langclaw/openai-synthesis.ts` calls the OpenAI Responses API for
+  final-answer synthesis when OpenClaw AI synthesis is not the final path.
+- `src/lib/langclaw/proof.ts` prepares the canonical evidence bundle hash and
+  anchors the agent decision through the selected chain's `LangclawRegistry`.
+- `src/lib/strategy/journal.ts` anchors Strategy Lab records through
+  `LangclawTradingJournal`.
 
-If those envs are missing, the response stays honest and marks the proof as `prepared` or `failed` instead of claiming a chain transaction.
+If Celo proof env values are missing, the API returns `prepared`, `skipped`, or
+`failed` proof states instead of claiming that a transaction happened.
+
+## Celo Defaults
+
+The default product chain is Celo:
+
+```bash
+CELO_CHAIN_ENABLED=true
+CELO_CHAIN_RPC_URL=https://forno.celo.org
+CELO_CHAIN_ID=42220
+CELO_LANGCLAW_REGISTRY_ADDRESS=
+CELO_LANGCLAW_TRADING_JOURNAL_ADDRESS=
+CELO_ERC8004_AGENT_ID=
+CELO_SELF_AGENT_ID=
+```
+
+Mantle remains supported as an explicit optional chain. Nansen is Mantle-only in
+the current provider routing; Celo runs Surf and Dune first for smart-money
+research and exposes unsupported providers as source gaps.
+
+## Operational Checks
+
+From `backend/`:
+
+```bash
+npm run check:celo-proof
+npm run check:eligibility
+npm run typecheck
+npm test
+```
