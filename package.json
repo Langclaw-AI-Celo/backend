@@ -1,0 +1,38 @@
+{
+  "name": "langclaw-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "dev": "tsx watch src/server.ts",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "check:eligibility": "node scripts/check-celo-eligibility.mjs",
+    "check:celo-proof": "node --import tsx src/scripts/check-celo-proof-readiness.ts --chain celo",
+    "deploy:registry": "node scripts/deploy-langclaw-registry.mjs",
+    "deploy:trading-journal": "node scripts/deploy-langclaw-trading-journal.mjs --write-env",
+    "deploy:usage-vault": "node scripts/deploy-langclaw-usage-vault.mjs --write-env",
+    "dune:create-strategy-query": "node scripts/create-dune-strategy-query.mjs --write-env",
+    "smoke:strategy-lab": "node scripts/smoke-strategy-lab.mjs",
+    "register:agent": "node scripts/register-erc8004-agent.mjs",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test:watch": "node --import tsx --test --watch \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "verify:celo-contracts": "node scripts/verify-celo-contracts.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
+    "dotenv": "^17.4.2",
+    "viem": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "solc": "^0.8.35",
+    "tsx": "latest",
+    "typescript": "latest"
+  },
+  "overrides": {
+    "axios": "^1.16.1",
+    "tmp": "^0.2.5"
+  }
+}
