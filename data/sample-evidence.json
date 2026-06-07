@@ -1,0 +1,66 @@
+{
+  "schema": "langclaw.evidence.v1",
+  "runId": "self_agent_mpmokfpn",
+  "topic": "Analyze holder flow and smart-money signals on Celo token 0x471EcE3750Da237f93B8E339c536989b8978a438",
+  "generatedAt": "2026-06-03T15:43:43.000Z",
+  "celo": {
+    "chainId": 42220,
+    "registryAddress": "0xe69755e4249c4978c39fbe847ca9674ce7af3505",
+    "erc8004IdentityRegistry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+    "agentId": 133,
+    "decisionId": 1,
+    "signalType": "smart-money",
+    "proofTx": "0x2a2f94c40e2b5c080bd330f43f3ce6bc6b05e054b6626ce3ab2716220f0d3211",
+    "recorder": "0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c",
+    "evidenceUri": "langclaw://evidence/self_agent_mpmokfpn/0xdd786c14c75be276b26f766df0786434ee27b8d82e0a54d3e4f0ef93ecb3a876"
+  },
+  "sources": [
+    {
+      "id": "etherscan-token-transfers",
+      "type": "onchain_transfer_feed",
+      "title": "Token whale transfers",
+      "url": "https://api.etherscan.io/v2/api?chainid=42220&apikey=redacted&action=tokentx&module=account&offset=20&page=1&sort=desc&contractaddress=0x471EcE3750Da237f93B8E339c536989b8978a438",
+      "provider": "etherscan",
+      "summary": "Fetched Celo token transfer activity. 20 records returned; latest and largest transfer summaries were included in the UI."
+    },
+    {
+      "id": "local-smart-money-synthesis",
+      "type": "agent_synthesis",
+      "title": "Smart money signal synthesis",
+      "provider": "local",
+      "summary": "Synthesized successful tool results into an analysis-only smart-money monitoring signal."
+    },
+    {
+      "id": "local-trading-synthesis",
+      "type": "agent_synthesis",
+      "title": "Trading signal synthesis",
+      "provider": "local",
+      "summary": "Synthesized source-backed tool results into a watchlist recommendation without executing trades."
+    }
+  ],
+  "providerErrors": [],
+  "orchestrationSteps": [
+    {
+      "agent": "Celo Intelligence Planner",
+      "status": "complete",
+      "summary": "Detected a Celo token address and selected holder-flow / smart-money tools."
+    },
+    {
+      "agent": "Celo Tool Runner",
+      "status": "complete",
+      "summary": "Collected Celo transfer evidence and local synthesis outputs."
+    },
+    {
+      "agent": "Celo Decision Anchor",
+      "status": "complete",
+      "summary": "Recorded the decision hash and evidence URI to LangclawRegistry on Celo."
+    }
+  ],
+  "finalAnswer": {
+    "title": "Celo smart-money watch",
+    "signal": "smart-money or holder-flow activity needs monitoring",
+    "confidence": "medium",
+    "recommendation": "Add the strongest source-backed signal to the Celo Alpha watchlist and record the decision proof.",
+    "caveat": "This is analysis-only. Langclaw did not sign, send, swap, buy, sell, or execute any transaction."
+  }
+}
