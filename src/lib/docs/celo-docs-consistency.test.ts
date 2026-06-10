@@ -18,16 +18,6 @@ const smartContractNotesPath = path.join(
   "docs",
   "SMART_CONTRACT_TEAM_NOTES.md"
 );
-const campaignProgressJune6Path = path.join(
-  backendRoot,
-  "docs",
-  "CAMPAIGN_PROGRESS_2026-06-06.md"
-);
-const campaignProgressPath = path.join(
-  backendRoot,
-  "docs",
-  "CAMPAIGN_PROGRESS_2026-06-07.md"
-);
 const campaignProgressJune10Path = path.join(
   backendRoot,
   "docs",
@@ -50,44 +40,14 @@ const sourceFiles = [
     ],
   },
   {
-    label: "CAMPAIGN_PROGRESS_2026-06-06",
-    path: campaignProgressJune6Path,
-    extraClaims: [
-      "github-backend-650d33c-2026-06-06",
-      "https://github.com/Langclaw-AI-Celo/backend/commit/650d33c80a2a54c5a706c79722a6eeeaa5dd4fd8",
-      "ready: true",
-      "2930d6d",
-      "42d130c",
-      "62093a9",
-      "e663d75",
-    ],
-  },
-  {
-    label: "CAMPAIGN_PROGRESS_2026-06-07",
-    path: campaignProgressPath,
-    extraClaims: [
-      "github-backend-650d33c-2026-06-06",
-      "https://github.com/Langclaw-AI-Celo/backend/commit/650d33c80a2a54c5a706c79722a6eeeaa5dd4fd8",
-      "nextDecisionId: 39",
-      "1b7daf0",
-      "42d130c",
-      "62093a9",
-      "e663d75",
-      "github-backend-2930d6d-2026-06-06",
-      "0xe7956e239480d208870b8309f23fa28fb23a09bf0064fb4cef4025a3c9c49116",
-      "github-backend-2abcb2f-2026-06-06",
-      "0x96a77f2ef7a3bae6f8b2dfeac9817dbb226c98dc67b1f7e9249e3f9de263df90",
-    ],
-  },
-  {
     label: "CAMPAIGN_PROGRESS_2026-06-10",
     path: campaignProgressJune10Path,
     extraClaims: [
       "Monorepo workspace",
       "5e5417c",
       "single-root local checkout",
-      "github-backend-650d33c-2026-06-06",
-      "https://github.com/Langclaw-AI-Celo/backend/commit/650d33c80a2a54c5a706c79722a6eeeaa5dd4fd8",
+      "github-backend-433b125-2026-06-08",
+      "https://github.com/Langclaw-AI-Celo/backend/commit/433b12562c6472dae9e3ff5a1286596a0420eaeb",
     ],
   },
 ];
