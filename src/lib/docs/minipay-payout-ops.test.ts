@@ -15,6 +15,9 @@ const expectedClaims = [
   "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e",
   "Proof Center screenshot showing Celo records.",
   "Project Leader",
+  "https://langclawcelo.vercel.app",
+  "Do not use a desktop wallet-only screenshot as MiniPay evidence.",
+  "transaction hash or absence of transaction hash",
 ];
 
 test("MiniPay payout ops doc keeps current Celo claim essentials", () => {

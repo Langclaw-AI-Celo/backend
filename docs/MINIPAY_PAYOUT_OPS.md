@@ -34,6 +34,7 @@ Proof of Ship and live MiniPay readiness are score boosters, not base blockers.
 Keep these artifacts available:
 
 - Deployed Mini App URL.
+- Public app URL: `https://langclawcelo.vercel.app`.
 - Screenshot or recording of the MiniPay connect flow.
 - Screenshot showing Celo mainnet selected.
 - Screenshot showing Celo USDT usage-credit path.
@@ -58,6 +59,11 @@ The current reward-claim-ready deposit path is:
 3. Deposit into `LangclawUsageVault`
    `0x837a2948586de4e7638c742f99e520ffc049bcf7`.
 4. Capture the proof artifacts listed above after verification succeeds.
+
+Do not use a desktop wallet-only screenshot as MiniPay evidence. If the MiniPay
+browser cannot complete the USDT credit flow, record the failing screen,
+timestamp, wallet address, and transaction hash or absence of transaction hash
+before retrying.
 
 ## Timing
 
