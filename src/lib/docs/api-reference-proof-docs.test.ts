@@ -21,6 +21,9 @@ const expectedClaims = [
   "CELO_LANGCLAW_TRADING_JOURNAL_ADDRESS=0x69984c20176704685236fd633192d7de1c13a5ec",
   "CELO_LANGCLAW_USAGE_VAULT_ADDRESS=0x837a2948586de4e7638c742f99e520ffc049bcf7",
   "CELO_TRADING_JOURNAL_ENABLED=true",
+  "approve Celo USDT",
+  "reads the on-chain deposit",
+  "credits the app ledger",
 ];
 
 test("API reference keeps the current Celo proof routes and env contract", () => {

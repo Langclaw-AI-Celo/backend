@@ -289,6 +289,13 @@ withdrawal authority, and configuration status.
 Verifies a Mantle MNT or Celo USDT deposit transaction against the selected
 chain's `LangclawUsageVault`, then credits the internal ledger.
 
+For the current Celo deployment, users approve Celo USDT
+`0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e` and deposit into
+`LangclawUsageVault` `0x837a2948586de4e7638c742f99e520ffc049bcf7`. The
+verification route does not move funds itself; it reads the on-chain deposit
+event, matches the wallet and deposit reference, then credits the app ledger
+after the transaction is confirmed.
+
 Request:
 
 ```json
