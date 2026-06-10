@@ -29,6 +29,12 @@ const expectedClaims = [
   "https://github.com/Langclaw-AI-Celo/backend/commit/650d33c80a2a54c5a706c79722a6eeeaa5dd4fd8",
 ];
 
+const maintenanceReadmeClaims = [
+  "single git root",
+  "git status --short .github backend contracts frontend",
+  "git rev-parse --short HEAD",
+];
+
 for (const [label, filePath] of [
   [".github README", githubReadmePath],
   [".github profile README", githubProfileReadmePath],
@@ -41,3 +47,14 @@ for (const [label, filePath] of [
     }
   });
 }
+
+test(".github maintenance README documents the current local checkout shape", () => {
+  const source = readFileSync(githubReadmePath, "utf8");
+
+  for (const claim of maintenanceReadmeClaims) {
+    assert.ok(
+      source.includes(claim),
+      `Expected .github maintenance README to include ${claim}`
+    );
+  }
+});
