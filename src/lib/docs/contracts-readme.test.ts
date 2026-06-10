@@ -27,6 +27,10 @@ const expectedClaims = [
   "https://github.com/Langclaw-AI-Celo/backend/commit/650d33c80a2a54c5a706c79722a6eeeaa5dd4fd8",
   "ready: true` with status `ready",
   "primary campaign proof writer",
+  "Campaign verification should prove the token-backed path",
+  "frontend `/usage` flow approves USDT",
+  "POST /api/usage/deposit/verify",
+  "confirmed vault deposit event",
 ];
 
 test("contracts README stays aligned with live public Celo proof references", () => {
