@@ -21,12 +21,12 @@ const expectedClaims = [
   "133",
   "0x1b7cb74378db42551a3cbc81dcd560f337df1593d4ef1cd70ee44ff269bdc7f3",
   "0x3c7d0cc69f77d2aef5ab21bfe703d0f33f7037d5e2162209d78b23b5c3f1cde6",
-  "0x4485061e6e6151bc51c106f025b7d062468121595ca5cb4198f7307ea5ec5f06",
+  "0xb50e7bd12af0cbca9a6246a80f1976da753d359fbd1553458712b43aa40681b1",
   "0x2a2f94c40e2b5c080bd330f43f3ce6bc6b05e054b6626ce3ab2716220f0d3211",
   "campaign-backend-proof",
   "smart-money",
-  "github-backend-650d33c-2026-06-06",
-  "https://github.com/Langclaw-AI-Celo/backend/commit/650d33c80a2a54c5a706c79722a6eeeaa5dd4fd8",
+  "github-backend-433b125-2026-06-08",
+  "https://github.com/Langclaw-AI-Celo/backend/commit/433b12562c6472dae9e3ff5a1286596a0420eaeb",
 ];
 
 const maintenanceReadmeClaims = [
