@@ -69,7 +69,7 @@ registry decision `#47` for agent `9109`.
   repositories. Recheck `.github`, `backend`, `contracts`, and `frontend`
   origins before submitting. If local checks report `missing git origin remote`,
   ensure that the git remote `origin` is added to the root checkout (e.g.,
-  `git remote add origin https://github.com/Langclaw-AI-Celo/langclaw-ai-celo.git`).
+  `git remote add origin https://github.com/Nant361/langclaw-celo.git`).
 - MiniPay support exists in the frontend. The reward claim itself is still an
   external Project Leader operation.
 

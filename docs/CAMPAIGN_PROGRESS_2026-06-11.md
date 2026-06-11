@@ -38,5 +38,5 @@ The public campaign surfaces continue to be tracked in the single git root repos
 
 ## Correctness and Maintenance Completed
 
-- Resolved the local eligibility checker's `missing git origin remote` warnings by documenting and configuring the workspace root git remote `https://github.com/Langclaw-AI-Celo/langclaw-ai-celo.git` so that the origin check is properly resolved.
+- Resolved the local eligibility checker's `missing git origin remote` warnings by documenting and configuring the workspace root git remote `https://github.com/Nant361/langclaw-celo.git` so that the origin check is properly resolved.
 - Verified that the current registry writes remain the ERC-8004 decision `#47` for agent `9109` and the latest Self-linked proof is decision `#1` for agent `133`.
