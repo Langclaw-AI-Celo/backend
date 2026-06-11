@@ -15,7 +15,7 @@ function buildClient({
 }: {
   latestAgentId?: bigint;
   latestDecisionId?: bigint;
-  latestTxHash?: string;
+  latestTxHash?: `0x${string}`;
 } = {}) {
   return {
     async getBalance() {
