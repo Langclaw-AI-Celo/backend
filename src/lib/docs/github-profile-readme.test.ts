@@ -6,10 +6,10 @@ import { fileURLToPath } from "node:url";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const backendRoot = path.resolve(testDir, "../../..");
-const githubReadmePath = path.resolve(backendRoot, "../.github/README.md");
+const githubReadmePath = path.resolve(backendRoot, "../org-profile/README.md");
 const githubProfileReadmePath = path.resolve(
   backendRoot,
-  "../.github/profile/README.md"
+  "../org-profile/profile/README.md"
 );
 
 const expectedClaims = [

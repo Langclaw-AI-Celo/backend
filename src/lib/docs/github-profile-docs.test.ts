@@ -7,8 +7,9 @@ import { fileURLToPath } from "node:url";
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const backendRoot = path.resolve(testDir, "../../..");
 const repoRoot = path.resolve(backendRoot, "..");
-const githubReadmePath = path.join(repoRoot, ".github/README.md");
-const githubProfileReadmePath = path.join(repoRoot, ".github/profile/README.md");
+const orgProfileRoot = path.join(repoRoot, "org-profile");
+const githubReadmePath = path.join(orgProfileRoot, "README.md");
+const githubProfileReadmePath = path.join(orgProfileRoot, "profile/README.md");
 
 const expectedClaims = [
   "0xe69755e4249c4978c39fbe847ca9674ce7af3505",
@@ -37,8 +38,8 @@ const maintenanceReadmeClaims = [
 ];
 
 for (const [label, filePath] of [
-  [".github README", githubReadmePath],
-  [".github profile README", githubProfileReadmePath],
+  ["org-profile README", githubReadmePath],
+  ["org-profile profile README", githubProfileReadmePath],
 ] as const) {
   test(`${label} stays aligned with live public Celo proof references`, () => {
     const source = readFileSync(filePath, "utf8");
