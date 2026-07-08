@@ -32,7 +32,7 @@ const expectedClaims = [
 
 const maintenanceReadmeClaims = [
   "single git root",
-  "git status --short .github backend contracts frontend",
+  "git status --short org-profile backend contracts frontend",
   "node --import tsx --test src/lib/docs/github-profile-docs.test.ts src/lib/docs/github-profile-readme.test.ts",
   "git rev-parse --short HEAD",
 ];
