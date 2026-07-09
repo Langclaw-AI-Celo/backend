@@ -31,6 +31,12 @@ const expectedClaims = [
   "frontend `/usage` flow approves USDT",
   "POST /api/usage/deposit/verify",
   "confirmed vault deposit event",
+  "git submodule update --init",
+  "forge build",
+  "forge test",
+  "npm run verify:celo-contracts",
+  "depositTokenAmount(...)",
+  "UnsupportedNativeDeposit()",
 ];
 
 test("contracts README stays aligned with live public Celo proof references", () => {
