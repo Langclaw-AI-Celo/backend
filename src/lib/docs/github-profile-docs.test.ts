@@ -37,6 +37,22 @@ const maintenanceReadmeClaims = [
   "git rev-parse --short HEAD",
 ];
 
+const repoLinkClaims = [
+  "https://github.com/Langclaw-AI-Celo/frontend",
+  "https://github.com/Langclaw-AI-Celo/backend",
+  "https://github.com/Langclaw-AI-Celo/contracts",
+];
+
+const verificationClaims = [
+  "https://langclawcelo.vercel.app",
+  "npm run check:eligibility",
+  "npm run check:celo-proof",
+  "pnpm typecheck",
+  "pnpm build",
+  "forge build",
+  "forge test",
+];
+
 for (const [label, filePath] of [
   ["org-profile README", githubReadmePath],
   ["org-profile profile README", githubProfileReadmePath],
@@ -57,6 +73,35 @@ test(".github maintenance README documents the current local checkout shape", ()
     assert.ok(
       source.includes(claim),
       `Expected .github maintenance README to include ${claim}`
+    );
+  }
+});
+
+for (const [label, filePath] of [
+  ["org-profile README", githubReadmePath],
+  ["org-profile profile README", githubProfileReadmePath],
+] as const) {
+  test(`${label} keeps the live app URL and public repo links`, () => {
+    const source = readFileSync(filePath, "utf8");
+
+    assert.ok(
+      source.includes("https://langclawcelo.vercel.app"),
+      `Expected ${label} to keep the live app URL.`
+    );
+
+    for (const claim of repoLinkClaims) {
+      assert.ok(source.includes(claim), `Expected ${label} to include ${claim}`);
+    }
+  });
+}
+
+test("org-profile profile README keeps the public verification commands", () => {
+  const source = readFileSync(githubProfileReadmePath, "utf8");
+
+  for (const claim of verificationClaims) {
+    assert.ok(
+      source.includes(claim),
+      `Expected org-profile profile README to include ${claim}`
     );
   }
 });
