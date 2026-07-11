@@ -155,7 +155,7 @@ export async function verifyWalletSession(
     return null;
   }
 
-  const challenge = consumeChallenge(nonce);
+  const challenge = getChallenge(nonce);
 
   if (!challenge) {
     return null;
@@ -178,6 +178,8 @@ export async function verifyWalletSession(
   if (!valid) {
     return null;
   }
+
+  deleteChallenge(nonce);
 
   return {
     authMethod: "challenge",
@@ -338,7 +340,7 @@ function readSessionSecret() {
   return "langclaw-dev-wallet-session-secret";
 }
 
-function consumeChallenge(nonce: string) {
+function getChallenge(nonce: string) {
   pruneExpiredChallenges();
   const challenge = challenges.get(nonce);
 
@@ -346,13 +348,16 @@ function consumeChallenge(nonce: string) {
     return null;
   }
 
-  challenges.delete(nonce);
-
   if (challenge.expiresAtMs <= Date.now()) {
+    challenges.delete(nonce);
     return null;
   }
 
   return challenge;
+}
+
+function deleteChallenge(nonce: string) {
+  challenges.delete(nonce);
 }
 
 function pruneExpiredChallenges(now = Date.now()) {

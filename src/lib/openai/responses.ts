@@ -158,53 +158,26 @@ export async function streamOpenAITextResponse({
 
     for (const event of events) {
       const parsed = parseSseData(event);
-
-      if (!parsed) {
-        continue;
-      }
-
-      if (parsed.type === "response.output_text.delta") {
-        const delta = readRawString(parsed.delta);
-
-        if (delta) {
-          text += delta;
-          onDelta?.(delta);
-        }
-      } else if (parsed.type === "response.output_text.done") {
-        const doneText = readRawString(parsed.text);
-
-        if (doneText && !text) {
-          text = doneText;
-        }
-      } else if (
-        parsed.type === "response.completed" ||
-        parsed.type === "response.done"
-      ) {
-        const completed = readRecord(parsed.response);
-        id = readString(completed?.id) || id;
-        usedModel = readString(completed?.model) || usedModel;
-        usage = readOpenAIUsage(completed?.usage) || usage;
-
-        if (!text && completed) {
-          text = extractOpenAIText(completed);
-        }
-      } else if (parsed.type === "response.failed" || parsed.type === "error") {
-        throw new Error(readOpenAIError(parsed) || "OpenAI response failed.");
-      }
+      ({ id, text, usage, usedModel } = applySseEvent({
+        id,
+        onDelta,
+        parsed,
+        text,
+        usage,
+        usedModel,
+      }));
     }
   }
 
   if (buffer.trim()) {
-    const parsed = parseSseData(buffer);
-
-    if (parsed?.type === "response.output_text.delta") {
-      const delta = readRawString(parsed.delta);
-
-      if (delta) {
-        text += delta;
-        onDelta?.(delta);
-      }
-    }
+    ({ id, text, usage, usedModel } = applySseEvent({
+      id,
+      onDelta,
+      parsed: parseSseData(buffer),
+      text,
+      usage,
+      usedModel,
+    }));
   }
 
   return {
@@ -213,6 +186,66 @@ export async function streamOpenAITextResponse({
     text,
     usage,
   };
+}
+
+function applySseEvent({
+  id,
+  onDelta,
+  parsed,
+  text,
+  usage,
+  usedModel,
+}: {
+  id?: string;
+  onDelta?: (delta: string) => void;
+  parsed: Record<string, unknown> | null;
+  text: string;
+  usage?: OpenAITokenUsage;
+  usedModel: string;
+}) {
+  if (!parsed) {
+    return { id, text, usage, usedModel };
+  }
+
+  if (parsed.type === "response.output_text.delta") {
+    const delta = readRawString(parsed.delta);
+
+    if (delta) {
+      text += delta;
+      onDelta?.(delta);
+    }
+
+    return { id, text, usage, usedModel };
+  }
+
+  if (parsed.type === "response.output_text.done") {
+    const doneText = readRawString(parsed.text);
+
+    if (doneText && !text) {
+      text = doneText;
+    }
+
+    return { id, text, usage, usedModel };
+  }
+
+  if (parsed.type === "response.completed" || parsed.type === "response.done") {
+    const completed = readRecord(parsed.response);
+    id = readString(completed?.id) || id;
+    usedModel = readString(completed?.model) || usedModel;
+    usage = readOpenAIUsage(completed?.usage) || usage;
+
+    if (!text && completed) {
+      text = extractOpenAIText(completed);
+    }
+
+    return { id, text, usage, usedModel };
+  }
+
+  if (parsed.type === "response.failed" || parsed.type === "error") {
+    throw new Error(readOpenAIError(parsed) || "OpenAI response failed.");
+  }
+
+  return { id, text, usage, usedModel };
 }
 
 export function extractOpenAIText(payload: Record<string, unknown>) {

@@ -159,6 +159,71 @@ test("authenticateApiKey fails when last-used persistence fails", async () => {
   });
 });
 
+test("authenticateApiKey rejects revoked keys", async () => {
+  await withEnv({ LANGCLAW_API_KEY_PEPPER: "test-pepper" }, async () => {
+    const secret = generateApiKeySecret(Buffer.alloc(32, 5));
+    const keyHash = hashApiKeySecret(secret, "test-pepper");
+    const supabase = createSupabaseMock({
+      keyRow: {
+        id: "key-3",
+        key_hash: keyHash,
+        name: "Revoked key",
+        status: "revoked",
+        wallet_user_id: "wallet-user-3",
+      },
+      walletUser: {
+        id: "wallet-user-3",
+        wallet_address: "0xaaa333",
+      },
+    });
+
+    await assert.rejects(
+      authenticateApiKey(
+        new Request("https://api.langclaw.test", {
+          headers: { authorization: `Bearer ${secret}` },
+        }),
+        supabase as never
+      ),
+      (error: unknown) =>
+        error instanceof ApiKeyHttpError &&
+        error.status === 401 &&
+        error.message === "Valid API key is required."
+    );
+  });
+});
+
+test("authenticateApiKey rejects malformed stored hashes", async () => {
+  await withEnv({ LANGCLAW_API_KEY_PEPPER: "test-pepper" }, async () => {
+    const secret = generateApiKeySecret(Buffer.alloc(32, 6));
+    const supabase = createSupabaseMock({
+      keyRow: {
+        id: "key-4",
+        key_hash: "not-a-sha256-hash",
+        name: "Malformed key",
+        status: "active",
+        wallet_user_id: "wallet-user-4",
+      },
+      walletUser: {
+        id: "wallet-user-4",
+        wallet_address: "0xbbb444",
+      },
+    });
+
+    await assert.rejects(
+      authenticateApiKey(
+        new Request("https://api.langclaw.test", {
+          headers: { authorization: `Bearer ${secret}` },
+        }),
+        supabase as never
+      ),
+      (error: unknown) =>
+        error instanceof ApiKeyHttpError &&
+        error.status === 401 &&
+        error.message === "Valid API key is required."
+    );
+  });
+});
+
 function resolveQuery<T>(data: T, errorMessage?: string): QueryResult<T> {
   return Promise.resolve({
     data,

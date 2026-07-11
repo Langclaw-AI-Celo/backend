@@ -125,3 +125,39 @@ test("API key creation requires a fresh api-key:create challenge", async () => {
   });
 });
 
+test("failed challenge verification does not consume a valid nonce", async () => {
+  await withEnv({ LANGCLAW_WALLET_SESSION_SECRET: "test-wallet-secret" }, async () => {
+    const challenge = createWalletChallenge({
+      address: testAccount.address,
+      request: new Request("https://api.langclaw.test/api/wallet/challenge"),
+    });
+    const signature = await testAccount.signMessage({
+      message: challenge.message,
+    });
+
+    const wrongAddressAttempt = await verifyWalletSession(
+      {
+        address: privateKeyToAccount(
+          "0x8b3a350cf5c34c9194ca3a9d8b9f4f2f6df4b36a1bc017d1f2d3dbed1d5d295d"
+        ).address,
+        message: challenge.message,
+        signature,
+      },
+      { requiredPurpose: "session" }
+    );
+
+    assert.equal(wrongAddressAttempt, null);
+
+    const verified = await verifyWalletSession(
+      {
+        address: testAccount.address,
+        message: challenge.message,
+        signature,
+      },
+      { requiredPurpose: "session" }
+    );
+
+    assert.equal(verified?.authMethod, "challenge");
+    assert.equal(verified?.address, testAccount.address.toLowerCase());
+  });
+});
