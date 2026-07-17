@@ -224,6 +224,58 @@ test("authenticateApiKey rejects malformed stored hashes", async () => {
   });
 });
 
+test("authenticateApiKey surfaces key lookup persistence failures", async () => {
+  await withEnv({ LANGCLAW_API_KEY_PEPPER: "test-pepper" }, async () => {
+    const secret = generateApiKeySecret(Buffer.alloc(32, 7));
+    const supabase = createSupabaseMock({
+      keySelectError: "api key lookup failed",
+    });
+
+    await assert.rejects(
+      authenticateApiKey(
+        new Request("https://api.langclaw.test", {
+          headers: { authorization: `Bearer ${secret}` },
+        }),
+        supabase as never,
+      ),
+      (error: unknown) =>
+        error instanceof ApiKeyHttpError &&
+        error.status === 500 &&
+        error.message === "api key lookup failed",
+    );
+  });
+});
+
+test("authenticateApiKey surfaces wallet lookup persistence failures", async () => {
+  await withEnv({ LANGCLAW_API_KEY_PEPPER: "test-pepper" }, async () => {
+    const secret = generateApiKeySecret(Buffer.alloc(32, 8));
+    const keyHash = hashApiKeySecret(secret, "test-pepper");
+    const supabase = createSupabaseMock({
+      keyRow: {
+        id: "key-5",
+        key_hash: keyHash,
+        name: "Primary key",
+        status: "active",
+        wallet_user_id: "wallet-user-5",
+      },
+      walletError: "wallet lookup failed",
+    });
+
+    await assert.rejects(
+      authenticateApiKey(
+        new Request("https://api.langclaw.test", {
+          headers: { authorization: `Bearer ${secret}` },
+        }),
+        supabase as never,
+      ),
+      (error: unknown) =>
+        error instanceof ApiKeyHttpError &&
+        error.status === 500 &&
+        error.message === "wallet lookup failed",
+    );
+  });
+});
+
 function resolveQuery<T>(data: T, errorMessage?: string): QueryResult<T> {
   return Promise.resolve({
     data,
