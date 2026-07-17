@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import {
+  readOrgProfileSource,
+  resolveOrgProfilePaths,
+} from "./org-profile-test-helpers";
+
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const backendRoot = path.resolve(testDir, "../../..");
-const repoRoot = path.resolve(backendRoot, "..");
-const orgProfileRoot = path.join(repoRoot, "org-profile");
-const githubReadmePath = path.join(orgProfileRoot, "README.md");
-const githubProfileReadmePath = path.join(orgProfileRoot, "profile/README.md");
+const orgProfilePaths = resolveOrgProfilePaths(backendRoot);
+const githubReadmePath = orgProfilePaths?.readmePath;
+const githubProfileReadmePath = orgProfilePaths?.profileReadmePath;
 
 const expectedClaims = [
   "0xe69755e4249c4978c39fbe847ca9674ce7af3505",
@@ -57,8 +60,12 @@ for (const [label, filePath] of [
   ["org-profile README", githubReadmePath],
   ["org-profile profile README", githubProfileReadmePath],
 ] as const) {
-  test(`${label} stays aligned with live public Celo proof references`, () => {
-    const source = readFileSync(filePath, "utf8");
+  test(`${label} stays aligned with live public Celo proof references`, (context) => {
+    const source = readOrgProfileSource(context, filePath);
+
+    if (source === null) {
+      return;
+    }
 
     for (const claim of expectedClaims) {
       assert.ok(source.includes(claim), `Expected ${label} to include ${claim}`);
@@ -66,8 +73,12 @@ for (const [label, filePath] of [
   });
 }
 
-test(".github maintenance README documents the current local checkout shape", () => {
-  const source = readFileSync(githubReadmePath, "utf8");
+test(".github maintenance README documents the current local checkout shape", (context) => {
+  const source = readOrgProfileSource(context, githubReadmePath);
+
+  if (source === null) {
+    return;
+  }
 
   for (const claim of maintenanceReadmeClaims) {
     assert.ok(
@@ -81,8 +92,12 @@ for (const [label, filePath] of [
   ["org-profile README", githubReadmePath],
   ["org-profile profile README", githubProfileReadmePath],
 ] as const) {
-  test(`${label} keeps the live app URL and public repo links`, () => {
-    const source = readFileSync(filePath, "utf8");
+  test(`${label} keeps the live app URL and public repo links`, (context) => {
+    const source = readOrgProfileSource(context, filePath);
+
+    if (source === null) {
+      return;
+    }
 
     assert.ok(
       source.includes("https://langclawcelo.vercel.app"),
@@ -95,8 +110,12 @@ for (const [label, filePath] of [
   });
 }
 
-test("org-profile profile README keeps the public verification commands", () => {
-  const source = readFileSync(githubProfileReadmePath, "utf8");
+test("org-profile profile README keeps the public verification commands", (context) => {
+  const source = readOrgProfileSource(context, githubProfileReadmePath);
+
+  if (source === null) {
+    return;
+  }
 
   for (const claim of verificationClaims) {
     assert.ok(

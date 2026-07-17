@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import {
+  readOrgProfileSource,
+  resolveOrgProfilePaths,
+} from "./org-profile-test-helpers";
+
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const backendRoot = path.resolve(testDir, "../../..");
-const githubReadmePath = path.resolve(backendRoot, "../org-profile/README.md");
-const githubProfileReadmePath = path.resolve(
-  backendRoot,
-  "../org-profile/profile/README.md"
-);
+const orgProfilePaths = resolveOrgProfilePaths(backendRoot);
+const githubReadmePath = orgProfilePaths?.readmePath;
+const githubProfileReadmePath = orgProfilePaths?.profileReadmePath;
 
 const expectedClaims = [
   "0xe69755e4249c4978c39fbe847ca9674ce7af3505",
@@ -29,9 +31,13 @@ const expectedClaims = [
   "human-verification flows",
 ];
 
-test("GitHub profile docs stay aligned with the live Celo proof story", () => {
+test("GitHub profile docs stay aligned with the live Celo proof story", (context) => {
   for (const filePath of [githubReadmePath, githubProfileReadmePath]) {
-    const source = readFileSync(filePath, "utf8");
+    const source = readOrgProfileSource(context, filePath);
+
+    if (source === null) {
+      return;
+    }
 
     for (const claim of expectedClaims) {
       assert.ok(source.includes(claim), `Expected ${filePath} to include ${claim}`);
