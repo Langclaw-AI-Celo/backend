@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { withEnv } from "../test/helpers";
 import {
+  buildWithdrawRequestForChain,
   UsageHttpError,
   verifyUsageDeposit,
 } from "./usage";
@@ -55,4 +56,16 @@ test("deposit verification rejects an invalid configured token address", async (
       );
     },
   );
+});
+
+test("withdrawal requests require a verified wallet session", async () => {
+  for (const wallet of [{}, { address: validVault }]) {
+    await assert.rejects(
+      buildWithdrawRequestForChain(wallet, "celo"),
+      (error: unknown) =>
+        error instanceof UsageHttpError &&
+        error.status === 401 &&
+        error.message === "Wallet signature is required.",
+    );
+  }
 });
