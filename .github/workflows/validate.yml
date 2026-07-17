@@ -1,0 +1,65 @@
+name: Validate backend
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out backend
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          path: backend
+
+      - name: Check out contracts
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: Langclaw-AI-Celo/contracts
+          path: contracts
+
+      - name: Check out organization profile
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: Langclaw-AI-Celo/.github
+          path: .github
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install npm
+        run: npm install --global npm@10.9.8
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=low
+        working-directory: backend
+
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: backend
+
+      - name: Test
+        env:
+          LANGCLAW_ORG_PROFILE_ROOT: ${{ github.workspace }}/.github
+        run: npm test
+        working-directory: backend
+
+      - name: Build
+        run: npm run build
+        working-directory: backend
