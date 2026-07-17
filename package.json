@@ -20,6 +20,7 @@
     "smoke:strategy-lab": "node scripts/smoke-strategy-lab.mjs",
     "register:agent": "node scripts/register-erc8004-agent.mjs",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-lines=84 --test-coverage-branches=75 --test-coverage-functions=82 --import tsx --test \"src/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "verify:celo-contracts": "node scripts/verify-celo-contracts.mjs"

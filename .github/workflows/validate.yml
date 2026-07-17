@@ -54,10 +54,10 @@ jobs:
         run: npm run typecheck
         working-directory: backend
 
-      - name: Test
+      - name: Test with coverage floors
         env:
           LANGCLAW_ORG_PROFILE_ROOT: ${{ github.workspace }}/.github
-        run: npm test
+        run: npm run test:coverage
         working-directory: backend
 
       - name: Build
