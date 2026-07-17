@@ -552,7 +552,7 @@ function toJson(value: unknown): Json | null {
   return JSON.parse(JSON.stringify(value)) as Json;
 }
 
-function readOptionalTitle(value: unknown): { error?: string; value?: string } {
+export function readOptionalTitle(value: unknown): { error?: string; value?: string } {
   if (value === undefined) {
     return {};
   }
