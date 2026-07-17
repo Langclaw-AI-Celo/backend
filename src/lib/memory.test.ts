@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  deleteManyMemories,
+  deleteMemory,
   MemoryHttpError,
   readMemoryDashboard,
   updateManyMemoryStatuses,
@@ -190,4 +192,95 @@ test("bulk memory status updates trim and deduplicate ids", async () => {
   assert.equal(updatedStatus, "disabled");
   assert.equal(scopedWallet, walletUser.id);
   assert.deepEqual(selectedIds, ["memory-1", "memory-2"]);
+});
+
+test("single memory deletion includes the authenticated wallet scope", async () => {
+  const filters: Array<[string, string]> = [];
+  const query = {
+    eq(column: string, value: string) {
+      filters.push([column, value]);
+      return query;
+    },
+    select(column: string) {
+      assert.equal(column, "id");
+      return {
+        maybeSingle: () => Promise.resolve({ data: { id: "memory-1" }, error: null }),
+      };
+    },
+  };
+  const supabase = {
+    from(table: string) {
+      assert.equal(table, "langclaw_memories");
+      return {
+        delete: () => query,
+      };
+    },
+  };
+
+  const result = await deleteMemory(
+    {
+      account: {
+        authMethod: "wallet",
+        supabase: supabase as never,
+        walletUser,
+      },
+    },
+    " memory-1 ",
+  );
+
+  assert.deepEqual(result, { deleted: true, deletedIds: ["memory-1"] });
+  assert.deepEqual(filters, [
+    ["id", "memory-1"],
+    ["wallet_user_id", walletUser.id],
+  ]);
+});
+
+test("bulk memory deletion scopes ids to the authenticated wallet", async () => {
+  const calls: Array<{ args: unknown[]; method: string }> = [];
+  const supabase = {
+    from(table: string) {
+      assert.equal(table, "langclaw_memories");
+      return {
+        delete() {
+          return {
+            eq(...args: unknown[]) {
+              calls.push({ args, method: "eq" });
+              return {
+                in(...inArgs: unknown[]) {
+                  calls.push({ args: inArgs, method: "in" });
+                  return {
+                    select(column: string) {
+                      calls.push({ args: [column], method: "select" });
+                      return Promise.resolve({
+                        data: [{ id: "memory-1" }, { id: "memory-2" }],
+                        error: null,
+                      });
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const result = await deleteManyMemories(
+    {
+      account: {
+        authMethod: "wallet",
+        supabase: supabase as never,
+        walletUser,
+      },
+    },
+    ["memory-1", "memory-2", "memory-1"],
+  );
+
+  assert.deepEqual(result.deletedIds, ["memory-1", "memory-2"]);
+  assert.deepEqual(calls, [
+    { args: ["wallet_user_id", walletUser.id], method: "eq" },
+    { args: ["id", ["memory-1", "memory-2"]], method: "in" },
+    { args: ["id"], method: "select" },
+  ]);
 });
