@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { persistTradingJournalRecord } from "./journal";
+import {
+  persistTradingJournalRecord,
+  waitForSubmittedTransactionReceipt,
+} from "./journal";
 import { withEnv } from "../../test/helpers";
+
+const txHash = `0x${"a".repeat(64)}` as `0x${string}`;
 
 test("trading journal proof returns prepared when chain recording is disabled", async () => {
   await withEnv(
@@ -94,5 +99,41 @@ test("trading journal proof prefers ERC-8004 agent id over Self agent id", async
       assert.equal(proof.status, "prepared");
       assert.equal(proof.agentId, "9109");
     }
+  );
+});
+
+test("journal receipt polling expires when the receipt remains missing", async () => {
+  let attempts = 0;
+  const receipt = await waitForSubmittedTransactionReceipt({
+    attempts: 2,
+    intervalMs: 1,
+    publicClient: {
+      async getTransactionReceipt() {
+        attempts += 1;
+        throw new Error(
+          `Transaction receipt with hash ${txHash} could not be found.`,
+        );
+      },
+    },
+    txHash,
+  });
+
+  assert.equal(receipt, undefined);
+  assert.equal(attempts, 2);
+});
+
+test("journal receipt polling surfaces RPC failures", async () => {
+  await assert.rejects(
+    waitForSubmittedTransactionReceipt({
+      attempts: 2,
+      intervalMs: 1,
+      publicClient: {
+        async getTransactionReceipt() {
+          throw new Error("Journal RPC unavailable.");
+        },
+      },
+      txHash,
+    }),
+    /Journal RPC unavailable/,
   );
 });
