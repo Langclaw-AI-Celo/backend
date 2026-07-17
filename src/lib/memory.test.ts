@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { readMemoryDashboard } from "./memory";
+import {
+  MemoryHttpError,
+  readMemoryDashboard,
+  updateManyMemoryStatuses,
+} from "./memory";
 
 const walletUser = {
   id: "wallet-user-1",
@@ -112,4 +116,78 @@ test("memory dashboards scope memories and settings to the authenticated wallet"
         (call.args[0] as { wallet_user_id?: string }).wallet_user_id === walletUser.id,
     ),
   );
+});
+
+test("bulk memory status validation rejects missing ids and unsupported states", async () => {
+  const account = {
+    authMethod: "wallet" as const,
+    supabase: {
+      from() {
+        throw new Error("validation should finish before querying storage");
+      },
+    } as never,
+    walletUser,
+  };
+
+  for (const [memoryIds, status, message] of [
+    [undefined, "active", "memoryIds are required."],
+    [[], "active", "At least one memory id is required."],
+    [["memory-1"], "archived", "A valid memory status is required."],
+  ] as const) {
+    await assert.rejects(
+      updateManyMemoryStatuses({ account }, memoryIds, status),
+      (error: unknown) =>
+        error instanceof MemoryHttpError &&
+        error.status === 400 &&
+        error.message === message,
+    );
+  }
+});
+
+test("bulk memory status updates trim and deduplicate ids", async () => {
+  let updatedStatus = "";
+  let scopedWallet = "";
+  let selectedIds: string[] = [];
+  const supabase = {
+    from(table: string) {
+      assert.equal(table, "langclaw_memories");
+      return {
+        update(payload: { status: string }) {
+          updatedStatus = payload.status;
+          return {
+            eq(column: string, value: string) {
+              assert.equal(column, "wallet_user_id");
+              scopedWallet = value;
+              return {
+                in(inColumn: string, ids: string[]) {
+                  assert.equal(inColumn, "id");
+                  selectedIds = ids;
+                  return {
+                    select: () => Promise.resolve({ data: [], error: null }),
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const result = await updateManyMemoryStatuses(
+    {
+      account: {
+        authMethod: "wallet",
+        supabase: supabase as never,
+        walletUser,
+      },
+    },
+    [" memory-1 ", "memory-1", "", 42, "memory-2"],
+    "disabled",
+  );
+
+  assert.deepEqual(result, []);
+  assert.equal(updatedStatus, "disabled");
+  assert.equal(scopedWallet, walletUser.id);
+  assert.deepEqual(selectedIds, ["memory-1", "memory-2"]);
 });
