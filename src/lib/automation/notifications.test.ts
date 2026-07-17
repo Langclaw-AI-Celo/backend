@@ -192,6 +192,45 @@ test("alpha signal Telegram notification posts when enabled", async () => {
   }
 });
 
+test("alpha signal Telegram notification reports provider failures", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalFlag = process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
+  const originalToken = process.env.LANGCLAW_TELEGRAM_BOT_TOKEN;
+
+  globalThis.fetch = (async () =>
+    new Response("upstream unavailable", { status: 502 })) as typeof fetch;
+  process.env.LANGCLAW_ALPHA_ALERTS_ENABLED = "true";
+  process.env.LANGCLAW_TELEGRAM_BOT_TOKEN = "test-token";
+
+  try {
+    const notification = await sendAlphaSignalNotification({
+      alphaSignal: buildTestAlphaSignal(),
+      project: "Celo Alpha Sentinel",
+      runId: "run-alpha-failed",
+      settings,
+      taskName: "Celo smart-money scan",
+    });
+
+    assert.equal(notification.status, "failed");
+    assert.equal(
+      notification.error,
+      "Telegram notification failed with 502.",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalFlag === undefined) {
+      delete process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
+    } else {
+      process.env.LANGCLAW_ALPHA_ALERTS_ENABLED = originalFlag;
+    }
+    if (originalToken === undefined) {
+      delete process.env.LANGCLAW_TELEGRAM_BOT_TOKEN;
+    } else {
+      process.env.LANGCLAW_TELEGRAM_BOT_TOKEN = originalToken;
+    }
+  }
+});
+
 test("notification channels exclude in-app and honor disabled notifications", () => {
   assert.deepEqual(resolveNotificationChannels(settings), ["email", "telegram"]);
   assert.deepEqual(
@@ -457,6 +496,51 @@ test("sendAutomationEmail includes Resend 403 details and config hint", async ()
       delete process.env.LANGCLAW_AUTOMATION_EMAIL_FROM;
     } else {
       process.env.LANGCLAW_AUTOMATION_EMAIL_FROM = originalFrom;
+    }
+  }
+});
+
+test("run notifications fail when every configured provider rejects", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.RESEND_API_KEY;
+  const originalFrom = process.env.LANGCLAW_AUTOMATION_EMAIL_FROM;
+  const originalToken = process.env.LANGCLAW_TELEGRAM_BOT_TOKEN;
+
+  globalThis.fetch = (async () =>
+    new Response("provider unavailable", { status: 503 })) as typeof fetch;
+  process.env.RESEND_API_KEY = "test-api-key";
+  process.env.LANGCLAW_AUTOMATION_EMAIL_FROM = "alerts@example.com";
+  process.env.LANGCLAW_TELEGRAM_BOT_TOKEN = "test-token";
+
+  try {
+    await assert.rejects(
+      sendAutomationRunNotification({
+        error: "Scheduled scan failed.",
+        project: "Langclaw Website",
+        runId: "run-provider-failure",
+        settings,
+        status: "failed",
+        taskName: "Celo smart-money scan",
+        triggeredBy: "schedule",
+      }),
+      /All automation notification channels failed/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalApiKey === undefined) {
+      delete process.env.RESEND_API_KEY;
+    } else {
+      process.env.RESEND_API_KEY = originalApiKey;
+    }
+    if (originalFrom === undefined) {
+      delete process.env.LANGCLAW_AUTOMATION_EMAIL_FROM;
+    } else {
+      process.env.LANGCLAW_AUTOMATION_EMAIL_FROM = originalFrom;
+    }
+    if (originalToken === undefined) {
+      delete process.env.LANGCLAW_TELEGRAM_BOT_TOKEN;
+    } else {
+      process.env.LANGCLAW_TELEGRAM_BOT_TOKEN = originalToken;
     }
   }
 });
