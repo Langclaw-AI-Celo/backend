@@ -2,6 +2,10 @@
   "name": "langclaw-backend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
+  "packageManager": "npm@10.9.8",
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "dev": "tsx watch src/server.ts",
