@@ -297,6 +297,11 @@ npm run dune:create-strategy-query
 npm run smoke:strategy-lab
 ```
 
+GitHub profile checks run when the `.github` repository is available beside
+this checkout. Set `LANGCLAW_ORG_PROFILE_ROOT` when it lives elsewhere. The
+suite skips only those cross-repository checks when the profile repository is
+absent.
+
 ## Related Docs
 
 | File | Description |
