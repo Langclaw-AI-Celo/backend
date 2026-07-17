@@ -27,6 +27,42 @@ test("waits for submitted Mantle transaction receipts", async () => {
   assert.equal(attempts, 2);
 });
 
+test("anchoring receipt polling returns reverted transactions immediately", async () => {
+  let attempts = 0;
+  const receipt = await waitForSubmittedTransactionReceipt({
+    attempts: 3,
+    intervalMs: 1,
+    publicClient: {
+      async getTransactionReceipt() {
+        attempts += 1;
+        return { status: "reverted" as const };
+      },
+    },
+    txHash:
+      "0x3333333333333333333333333333333333333333333333333333333333333333",
+  });
+
+  assert.deepEqual(receipt, { status: "reverted" });
+  assert.equal(attempts, 1);
+});
+
+test("anchoring receipt polling surfaces RPC failures", async () => {
+  await assert.rejects(
+    waitForSubmittedTransactionReceipt({
+      attempts: 2,
+      intervalMs: 1,
+      publicClient: {
+        async getTransactionReceipt() {
+          throw new Error("Proof registry RPC unavailable.");
+        },
+      },
+      txHash:
+        "0x4444444444444444444444444444444444444444444444444444444444444444",
+    }),
+    /Proof registry RPC unavailable/,
+  );
+});
+
 test("falls back to native Celo gas when the fee currency cannot pay", async () => {
   const calls: Record<string, unknown>[] = [];
   const txHash =
