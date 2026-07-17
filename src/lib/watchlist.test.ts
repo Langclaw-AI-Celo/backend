@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { upsertAlphaWatchlistItem } from "./watchlist";
+import {
+  clearAlphaWatchlist,
+  upsertAlphaWatchlistItem,
+} from "./watchlist";
 
 const walletUser = {
   id: "wallet-user-1",
@@ -73,4 +76,34 @@ test("watchlist upserts normalize input and bind the authenticated wallet", asyn
   assert.equal(saved?.title, "CELO signal");
   assert.equal(saved?.intent, "track accumulation");
   assert.equal(item.summary, "Wallets accumulated CELO.");
+});
+
+test("clearing a watchlist deletes only the authenticated wallet rows", async () => {
+  const filters: Array<[string, string]> = [];
+  const supabase = {
+    from(table: string) {
+      assert.equal(table, "langclaw_alpha_watchlist");
+      return {
+        delete() {
+          return {
+            eq(column: string, value: string) {
+              filters.push([column, value]);
+              return Promise.resolve({ data: null, error: null });
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const result = await clearAlphaWatchlist({
+    account: {
+      authMethod: "wallet",
+      supabase: supabase as never,
+      walletUser,
+    },
+  });
+
+  assert.deepEqual(result, { cleared: true });
+  assert.deepEqual(filters, [["wallet_user_id", walletUser.id]]);
 });
