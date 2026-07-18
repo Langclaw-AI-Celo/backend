@@ -94,3 +94,33 @@ test("falls back to native Celo gas when the fee currency cannot pay", async () 
   );
   assert.equal("feeCurrency" in calls[1], false);
 });
+
+test("preserves Celo attribution through fee currency fallback", async () => {
+  const calls: Record<string, unknown>[] = [];
+  const dataSuffix =
+    "0x63656c6f5f316139383733383633366462110080218021802180218021802180218021";
+
+  await writeContractWithCeloFeeFallback({
+    chainConfig: getProductChain("celo"),
+    request: {
+      address: "0xE69755E4249C4978c39FbE847Ca9674ce7Af3505",
+      dataSuffix,
+    },
+    walletClient: {
+      async writeContract(request) {
+        calls.push(request);
+
+        if ("feeCurrency" in request) {
+          throw new Error("fee currency allowance is zero");
+        }
+
+        return "0x2222222222222222222222222222222222222222222222222222222222222222";
+      },
+    },
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].dataSuffix, dataSuffix);
+  assert.equal(calls[1].dataSuffix, dataSuffix);
+  assert.equal("feeCurrency" in calls[1], false);
+});
