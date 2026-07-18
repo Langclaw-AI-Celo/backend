@@ -50,3 +50,21 @@ test("watchlist routes reject unsupported actions", async () => {
     error: "Unsupported action.",
   });
 });
+
+test("watchlist routes keep every supported action behind account authentication", async () => {
+  for (const action of [undefined, "list", "upsert", "delete", "clear"]) {
+    const response = await handleWatchlist(
+      new Request("http://localhost/api/watchlist", {
+        body: JSON.stringify(action ? { action } : {}),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      })
+    );
+
+    assert.equal(response.status, 401, String(action ?? "default"));
+    assert.deepEqual(await response.json(), {
+      configured: true,
+      error: "Wallet signature or API key is required.",
+    });
+  }
+});
