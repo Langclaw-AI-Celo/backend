@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { fromDataSuffix } from "@celo/attribution-tags";
+
 import { getProductChain } from "../chain-config";
+import { withEnv } from "../../test/helpers";
 import {
+  prepareErc8004FeedbackWriteRequest,
   waitForSubmittedTransactionReceipt,
   writeContractWithCeloFeeFallback,
 } from "./proof";
@@ -123,4 +127,25 @@ test("preserves Celo attribution through fee currency fallback", async () => {
   assert.equal(calls[0].dataSuffix, dataSuffix);
   assert.equal(calls[1].dataSuffix, dataSuffix);
   assert.equal("feeCurrency" in calls[1], false);
+});
+
+test("prepares ERC-8004 feedback with Celo hostname and official attribution", async () => {
+  await withEnv(
+    {
+      CELO_ATTRIBUTION_CODE: "langclaw",
+      CELO_ATTRIBUTION_HOSTNAME: "langclawcelo.vercel.app",
+    },
+    async () => {
+      const request = await prepareErc8004FeedbackWriteRequest(
+        getProductChain("celo"),
+        { functionName: "giveFeedback" }
+      );
+
+      assert.deepEqual(fromDataSuffix(request.dataSuffix), {
+        codes: ["celo_1a98738636db", "langclaw"],
+        schemaId: 0,
+      });
+      assert.equal(request.functionName, "giveFeedback");
+    }
+  );
 });

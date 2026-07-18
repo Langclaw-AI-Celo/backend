@@ -480,9 +480,13 @@ async function recordErc8004ReputationFeedback({
       args: [agentId, 100n, 0, tag1, tag2, endpoint, evidenceUri, decisionHash],
       account: feedbackAccount,
     });
+    const attributedRequest = await prepareErc8004FeedbackWriteRequest(
+      chainConfig,
+      request as Record<string, unknown>
+    );
     const txHash = await writeContractWithCeloFeeFallback({
       chainConfig,
-      request: request as Record<string, unknown>,
+      request: attributedRequest,
       walletClient: walletClient as unknown as WriteContractClient,
     });
     submittedTxHash = txHash;
@@ -712,6 +716,12 @@ function withCeloFeeCurrency<T extends Record<string, unknown>>(
 type WriteContractClient = {
   writeContract: (request: Record<string, unknown>) => Promise<Hex>;
 };
+
+export async function prepareErc8004FeedbackWriteRequest<
+  T extends Record<string, unknown>,
+>(chainConfig: ProductChainConfig, request: T) {
+  return withCeloAttribution(chainConfig.id, request);
+}
 
 export async function writeContractWithCeloFeeFallback<T extends Record<string, unknown>>({
   chainConfig,
