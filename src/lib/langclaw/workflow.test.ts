@@ -5,6 +5,7 @@ import { synthesizeFinalAnswerWithOpenAI } from "./openai-synthesis";
 import {
   buildFinalAnswer,
   buildConclusionSignal,
+  buildDiscoverSignals,
   buildSocialSignals,
   buildWorkflowProgressEvent,
   summarizeFailures,
@@ -17,7 +18,10 @@ import type {
   ResearchReport,
   SourceCard,
 } from "./types";
-import type { OnChainToolFinalPayload } from "../onchain-tools/types";
+import type {
+  OnChainToolFinalPayload,
+  OnChainToolResult,
+} from "../onchain-tools/types";
 import { jsonResponse, mockFetch, withEnv } from "../../test/helpers";
 
 test("progress events include standardized timing fields", () => {
@@ -1208,3 +1212,308 @@ test("buildSocialSignals stays success when direct social providers all succeed"
 
   assert.equal(signals.status, "success");
 });
+
+test("discover signals cover failed, skipped, partial, and converged evidence", () => {
+  const xSource: SourceCard = {
+    excerpt: "Celo social activity",
+    id: "x-signal",
+    provider: "X",
+    title: "Celo social signal",
+    type: "x_post",
+    url: "https://x.com/celo/status/1",
+  };
+  const githubSource: SourceCard = {
+    excerpt: "Celo builder activity",
+    id: "github-signal",
+    provider: "GitHub",
+    title: "celo/agent-tooling",
+    type: "github_repo",
+    url: "https://github.com/celo/agent-tooling",
+  };
+  const directSuccess = buildToolResult({
+    attemptedProviders: [
+      "elfa",
+      "surf",
+      "nansen",
+      "dune",
+      "coingecko",
+      "geckoterminal",
+      "dexscreener",
+      "defillama",
+      "alchemy",
+      "etherscan",
+      "goplus",
+      "local",
+    ],
+    provider: "coingecko",
+    status: "success",
+  });
+  const directFailure = buildToolResult({
+    error: "Nansen unavailable",
+    provider: "nansen",
+    status: "failed",
+  });
+  const localSuccess = buildToolResult({
+    provider: "local",
+    status: "success",
+  });
+
+  const failed = buildDiscoverSignals({ chain: "celo", sources: [] });
+  const skipped = buildDiscoverSignals({
+    chain: "celo",
+    onChainSkippedReason:
+      "Solana is outside Langclaw's supported on-chain scope.",
+    sources: [],
+  });
+  const converged = buildDiscoverSignals({
+    chain: "celo",
+    onChain: buildSignalPayload([directSuccess]),
+    sources: [xSource],
+  });
+  const socialOnly = buildDiscoverSignals({
+    chain: "celo",
+    onChain: buildSignalPayload([localSuccess]),
+    sources: [xSource],
+  });
+  const onChainOnly = buildDiscoverSignals({
+    chain: "celo",
+    onChain: buildSignalPayload([directSuccess]),
+    sources: [githubSource],
+  });
+  const mixed = buildDiscoverSignals({
+    chain: "celo",
+    errors: [{ message: "Elfa unavailable", provider: "Elfa" }],
+    onChain: buildSignalPayload([directSuccess, directFailure]),
+    sources: [xSource],
+  });
+  const emptySmartMoney = buildDiscoverSignals({
+    chain: "celo",
+    onChain: buildSignalPayload([
+      buildToolResult({
+        data: { rows: [] },
+        domain: "smart_money",
+        provider: "dune",
+        status: "success",
+      }),
+    ]),
+    sources: [githubSource],
+  });
+  const usableSmartMoney = buildDiscoverSignals({
+    chain: "celo",
+    onChain: buildSignalPayload([
+      buildToolResult({
+        data: { rows: [{ wallet: "0x1111", netFlowUsd: 12 }] },
+        domain: "smart_money",
+        provider: "dune",
+        status: "success",
+      }),
+    ]),
+    sources: [xSource],
+  });
+
+  assert.equal(failed.social.status, "failed");
+  assert.equal(failed.onchain.status, "failed");
+  assert.equal(failed.combined.status, "failed");
+  assert.equal(skipped.onchain.status, "skipped");
+  assert.equal(skipped.combined.status, "partial");
+  assert.equal(converged.combined.status, "success");
+  assert.deepEqual(converged.onchain.providers, [
+    "Elfa",
+    "Surf",
+    "Nansen",
+    "Dune",
+    "CoinGecko",
+    "GeckoTerminal",
+    "DEX Screener",
+    "DeFiLlama",
+    "Alchemy",
+    "Etherscan",
+    "GoPlus",
+    "Local synthesis",
+  ]);
+  assert.match(socialOnly.combined.summary, /public attention was visible/i);
+  assert.match(onChainOnly.combined.summary, /on-chain evidence was usable/i);
+  assert.equal(mixed.social.status, "partial");
+  assert.equal(mixed.onchain.status, "partial");
+  assert.match(mixed.onchain.summary, /coverage remained incomplete/i);
+  assert.match(emptySmartMoney.onchain.summary, /rows were not available/i);
+  assert.equal(usableSmartMoney.onchain.status, "success");
+});
+
+test("workflow helpers normalize empty evidence, provider failures, and caveats", () => {
+  const source: SourceCard = {
+    excerpt: "Evidence",
+    id: "source-html",
+    provider: "Tavily",
+    title: "<b>Celo</b> &amp; agent &quot;docs&quot;",
+    type: "docs_page",
+    url: "https://docs.celo.org/agents",
+  };
+  const pending = buildWorkflowProgressEvent(
+    {
+      agent: "Planner",
+      pendingSummary: "Waiting",
+      skill: "planner",
+      stepId: "planner",
+    },
+    "pending",
+    "Waiting"
+  );
+  const failed = buildWorkflowProgressEvent(
+    {
+      agent: "Planner",
+      pendingSummary: "Waiting",
+      skill: "planner",
+      stepId: "planner",
+    },
+    "failed",
+    "Failed",
+    { error: "planner failed", execution: "typescript-tool" }
+  );
+  const fallback = buildConclusionSignal("Reference", undefined, "No source");
+  const cleaned = buildConclusionSignal("Reference", source, "No source");
+  const noFailures = summarizeFailures([]);
+  const failures = summarizeFailures([
+    { message: "401 unauthorized", provider: "Elfa" },
+    { message: "duplicate should be ignored", provider: "Elfa" },
+    { message: "  temporary   parsing issue  ", provider: "Surf" },
+  ]);
+  const noReason = withFallbackCaveat(
+    {
+      answer: "Body",
+      answerMarkdown: "Body\n\nCaveat: stale note",
+      bullets: [],
+      generatedBy: "Final Conclusion Agent",
+    },
+    { synthesis: "deterministic-fallback" }
+  );
+  const existing = withFallbackCaveat(
+    {
+      answer: "",
+      bullets: [],
+      caveat: "AI synthesis failed, deterministic fallback used already.",
+      generatedBy: "Final Conclusion Agent",
+    },
+    {
+      error: "ignored duplicate reason",
+      synthesis: "deterministic-fallback",
+    }
+  );
+
+  assert.equal(pending.completedAt, undefined);
+  assert.equal(pending.durationMs, undefined);
+  assert.match(failed.completedAt ?? "", /^\d{4}-/);
+  assert.equal(failed.error, "planner failed");
+  assert.deepEqual(fallback.sourceIds, []);
+  assert.equal(fallback.sourceId, undefined);
+  assert.equal(cleaned.text, 'Celo & agent "docs"');
+  assert.equal(noFailures, "");
+  assert.match(failures, /Elfa \(source unavailable\)/);
+  assert.match(failures, /Surf \(temporary parsing issue\)/);
+  assert.equal(noReason.caveat, "Limited confidence. AI synthesis failed, deterministic fallback used.");
+  assert.doesNotMatch(noReason.answerMarkdown ?? "", /stale note/);
+  assert.equal(
+    existing.answerMarkdown,
+    "Caveat: AI synthesis failed, deterministic fallback used already."
+  );
+});
+
+test("workflow synthesis skips OpenClaw when requested and combines fallback errors", async () => {
+  let openClawCalls = 0;
+  const input = {
+    agentOutputs: {},
+    errors: [],
+    preferOpenClaw: false,
+    runtime: "typescript" as const,
+    signals: buildDiscoverSignals({ chain: "celo", sources: [] }),
+    sources: [],
+    steps: [],
+    topic: "Celo fallback synthesis",
+  };
+  const openAIResult = {
+    compute: { provider: "OpenAI" as const, status: "skipped" as const },
+    meta: { synthesis: "deterministic-fallback" as const },
+  };
+  const direct = await synthesizeWorkflowFinalAnswer(input, {
+    openClaw: async () => {
+      openClawCalls += 1;
+      return { meta: { synthesis: "deterministic-fallback" } };
+    },
+    openAI: async () => openAIResult,
+  });
+  const combined = await synthesizeWorkflowFinalAnswer(
+    { ...input, preferOpenClaw: true },
+    {
+      openClaw: async () => ({
+        meta: {
+          error: "OpenClaw output was invalid.",
+          synthesis: "deterministic-fallback",
+        },
+      }),
+      openAI: async () => ({
+        ...openAIResult,
+        meta: {
+          error: "OpenAI request failed.",
+          synthesis: "deterministic-fallback",
+        },
+      }),
+    }
+  );
+  const deduplicated = await synthesizeWorkflowFinalAnswer(
+    { ...input, preferOpenClaw: true },
+    {
+      openClaw: async () => ({
+        meta: { error: "same error", synthesis: "deterministic-fallback" },
+      }),
+      openAI: async () => ({
+        ...openAIResult,
+        meta: { error: "same error", synthesis: "deterministic-fallback" },
+      }),
+    }
+  );
+
+  assert.equal(openClawCalls, 0);
+  assert.equal(direct.meta.synthesis, "deterministic-fallback");
+  assert.match(combined.meta.error ?? "", /OpenClaw synthesis failed/);
+  assert.match(combined.meta.error ?? "", /OpenAI fallback failed/);
+  assert.equal(deduplicated.meta.error, "same error");
+});
+
+function buildToolResult(
+  patch: Partial<OnChainToolResult> & Pick<OnChainToolResult, "provider" | "status">
+): OnChainToolResult {
+  return {
+    commandId: `${patch.domain ?? "market_data"}.${patch.provider}`,
+    domain: patch.domain ?? "market_data",
+    latencyMs: 1,
+    summary: `${patch.provider} ${patch.status}`,
+    title: `${patch.provider} result`,
+    ...patch,
+  };
+}
+
+function buildSignalPayload(tools: OnChainToolResult[]): OnChainToolFinalPayload {
+  return {
+    answer: "On-chain evidence summary.",
+    bullets: [],
+    caveat: "Directional evidence only.",
+    generatedAt: "2026-07-18T00:00:00.000Z",
+    plan: {
+      analysisSource: "prompt",
+      chain: "celo",
+      chainId: 42220,
+      chainName: "Celo",
+      commands: [],
+      domainCount: 1,
+      intent: "research",
+      nativeSymbol: "CELO",
+      productChain: "celo",
+      productChainId: 42220,
+      productChainName: "Celo",
+      registryCommandCount: 1,
+    },
+    recommendation: "Verify the evidence manually.",
+    title: "Celo evidence",
+    tools,
+  };
+}
