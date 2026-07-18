@@ -11,6 +11,7 @@ import {
   requestNotificationEmailLink,
   runAutomationEvent,
   runAutomationWebhook,
+  setAllAutomationStatus,
   updateAutomationTask,
   verifyNotificationEmailLink,
 } from "./service";
@@ -135,6 +136,59 @@ test("automation link and trigger inputs reject malformed values", async () => {
   assert.equal(readTelegramCodeFromText("/link short"), "");
 });
 
+test("creates and archives an automation webhook task", async () => {
+  const storage = buildAutomationStorage("active");
+  const account = buildAccount(storage.supabase);
+  const task = await createAutomationTask(account, {
+    name: "Celo webhook watcher",
+    prompt: "Review the webhook payload",
+    status: "active",
+    triggerType: "webhook",
+  });
+
+  assert.equal(task.name, "Celo webhook watcher");
+  assert.equal(task.status, "active");
+  assert.equal(task.triggerType, "webhook");
+  assert.match(task.webhookSlug ?? "", /^celo-webhook-watcher-[a-f0-9]{32}$/);
+  assert.equal(storage.inserted?.wallet_user_id, walletUser.id);
+  assert.equal(storage.inserted?.next_run_at, null);
+
+  assert.deepEqual(await deleteAutomationTask(account, task.id), {
+    deleted: true,
+  });
+  assert.equal(storage.updated?.status, "archived");
+  assert.equal(storage.updated?.next_run_at, null);
+});
+
+test("bulk status changes update every non-archived task", async () => {
+  const active = buildAutomationStorage("active");
+  const pausedTasks = await setAllAutomationStatus(
+    buildAccount(active.supabase),
+    "paused"
+  );
+
+  assert.equal(pausedTasks.length, 1);
+  assert.equal(pausedTasks[0].status, "paused");
+  assert.equal(active.updated?.next_run_at, null);
+
+  const paused = buildAutomationStorage("paused");
+  const activatedTasks = await setAllAutomationStatus(
+    buildAccount(paused.supabase),
+    "active"
+  );
+
+  assert.equal(activatedTasks.length, 1);
+  assert.equal(activatedTasks[0].status, "active");
+  assert.match(String(paused.updated?.next_run_at), /^\d{4}-\d{2}-\d{2}T/);
+
+  const archived = buildAutomationStorage("archived");
+  const unchanged = await setAllAutomationStatus(
+    buildAccount(archived.supabase),
+    "paused"
+  );
+  assert.deepEqual(unchanged, []);
+});
+
 function buildAccount(supabase: unknown) {
   return {
     account: {
@@ -145,8 +199,11 @@ function buildAccount(supabase: unknown) {
   };
 }
 
-function buildAutomationStorage(initialStatus: "active" | "paused") {
+function buildAutomationStorage(
+  initialStatus: "active" | "archived" | "paused"
+) {
   let updated: Record<string, unknown> | undefined;
+  let inserted: Record<string, unknown> | undefined;
   const task = {
     consecutive_failures: 0,
     created_at: "2026-07-17T10:00:00.000Z",
@@ -218,11 +275,39 @@ function buildAutomationStorage(initialStatus: "active" | "paused") {
 
       assert.equal(table, "langclaw_automation_tasks");
       return {
+        insert(payload: Record<string, unknown>) {
+          inserted = payload;
+
+          return {
+            select() {
+              return {
+                single: () =>
+                  Promise.resolve({
+                    data: {
+                      ...task,
+                      ...payload,
+                      id: "task-created",
+                      created_at: task.created_at,
+                      updated_at: task.updated_at,
+                    },
+                    error: null,
+                  }),
+              };
+            },
+          };
+        },
         select() {
           const query = {
             eq() {
               return query;
             },
+            neq() {
+              return query;
+            },
+            order() {
+              return query;
+            },
+            limit: () => Promise.resolve({ data: [task], error: null }),
             maybeSingle: () => Promise.resolve({ data: task, error: null }),
           };
 
@@ -252,6 +337,9 @@ function buildAutomationStorage(initialStatus: "active" | "paused") {
   };
 
   return {
+    get inserted() {
+      return inserted;
+    },
     get updated() {
       return updated;
     },
