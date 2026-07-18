@@ -15,6 +15,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { celo as viemCelo } from "viem/chains";
 
 import { readPreferredAgentId } from "../agent-id";
+import { withCeloAttribution } from "../celo-attribution";
 import {
   getProductChain,
   readChainEnv,
@@ -300,9 +301,13 @@ async function anchorAgentDecision({
       args: [agentId, runId, decisionHash, evidenceUri, signalType],
       account,
     });
+    const attributedRequest = await withCeloAttribution(
+      chainConfig.id,
+      request
+    );
     const txHash = await writeContractWithCeloFeeFallback({
       chainConfig,
-      request,
+      request: attributedRequest,
       walletClient: walletClient as unknown as WriteContractClient,
     });
     const explorerUrl = `${explorerBase}/tx/${txHash}`;

@@ -10,7 +10,7 @@ type AttributionEnvironment = Partial<
   >
 >;
 
-type BuildCeloAttributionTagOptions = {
+export type BuildCeloAttributionTagOptions = {
   env?: AttributionEnvironment;
   onWarning?: (message: string) => void;
 };
@@ -68,6 +68,25 @@ export async function buildCeloAttributionTag({
     codes,
     dataSuffix: toDataSuffix(codes),
     hostname,
+  };
+}
+
+export async function withCeloAttribution<
+  T extends Record<string, unknown>,
+>(
+  chain: string,
+  request: T,
+  options: BuildCeloAttributionTagOptions = {}
+): Promise<T & { dataSuffix?: Hex }> {
+  if (chain !== "celo") {
+    return request;
+  }
+
+  const { dataSuffix } = await buildCeloAttributionTag(options);
+
+  return {
+    ...request,
+    dataSuffix,
   };
 }
 
