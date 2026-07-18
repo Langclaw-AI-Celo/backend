@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  AutomationHttpError,
+  automationErrorResponse,
+  createAutomationTask,
   createWebhookSlug,
+  deleteAutomationTask,
   readTelegramCodeFromText,
+  requestNotificationEmailLink,
+  runAutomationEvent,
+  runAutomationWebhook,
   updateAutomationTask,
+  verifyNotificationEmailLink,
 } from "./service";
 
 const walletUser = {
@@ -49,6 +57,82 @@ test("automation task status transitions update schedule state", async () => {
   assert.equal(activeTask.status, "active");
   assert.equal(active.updated?.status, "active");
   assert.match(String(active.updated?.next_run_at), /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test("automation error responses preserve safe HTTP status and messages", async () => {
+  const invalid = automationErrorResponse(
+    new AutomationHttpError(400, "Invalid automation input.")
+  );
+  const failed = automationErrorResponse(new Error("Storage unavailable."));
+  const unknown = automationErrorResponse("unexpected");
+
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(await invalid.json(), { error: "Invalid automation input." });
+  assert.equal(failed.status, 500);
+  assert.deepEqual(await failed.json(), { error: "Storage unavailable." });
+  assert.deepEqual(await unknown.json(), {
+    error: "Automation request failed.",
+  });
+});
+
+test("automation task inputs reject missing identifiers and required fields", async () => {
+  const storage = buildAutomationStorage("active");
+  const account = buildAccount(storage.supabase);
+
+  await assert.rejects(
+    updateAutomationTask(account, " ", { status: "paused" }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      /taskId/.test(error.message)
+  );
+  await assert.rejects(
+    deleteAutomationTask(account, null),
+    (error: unknown) =>
+      error instanceof AutomationHttpError && error.status === 400
+  );
+  await assert.rejects(
+    createAutomationTask(account, { name: "   " }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError && /Task name/.test(error.message)
+  );
+  await assert.rejects(
+    createAutomationTask(account, {
+      name: "Event task",
+      triggerType: "event",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError && /eventName/.test(error.message)
+  );
+});
+
+test("automation link and trigger inputs reject malformed values", async () => {
+  const storage = buildAutomationStorage("active");
+  const account = buildAccount(storage.supabase);
+
+  await assert.rejects(
+    requestNotificationEmailLink(account, "not-an-email"),
+    (error: unknown) =>
+      error instanceof AutomationHttpError && /valid email/.test(error.message)
+  );
+  await assert.rejects(
+    verifyNotificationEmailLink(account, "!"),
+    (error: unknown) =>
+      error instanceof AutomationHttpError && /valid link code/.test(error.message)
+  );
+  await assert.rejects(
+    runAutomationEvent(account, " "),
+    (error: unknown) =>
+      error instanceof AutomationHttpError && /eventName/.test(error.message)
+  );
+  await assert.rejects(
+    runAutomationWebhook("not/a/slug"),
+    (error: unknown) =>
+      error instanceof AutomationHttpError && /valid webhook slug/.test(error.message)
+  );
+
+  assert.equal(readTelegramCodeFromText("hello"), "");
+  assert.equal(readTelegramCodeFromText("/link short"), "");
 });
 
 function buildAccount(supabase: unknown) {
