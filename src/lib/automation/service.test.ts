@@ -6,14 +6,17 @@ import {
   AutomationHttpError,
   automationErrorResponse,
   createAutomationTask,
+  createTelegramLinkCode,
   createWebhookSlug,
   deleteAutomationTask,
+  pollTelegramLink,
   readTelegramCodeFromText,
   requestNotificationEmailLink,
   runAutomationEvent,
   runAutomationWebhook,
   setAllAutomationStatus,
   unlinkNotificationEmail,
+  unlinkTelegramLink,
   updateAutomationTask,
   verifyNotificationEmailLink,
 } from "./service";
@@ -230,6 +233,66 @@ test("links verifies and unlinks an automation notification email", async () => 
         assert.equal(unlinked.notificationEmail, undefined);
         assert.equal(unlinked.notificationChannels.includes("email"), false);
         assert.equal(unlinked.failureNotification, "in-app");
+      }
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("creates polls and unlinks a Telegram automation connection", async () => {
+  const storage = buildAutomationStorage("active");
+  const account = buildAccount(storage.supabase);
+  let linkCode = "";
+  let verificationReply: Record<string, unknown> | undefined;
+  const restoreFetch = mockFetch((url, init) => {
+    if (url.endsWith("/getUpdates")) {
+      return Response.json({
+        ok: true,
+        result: [
+          { message: { text: "ignored", chat: { id: 1 } } },
+          {
+            message: {
+              text: `/link ${linkCode}`,
+              chat: { id: 123456 },
+              from: { username: "nant361" },
+            },
+          },
+        ],
+      });
+    }
+
+    verificationReply = JSON.parse(String(init?.body));
+    return Response.json({ ok: true, result: { message_id: 9 } });
+  });
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_TELEGRAM_BOT_TOKEN: "telegram-test-token",
+        LANGCLAW_TELEGRAM_BOT_USERNAME: "@LangclawBot",
+      },
+      async () => {
+        const created = await createTelegramLinkCode(account);
+        linkCode = created.code;
+
+        assert.match(created.code, /^[A-F0-9]{10}$/);
+        assert.equal(created.command, `/link ${created.code}`);
+        assert.equal(created.botUsername, "LangclawBot");
+        assert.match(created.deepLink, /t\.me\/LangclawBot/);
+
+        const linked = await pollTelegramLink(account);
+        assert.equal(linked.status, "linked");
+        assert.equal(linked.linked, true);
+        assert.equal(linked.settings?.telegramVerified, true);
+        assert.equal(linked.settings?.telegramChatId, "123456");
+        assert.equal(linked.settings?.telegramUsername, "nant361");
+        assert.equal(verificationReply?.chat_id, "123456");
+
+        const unlinked = await unlinkTelegramLink(account);
+        assert.equal(unlinked.telegramVerified, false);
+        assert.equal(unlinked.telegramChatId, undefined);
+        assert.equal(unlinked.notificationChannels.includes("telegram"), false);
       }
     );
   } finally {

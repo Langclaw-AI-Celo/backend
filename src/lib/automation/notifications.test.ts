@@ -11,6 +11,7 @@ import {
 } from "./notifications";
 import type { AlphaSignal, ResearchReport } from "../langclaw/types";
 import type { OnChainToolFinalPayload } from "../onchain-tools/types";
+import { mockFetch, withEnv } from "../../test/helpers";
 import type { AutomationSettings } from "./types";
 
 const settings: AutomationSettings = {
@@ -114,10 +115,7 @@ test("alpha signal notification falls back to minimal message without report con
 });
 
 test("alpha signal Telegram notification is disabled unless the flag is enabled", async () => {
-  const originalFlag = process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
-  delete process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
-
-  try {
+  await withEnv({ LANGCLAW_ALPHA_ALERTS_ENABLED: undefined }, async () => {
     const notification = await sendAlphaSignalNotification({
       alphaSignal: buildTestAlphaSignal(),
       project: "Celo Alpha Sentinel",
@@ -131,103 +129,77 @@ test("alpha signal Telegram notification is disabled unless the flag is enabled"
       reason: "LANGCLAW_ALPHA_ALERTS_ENABLED is not true.",
       status: "disabled",
     });
-  } finally {
-    if (originalFlag === undefined) {
-      delete process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
-    } else {
-      process.env.LANGCLAW_ALPHA_ALERTS_ENABLED = originalFlag;
-    }
-  }
+  });
 });
 
 test("alpha signal Telegram notification posts when enabled", async () => {
-  const originalFetch = globalThis.fetch;
-  const originalFlag = process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
-  const originalToken = process.env.LANGCLAW_TELEGRAM_BOT_TOKEN;
   let requestBody: unknown;
-
-  globalThis.fetch = (async (_url, init) => {
+  const restoreFetch = mockFetch((_url, init) => {
     requestBody = JSON.parse(String(init?.body));
 
     return new Response("{}", { status: 200 });
-  }) as typeof fetch;
-
-  process.env.LANGCLAW_ALPHA_ALERTS_ENABLED = "true";
-  process.env.LANGCLAW_TELEGRAM_BOT_TOKEN = "test-token";
+  });
 
   try {
-    const notification = await sendAlphaSignalNotification({
-      alphaSignal: buildTestAlphaSignal(),
-      project: "Celo Alpha Sentinel",
-      runId: "run-alpha-1",
-      settings,
-      taskName: "Mantle smart-money scan",
-    });
+    await withEnv(
+      {
+        LANGCLAW_ALPHA_ALERTS_ENABLED: "true",
+        LANGCLAW_TELEGRAM_BOT_TOKEN: "test-token",
+      },
+      async () => {
+        const notification = await sendAlphaSignalNotification({
+          alphaSignal: buildTestAlphaSignal(),
+          project: "Celo Alpha Sentinel",
+          runId: "run-alpha-1",
+          settings,
+          taskName: "Mantle smart-money scan",
+        });
 
-    const body = requestBody as {
-      chat_id: string;
-      disable_web_page_preview: boolean;
-      text: string;
-    };
+        const body = requestBody as {
+          chat_id: string;
+          disable_web_page_preview: boolean;
+          text: string;
+        };
 
-    assert.equal(notification.status, "sent");
-    assert.equal(body.chat_id, "123");
-    assert.equal(body.disable_web_page_preview, true);
-    assert.match(
-      body.text,
-      /Langclaw Alpha Alert: smart-money/
+        assert.equal(notification.status, "sent");
+        assert.equal(body.chat_id, "123");
+        assert.equal(body.disable_web_page_preview, true);
+        assert.match(body.text, /Langclaw Alpha Alert: smart-money/);
+      }
     );
   } finally {
-    globalThis.fetch = originalFetch;
-    if (originalFlag === undefined) {
-      delete process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
-    } else {
-      process.env.LANGCLAW_ALPHA_ALERTS_ENABLED = originalFlag;
-    }
-    if (originalToken === undefined) {
-      delete process.env.LANGCLAW_TELEGRAM_BOT_TOKEN;
-    } else {
-      process.env.LANGCLAW_TELEGRAM_BOT_TOKEN = originalToken;
-    }
+    restoreFetch();
   }
 });
 
 test("alpha signal Telegram notification reports provider failures", async () => {
-  const originalFetch = globalThis.fetch;
-  const originalFlag = process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
-  const originalToken = process.env.LANGCLAW_TELEGRAM_BOT_TOKEN;
-
-  globalThis.fetch = (async () =>
-    new Response("upstream unavailable", { status: 502 })) as typeof fetch;
-  process.env.LANGCLAW_ALPHA_ALERTS_ENABLED = "true";
-  process.env.LANGCLAW_TELEGRAM_BOT_TOKEN = "test-token";
+  const restoreFetch = mockFetch(() =>
+    new Response("upstream unavailable", { status: 502 }));
 
   try {
-    const notification = await sendAlphaSignalNotification({
-      alphaSignal: buildTestAlphaSignal(),
-      project: "Celo Alpha Sentinel",
-      runId: "run-alpha-failed",
-      settings,
-      taskName: "Celo smart-money scan",
-    });
+    await withEnv(
+      {
+        LANGCLAW_ALPHA_ALERTS_ENABLED: "true",
+        LANGCLAW_TELEGRAM_BOT_TOKEN: "test-token",
+      },
+      async () => {
+        const notification = await sendAlphaSignalNotification({
+          alphaSignal: buildTestAlphaSignal(),
+          project: "Celo Alpha Sentinel",
+          runId: "run-alpha-failed",
+          settings,
+          taskName: "Celo smart-money scan",
+        });
 
-    assert.equal(notification.status, "failed");
-    assert.equal(
-      notification.error,
-      "Telegram notification failed with 502.",
+        assert.equal(notification.status, "failed");
+        assert.equal(
+          notification.error,
+          "Telegram notification failed with 502.",
+        );
+      }
     );
   } finally {
-    globalThis.fetch = originalFetch;
-    if (originalFlag === undefined) {
-      delete process.env.LANGCLAW_ALPHA_ALERTS_ENABLED;
-    } else {
-      process.env.LANGCLAW_ALPHA_ALERTS_ENABLED = originalFlag;
-    }
-    if (originalToken === undefined) {
-      delete process.env.LANGCLAW_TELEGRAM_BOT_TOKEN;
-    } else {
-      process.env.LANGCLAW_TELEGRAM_BOT_TOKEN = originalToken;
-    }
+    restoreFetch();
   }
 });
 
@@ -592,4 +564,441 @@ test("automation email notifications require a verified linked email", async () 
       process.env.LANGCLAW_AUTOMATION_EMAIL_TO = originalFallbackTo;
     }
   }
+});
+
+test("notification formatting covers duration and rich-summary fallbacks", () => {
+  const fast = buildAutomationNotificationMessage({
+    durationMs: 500,
+    project: "Langclaw Website",
+    runId: "run-fast",
+    status: "failed",
+    taskName: "Fast scan",
+    triggeredBy: "manual",
+  });
+  const long = buildAutomationNotificationMessage({
+    durationMs: 120000,
+    project: "Langclaw Website",
+    runId: "run-long",
+    status: "failed",
+    taskName: "Long scan",
+    triggeredBy: "webhook",
+  });
+  const unknown = buildAutomationNotificationMessage({
+    project: "Langclaw Website",
+    runId: "run-unknown",
+    status: "skipped",
+    taskName: "Unknown scan",
+    triggeredBy: "event",
+  });
+
+  assert.match(fast.text, /Duration: 500ms/);
+  assert.match(long.text, /Duration: 2m/);
+  assert.match(unknown.text, /Duration: unknown/);
+  assert.doesNotMatch(fast.text, /Reason:/);
+
+  const alphaSignal: AlphaSignal = {
+    ...buildTestAlphaSignal(),
+    quality: {
+      ...buildTestAlphaSignal().quality,
+      falsePositiveChecks: [
+        {
+          id: "external_low_confidence_guard",
+          label: "External low confidence guard",
+          reason: "External context needs review.",
+          status: "warn",
+        },
+        {
+          id: "custom_guard",
+          label: "CUSTOM GUARD",
+          reason: "Custom review is required.",
+          status: "warn",
+        },
+      ],
+      sourceCoverage: {
+        directWalletFlow: false,
+        onchain: false,
+        proof: false,
+        providerCount: 1,
+        social: false,
+      },
+    },
+    signalType: "liquidity-anomaly",
+  };
+  const tableReport: ResearchReport = {
+    ...buildTestReport(),
+    entities: [],
+    recommendations: ["Review ".repeat(40)],
+  };
+  const fallbackTool: OnChainToolFinalPayload = {
+    ...buildTestOnChainPayload(),
+    tools: [
+      {
+        commandId: "smart-money-failed",
+        domain: "smart_money",
+        latencyMs: 1,
+        provider: "surf",
+        status: "failed",
+        summary: "No result.",
+        title: "Failed smart money",
+      },
+      {
+        commandId: "market-success",
+        domain: "market",
+        latencyMs: 1,
+        provider: "geckoterminal",
+        status: "success",
+        summary: "Market result.",
+        title: "Market result",
+      },
+    ],
+  };
+  const tableMessage = buildAlphaSignalNotificationMessage({
+    alphaSignal,
+    onChain: fallbackTool,
+    project: "Celo Alpha Sentinel",
+    proof: {
+      chain: {
+        briefHash: "0xbrief",
+        chain: "celo",
+        status: "prepared",
+        txHash: "0xtx",
+      },
+      storage: { evidenceUri: "langclaw://evidence/run/hash", status: "prepared" },
+    },
+    report: tableReport,
+    runId: "run-table",
+    taskName: "Celo market scan",
+  });
+
+  assert.match(tableMessage.subject, /Liquidity Anomaly on Celo/);
+  assert.match(tableMessage.text, /Target: 0xbdb3\.\.\.47b6, MNT, CEX withdrawal/);
+  assert.match(tableMessage.text, /Geckoterminal returned usable on-chain evidence/);
+  assert.match(tableMessage.text, /limited coverage/);
+  assert.match(tableMessage.text, /supplemental external context and custom guard/);
+  assert.match(tableMessage.text, /TX: 0xtx/);
+  assert.match(tableMessage.text, /Action: .*\.\.\./);
+
+  const emptyReport: ResearchReport = {
+    ...buildTestReport(),
+    bottomLine: "",
+    entities: [],
+    executiveSummary: "",
+    recommendations: [],
+    tables: [],
+  };
+  const emptyMessage = buildAlphaSignalNotificationMessage({
+    alphaSignal: {
+      ...buildTestAlphaSignal(),
+      quality: {
+        ...buildTestAlphaSignal().quality,
+        falsePositiveChecks: [],
+      },
+    },
+    onChain: { ...buildTestOnChainPayload(), tools: [] },
+    project: "Celo Alpha Sentinel",
+    report: emptyReport,
+    runId: "run-empty",
+    taskName: "Celo empty scan",
+  });
+  assert.match(emptyMessage.text, /Target: Mantle alpha candidate/);
+  assert.match(emptyMessage.text, /Warnings: 0/);
+  assert.match(emptyMessage.text, /Proof: unknown/);
+  assert.match(emptyMessage.text, /Review candidate wallets before escalation/);
+  assert.match(emptyMessage.text, /alpha quality gate passed/);
+});
+
+test("alpha notifications skip ineligible and incomplete Telegram targets", async () => {
+  await withEnv(
+    {
+      LANGCLAW_ALPHA_ALERTS_ENABLED: "true",
+      LANGCLAW_AUTOMATION_TELEGRAM_CHAT_ID: undefined,
+      LANGCLAW_TELEGRAM_BOT_TOKEN: undefined,
+    },
+    async () => {
+    const ineligible = await sendAlphaSignalNotification({
+      alphaSignal: {
+        ...buildTestAlphaSignal(),
+        alertEligible: false,
+        quality: {
+          ...buildTestAlphaSignal().quality,
+          reasons: [],
+        },
+      },
+      project: "Celo Alpha Sentinel",
+      runId: "run-ineligible",
+      settings,
+      taskName: "Celo scan",
+    });
+    const incomplete = await sendAlphaSignalNotification({
+      alphaSignal: buildTestAlphaSignal(),
+      project: "Celo Alpha Sentinel",
+      runId: "run-incomplete",
+      settings: {
+        ...settings,
+        telegramChatId: undefined,
+        telegramVerified: false,
+      },
+      taskName: "Celo scan",
+    });
+
+    assert.equal(ineligible.status, "skipped");
+    assert.equal(ineligible.reason, "Alpha signal is not alert eligible.");
+    assert.equal(incomplete.status, "skipped");
+    assert.match(incomplete.reason ?? "", /bot token or chat id is not configured/);
+    }
+  );
+});
+
+test("run notification and email guards cover empty channels and provider details", async () => {
+  await sendAutomationRunNotification({
+    project: "Langclaw Website",
+    runId: "run-success",
+    settings,
+    status: "success",
+    taskName: "Successful scan",
+    triggeredBy: "manual",
+  });
+  await sendAutomationRunNotification({
+    project: "Langclaw Website",
+    runId: "run-empty-channels",
+    settings: {
+      ...settings,
+      notificationChannels: ["in-app"],
+    },
+    status: "failed",
+    taskName: "No channel scan",
+    triggeredBy: "manual",
+  });
+  assert.deepEqual(
+    resolveNotificationChannels({ ...settings, notificationChannels: [] }),
+    ["email"]
+  );
+
+  await withEnv(
+    {
+      LANGCLAW_AUTOMATION_EMAIL_FROM: undefined,
+      RESEND_API_KEY: undefined,
+      RESEND_EMAIL_FROM: undefined,
+      RESEND_FROM_EMAIL: undefined,
+    },
+    async () => {
+    await assert.rejects(
+      sendAutomationEmail({
+        requireConfigured: true,
+        subject: "Missing API key",
+        text: "test",
+        to: "user@example.com",
+      }),
+      /RESEND_API_KEY is not configured/
+    );
+
+    process.env.RESEND_API_KEY = "test-api-key";
+    process.env.RESEND_EMAIL_FROM = "fallback@example.com";
+    await assert.rejects(
+      sendAutomationEmail({
+        requireConfigured: true,
+        subject: "Missing recipient",
+        text: "test",
+      }),
+      /verified notification email is required/
+    );
+
+    const responses = [
+      new Response(JSON.stringify({ error: "provider error" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 500,
+      }),
+      new Response("{invalid", {
+        headers: { "Content-Type": "application/json" },
+        status: 500,
+      }),
+      new Response("", { status: 500 }),
+    ];
+    let responseIndex = 0;
+    const restoreProviderFetch = mockFetch(async () => {
+      const response = responses[responseIndex];
+      responseIndex += 1;
+      return response;
+    });
+
+    try {
+      await assert.rejects(
+        sendAutomationEmail({ subject: "JSON error", text: "test", to: "user@example.com" }),
+        /Email notification failed with 500: provider error/
+      );
+      await assert.rejects(
+        sendAutomationEmail({ subject: "Invalid JSON", text: "test", to: "user@example.com" }),
+        /Email notification failed with 500: \{invalid/
+      );
+      await assert.rejects(
+        sendAutomationEmail({ subject: "Empty error", text: "test", to: "user@example.com" }),
+        /Email notification failed with 500\./
+      );
+    } finally {
+      restoreProviderFetch();
+    }
+
+    delete process.env.RESEND_EMAIL_FROM;
+    process.env.RESEND_FROM_EMAIL = "legacy@example.com";
+    const restoreSuccessFetch = mockFetch(() => new Response("{}", { status: 200 }));
+
+    try {
+      await sendAutomationEmail({ subject: "Legacy sender", text: "test", to: "user@example.com" });
+    } finally {
+      restoreSuccessFetch();
+    }
+    }
+  );
+});
+
+test("notification summaries cover compact entity, table, warning, and proof variants", () => {
+  const minimalSignal: AlphaSignal = {
+    ...buildTestAlphaSignal(),
+    quality: {
+      ...buildTestAlphaSignal().quality,
+      falsePositiveChecks: [
+        {
+          id: "failed_guard",
+          label: "Failed guard",
+          reason: "Guard failed.",
+          status: "fail",
+        },
+      ],
+      reasons: [],
+    },
+  };
+  const minimal = buildAlphaSignalNotificationMessage({
+    alphaSignal: minimalSignal,
+    project: "Celo Alpha Sentinel",
+    runId: "run-minimal-variants",
+    taskName: "Celo scan",
+  });
+  assert.match(minimal.text, /0 pass, 0 warn, 1 fail/);
+  assert.doesNotMatch(minimal.text, /Reason:/);
+  assert.match(minimal.text, /Proof: unknown/);
+
+  const entityReport: ResearchReport = {
+    ...buildTestReport(),
+    entities: [
+      {
+        ...buildTestReport().entities[0],
+        label: "wallet-only",
+        metrics: {},
+      },
+    ],
+  };
+  const entityMessage = buildAlphaSignalNotificationMessage({
+    alphaSignal: buildTestAlphaSignal(),
+    onChain: {
+      ...buildTestOnChainPayload(),
+      tools: [{ ...buildTestOnChainPayload().tools[0], provider: "surf" }],
+    },
+    project: "Celo Alpha Sentinel",
+    proof: {
+      chain: { briefHash: "0xbrief", chain: "mantle", status: "prepared" },
+      storage: { evidenceUri: "langclaw://evidence/run/hash", status: "prepared" },
+    },
+    report: entityReport,
+    runId: "run-entity-variants",
+    taskName: "Mantle scan",
+  });
+  assert.match(entityMessage.text, /Target: wallet-only/);
+  assert.match(entityMessage.text, /Surf returned usable wallet-flow evidence/);
+  assert.match(entityMessage.subject, /on Mantle/);
+
+  const tableReport: ResearchReport = {
+    ...buildTestReport(),
+    entities: [],
+    tables: [
+      {
+        columns: ["wallet", "token", "signal"],
+        id: "smart-money-table",
+        rows: [{ signal: "DEX buy", token: "CELO", wallet: "0xwallet" }],
+        title: "Candidate wallets",
+      },
+    ],
+  };
+  const threeWarnings: AlphaSignal = {
+    ...buildTestAlphaSignal(),
+    quality: {
+      ...buildTestAlphaSignal().quality,
+      falsePositiveChecks: [
+        { id: "one", label: "FIRST", reason: "One.", status: "warn" },
+        { id: "two", label: "SECOND", reason: "Two.", status: "warn" },
+        { id: "three", label: "THIRD", reason: "Three.", status: "warn" },
+      ],
+    },
+  };
+  const tableMessage = buildAlphaSignalNotificationMessage({
+    alphaSignal: threeWarnings,
+    onChain: { ...buildTestOnChainPayload(), tools: [] },
+    project: "Celo Alpha Sentinel",
+    proof: {
+      chain: { briefHash: "0xbrief", chain: "arbitrum", status: "prepared" },
+      storage: { evidenceUri: "langclaw://evidence/run/hash", status: "prepared" },
+    },
+    report: tableReport,
+    runId: "run-table-variants",
+    taskName: "Arbitrum scan",
+  });
+  assert.match(tableMessage.text, /Target: 0xwallet, CELO, DEX buy/);
+  assert.match(tableMessage.text, /Warnings: 3, first, second, and third/);
+  assert.match(tableMessage.subject, /on Arbitrum/);
+});
+
+test("alpha and email providers normalize non-Error and text failures", async () => {
+  await withEnv(
+    {
+      LANGCLAW_ALPHA_ALERTS_ENABLED: "true",
+      LANGCLAW_AUTOMATION_EMAIL_FROM: "alerts@example.com",
+      LANGCLAW_AUTOMATION_TELEGRAM_CHAT_ID: "fallback-chat",
+      LANGCLAW_TELEGRAM_BOT_TOKEN: "test-token",
+      RESEND_API_KEY: "test-api-key",
+    },
+    async () => {
+    const restoreTelegramFetch = mockFetch(async () => {
+      throw "telegram failed";
+    });
+
+    try {
+      const notification = await sendAlphaSignalNotification({
+        alphaSignal: buildTestAlphaSignal(),
+        project: "Celo Alpha Sentinel",
+        runId: "run-string-error",
+        settings: { ...settings, telegramChatId: undefined, telegramVerified: false },
+        taskName: "Celo scan",
+      });
+      assert.equal(notification.error, "Telegram alpha alert failed.");
+    } finally {
+      restoreTelegramFetch();
+    }
+
+    const responses = [
+      new Response(JSON.stringify({ name: "provider_name_error" }), {
+        headers: { "Content-Type": "application/json" },
+        status: 429,
+      }),
+      new Response("plain provider failure", { status: 502 }),
+    ];
+    let responseIndex = 0;
+    const restoreEmailFetch = mockFetch(async () => {
+      const response = responses[responseIndex];
+      responseIndex += 1;
+      return response;
+    });
+
+    try {
+      await assert.rejects(
+        sendAutomationEmail({ subject: "Named error", text: "test", to: "user@example.com" }),
+        /Email notification failed with 429: provider_name_error/
+      );
+      await assert.rejects(
+        sendAutomationEmail({ subject: "Text error", text: "test", to: "user@example.com" }),
+        /Email notification failed with 502: plain provider failure/
+      );
+    } finally {
+      restoreEmailFetch();
+    }
+    }
+  );
 });
