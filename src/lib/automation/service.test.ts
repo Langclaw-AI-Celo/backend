@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { mockFetch, withEnv } from "../../test/helpers";
 import {
   AutomationHttpError,
   automationErrorResponse,
@@ -12,6 +13,7 @@ import {
   runAutomationEvent,
   runAutomationWebhook,
   setAllAutomationStatus,
+  unlinkNotificationEmail,
   updateAutomationTask,
   verifyNotificationEmailLink,
 } from "./service";
@@ -189,6 +191,52 @@ test("bulk status changes update every non-archived task", async () => {
   assert.deepEqual(unchanged, []);
 });
 
+test("links verifies and unlinks an automation notification email", async () => {
+  const storage = buildAutomationStorage("active");
+  const account = buildAccount(storage.supabase);
+  let verificationCode = "";
+  const restoreFetch = mockFetch((_url, init) => {
+    const body = JSON.parse(String(init?.body)) as { text?: string };
+    verificationCode = body.text?.match(/\b\d{6}\b/)?.[0] ?? "";
+    return Response.json({ id: "email-1" });
+  });
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_AUTOMATION_EMAIL_FROM: "alerts@langclaw.ai",
+        RESEND_API_KEY: "resend-test-key",
+      },
+      async () => {
+        const requested = await requestNotificationEmailLink(
+          account,
+          "Alerts@Example.com"
+        );
+
+        assert.equal(requested.sent, true);
+        assert.equal(requested.email, "al***@example.com");
+        assert.match(verificationCode, /^\d{6}$/);
+
+        const linked = await verifyNotificationEmailLink(
+          account,
+          verificationCode
+        );
+        assert.equal(linked.notificationEmailVerified, true);
+        assert.equal(linked.notificationEmail, "alerts@example.com");
+        assert.equal(linked.notificationChannels.includes("email"), true);
+
+        const unlinked = await unlinkNotificationEmail(account);
+        assert.equal(unlinked.notificationEmailVerified, false);
+        assert.equal(unlinked.notificationEmail, undefined);
+        assert.equal(unlinked.notificationChannels.includes("email"), false);
+        assert.equal(unlinked.failureNotification, "in-app");
+      }
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
 function buildAccount(supabase: unknown) {
   return {
     account: {
@@ -261,7 +309,23 @@ function buildAutomationStorage(
     from(table: string) {
       if (table === "langclaw_automation_settings") {
         return {
-          upsert() {
+          update(payload: Record<string, unknown>) {
+            Object.assign(settings, payload);
+            const query = {
+              eq() {
+                return query;
+              },
+              select() {
+                return {
+                  single: () => Promise.resolve({ data: settings, error: null }),
+                };
+              },
+            };
+            return query;
+          },
+          upsert(payload: Record<string, unknown>) {
+            Object.assign(settings, payload);
+
             return {
               select() {
                 return {
