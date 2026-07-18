@@ -26,6 +26,7 @@
     "verify:celo-contracts": "node scripts/verify-celo-contracts.mjs"
   },
   "dependencies": {
+    "@celo/attribution-tags": "0.3.0",
     "@supabase/supabase-js": "^2.105.4",
     "dotenv": "^17.4.2",
     "viem": "^2.55.2"
