@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { fromDataSuffix } from "@celo/attribution-tags";
+
+import { getProductChain } from "../chain-config";
 import {
   persistTradingJournalRecord,
+  prepareTradingJournalWriteRequest,
   waitForSubmittedTransactionReceipt,
 } from "./journal";
 import { withEnv } from "../../test/helpers";
@@ -135,5 +139,30 @@ test("journal receipt polling surfaces RPC failures", async () => {
       txHash,
     }),
     /Journal RPC unavailable/,
+  );
+});
+
+test("prepares Celo strategy proof writes with fee currency and attribution", async () => {
+  await withEnv(
+    {
+      CELO_ATTRIBUTION_CODE: undefined,
+      CELO_ATTRIBUTION_HOSTNAME: "langclawcelo.vercel.app",
+    },
+    async () => {
+      const request = await prepareTradingJournalWriteRequest(
+        getProductChain("celo"),
+        { functionName: "recordStrategyRun" }
+      );
+
+      assert.equal(
+        request.feeCurrency,
+        getProductChain("celo").billingCurrency.feeCurrencyAddress
+      );
+      assert.deepEqual(fromDataSuffix(request.dataSuffix), {
+        codes: ["celo_1a98738636db"],
+        schemaId: 0,
+      });
+      assert.equal(request.functionName, "recordStrategyRun");
+    }
   );
 });
