@@ -276,3 +276,188 @@ test("proof readiness warns when direct on-chain tool proof is disabled", async 
     }
   );
 });
+
+test("proof readiness reports invalid configuration and an unexpected RPC chain", async () => {
+  await withEnv(
+    {
+      ...readyEnv,
+      CELO_AGENT_PRIVATE_KEY: "invalid-key",
+      CELO_CHAIN_ENABLED: "false",
+      CELO_CHAIN_ID: "0",
+      CELO_ERC8004_AGENT_ID: undefined,
+      CELO_INTEL_PROOF_ENABLED: "false",
+      CELO_LANGCLAW_REGISTRY_ADDRESS: "invalid-address",
+      CELO_PRIVATE_KEY: undefined,
+      CELO_SELF_AGENT_ID: undefined,
+      LANGCLAW_AGENT_ID: undefined,
+    },
+    async () => {
+      const report = await buildProofReadinessReport({
+        publicClient: {
+          ...buildClient(),
+          async getChainId() {
+            return 5000;
+          },
+        },
+      });
+
+      assert.equal(report.ready, false);
+      assert.equal(report.chainId, 42220);
+      assert.equal(report.recorder, undefined);
+      assert.equal(report.registryAddress, "invalid-address");
+      assert.equal(
+        report.checks.find((check) => check.id === "rpc-chain-id")?.status,
+        "fail"
+      );
+      assert.equal(
+        report.checks.find((check) => check.id === "erc8004-agent-id")?.status,
+        "fail"
+      );
+    }
+  );
+});
+
+test("proof readiness surfaces RPC, balance, and registry read failures", async () => {
+  await withEnv(readyEnv, async () => {
+    const report = await buildProofReadinessReport({
+      publicClient: {
+        ...buildClient(),
+        async getBalance() {
+          throw new Error("balance unavailable");
+        },
+        async getChainId() {
+          throw "rpc unavailable";
+        },
+        async readContract() {
+          throw 17;
+        },
+      },
+    });
+
+    assert.equal(report.ready, false);
+    assert.match(
+      report.checks.find((check) => check.id === "rpc-chain-id")?.summary ?? "",
+      /rpc unavailable/
+    );
+    assert.match(
+      report.checks.find((check) => check.id === "recorder-balance")?.summary ?? "",
+      /balance unavailable/
+    );
+    assert.match(
+      report.checks.find((check) => check.id === "registry-readable")?.summary ?? "",
+      /17/
+    );
+  });
+});
+
+test("proof readiness reports an empty registry and an unfunded recorder", async () => {
+  await withEnv(readyEnv, async () => {
+    const report = await buildProofReadinessReport({
+      publicClient: {
+        ...buildClient({ latestDecisionId: -1n }),
+        async getBalance() {
+          return 0n;
+        },
+      },
+    });
+
+    assert.equal(report.ready, false);
+    assert.equal(report.latestDecision, undefined);
+    assert.equal(
+      report.checks.find((check) => check.id === "recorder-balance")?.status,
+      "fail"
+    );
+    assert.equal(
+      report.checks.find((check) => check.id === "latest-decision")?.status,
+      "warn"
+    );
+  });
+});
+
+test("proof readiness normalizes tuple decisions without optional log access", async () => {
+  await withEnv(readyEnv, async () => {
+    const client = buildClient();
+    const report = await buildProofReadinessReport({
+      publicClient: {
+        getBalance: client.getBalance,
+        getBlockNumber: client.getBlockNumber,
+        getChainId: client.getChainId,
+        async readContract({ functionName }: { functionName: string }) {
+          if (functionName === "nextDecisionId") {
+            return 2n;
+          }
+
+          return [
+            94n,
+            "run-tuple",
+            `0x${"4".repeat(64)}`,
+            "langclaw://evidence/tuple",
+            "liquidity",
+            "0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c",
+            1_780_000_000n,
+          ] as const;
+        },
+      },
+    });
+
+    assert.equal(report.status, "ready");
+    assert.equal(report.latestDecision?.runId, "run-tuple");
+    assert.equal(report.latestDecision?.signalType, "liquidity");
+    assert.equal(report.latestDecision?.txHash, undefined);
+    assert.equal(report.latestDecision?.explorerUrl, undefined);
+  });
+});
+
+test("proof readiness accepts legacy Mantle proof configuration", async () => {
+  let logStartBlock = 0n;
+
+  await withEnv(
+    {
+      LANGCLAW_AGENT_ID: "7",
+      LANGCLAW_REGISTRY_ADDRESS: registryAddress,
+      MANTLE_AGENT_PRIVATE_KEY: testPrivateKey,
+      MANTLE_CHAIN_ENABLED: "true",
+      MANTLE_CHAIN_ID: "5000",
+      MANTLE_CHAIN_RPC_URL: "https://rpc.mantle.test",
+      MANTLE_ERC8004_AGENT_ID: undefined,
+      MANTLE_INTEL_PROOF_ENABLED: "true",
+      MANTLE_LANGCLAW_REGISTRY_ADDRESS: undefined,
+      MANTLE_PRIVATE_KEY: undefined,
+      MANTLE_SELF_AGENT_ID: undefined,
+    },
+    async () => {
+      const report = await buildProofReadinessReport({
+        chain: "mantle",
+        publicClient: {
+          ...buildClient({ latestAgentId: 7n }),
+          async getChainId() {
+            return 5000;
+          },
+          async getLogs(args: { fromBlock: bigint }) {
+            logStartBlock = args.fromBlock;
+
+            return [
+              {
+                args: { decisionId: 1n },
+                transactionHash:
+                  `0x${"a".repeat(64)}` as `0x${string}`,
+              },
+            ];
+          },
+        },
+      });
+
+      assert.equal(report.ready, true);
+      assert.equal(report.chain, "mantle");
+      assert.equal(logStartBlock, 95_522_244n);
+      assert.equal(
+        report.checks.find((check) => check.id === "erc8004-agent-id")?.label,
+        "LANGCLAW_AGENT_ID"
+      );
+      assert.match(
+        report.checks.find((check) => check.id === "erc8004-agent-id")?.summary ?? "",
+        /legacy LANGCLAW_AGENT_ID/
+      );
+    }
+  );
+});

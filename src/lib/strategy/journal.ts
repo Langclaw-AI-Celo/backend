@@ -14,6 +14,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { celo as viemCelo } from "viem/chains";
 
 import { readPreferredAgentId } from "../agent-id";
+import { withCeloAttribution } from "../celo-attribution";
 import {
   getProductChain,
   readChainEnv,
@@ -185,9 +186,11 @@ export async function persistTradingJournalRecord(
         input.status,
       ],
     });
-    const txHash = await walletClient.writeContract(
-      withCeloFeeCurrency(chainConfig, request)
+    const writeRequest = await prepareTradingJournalWriteRequest(
+      chainConfig,
+      request
     );
+    const txHash = await walletClient.writeContract(writeRequest);
     const explorerUrl = `${explorerBase}/tx/${txHash}`;
     submittedTxHash = txHash;
     submittedExplorerUrl = explorerUrl;
@@ -514,6 +517,14 @@ function withCeloFeeCurrency<T extends Record<string, unknown>>(
     ...request,
     feeCurrency: chainConfig.billingCurrency.feeCurrencyAddress,
   } as T;
+}
+
+export async function prepareTradingJournalWriteRequest<
+  T extends Record<string, unknown>,
+>(chainConfig: ProductChainConfig, request: T) {
+  const attributedRequest = await withCeloAttribution(chainConfig.id, request);
+
+  return withCeloFeeCurrency(chainConfig, attributedRequest);
 }
 
 function readPrivateKey(chain: ProductChainConfig): Hex | undefined {

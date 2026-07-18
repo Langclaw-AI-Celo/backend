@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createMemory,
   deleteManyMemories,
   deleteMemory,
   MemoryHttpError,
+  memoryErrorResponse,
   readMemoryDashboard,
   updateManyMemoryStatuses,
+  updateMemorySettings,
+  writeAutomationRunMemory,
 } from "./memory";
 
 const walletUser = {
@@ -284,3 +288,202 @@ test("bulk memory deletion scopes ids to the authenticated wallet", async () => 
     { args: ["id"], method: "select" },
   ]);
 });
+
+test("memory creation normalizes input and persists wallet ownership", async () => {
+  let inserted: Record<string, unknown> | undefined;
+  const supabase = {
+    from(table: string) {
+      assert.equal(table, "langclaw_memories");
+      return {
+        insert(payload: Record<string, unknown>) {
+          inserted = payload;
+          return {
+            select() {
+              return {
+                single: () =>
+                  Promise.resolve({
+                    data: {
+                      ...payload,
+                      created_at: "2026-07-18T10:00:00.000Z",
+                      id: "memory-created",
+                      updated_at: "2026-07-18T10:00:00.000Z",
+                    },
+                    error: null,
+                  }),
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const memory = await createMemory(buildMemoryAccount(supabase), {
+    category: "API",
+    confidence: 140,
+    lastUsed: "2026-07-18T09:30:00.000Z",
+    memory: "  Prefer Celo proof routes  ",
+    scope: "  Langclaw  ",
+    source: "  Manual test  ",
+    status: "active",
+  });
+
+  assert.equal(memory.id, "memory-created");
+  assert.equal(memory.memory, "Prefer Celo proof routes");
+  assert.equal(memory.confidence, 100);
+  assert.equal(memory.lastUsed, "2026-07-18");
+  assert.equal(inserted?.wallet_user_id, walletUser.id);
+  assert.deepEqual(inserted?.metadata, {});
+});
+
+test("memory settings surface persistence failures after normalization", async () => {
+  let updatePayload: Record<string, unknown> | undefined;
+  const settingsRow = buildMemorySettingsRow();
+  const supabase = {
+    from(table: string) {
+      assert.equal(table, "langclaw_memory_settings");
+      return {
+        update(payload: Record<string, unknown>) {
+          updatePayload = payload;
+          const query = {
+            eq() {
+              return query;
+            },
+            select() {
+              return {
+                single: () =>
+                  Promise.resolve({
+                    data: null,
+                    error: { message: "settings write failed" },
+                  }),
+              };
+            },
+          };
+          return query;
+        },
+        upsert() {
+          return {
+            select() {
+              return {
+                single: () => Promise.resolve({ data: settingsRow, error: null }),
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  await assert.rejects(
+    updateMemorySettings(buildMemoryAccount(supabase), {
+      captureEnabled: false,
+      retentionDays: 9999,
+    }),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 500 &&
+      error.message === "settings write failed"
+  );
+
+  assert.equal(updatePayload?.capture_enabled, false);
+  assert.equal(updatePayload?.retention_days, 3650);
+  assert.equal(updatePayload?.cross_chat_recall, true);
+});
+
+test("automation memory persistence honors capture and confidence settings", async () => {
+  const persisted: Record<string, unknown>[] = [];
+  const settingsRow = buildMemorySettingsRow();
+  const context = {
+    authMethod: "wallet" as const,
+    supabase: {
+      from(table: string) {
+        if (table === "langclaw_memory_settings") {
+          return {
+            upsert() {
+              return {
+                select() {
+                  return {
+                    single: () =>
+                      Promise.resolve({ data: settingsRow, error: null }),
+                  };
+                },
+              };
+            },
+          };
+        }
+
+        assert.equal(table, "langclaw_memories");
+        return {
+          insert(payload: Record<string, unknown>) {
+            persisted.push(payload);
+            return Promise.resolve({ error: null });
+          },
+        };
+      },
+    } as never,
+    walletUser,
+  };
+
+  await writeAutomationRunMemory(context, {
+    completedAt: "2026-07-18T10:00:00.000Z",
+    error: "Provider timeout",
+    project: "Langclaw",
+    runId: "run-failed",
+    status: "failed",
+    taskName: "Celo scan",
+  });
+
+  assert.equal(persisted[0].confidence, 72);
+  assert.equal(persisted[0].status, "disabled");
+  assert.match(String(persisted[0].memory), /Provider timeout/);
+
+  settingsRow.capture_enabled = false;
+  await writeAutomationRunMemory(context, {
+    completedAt: "2026-07-18T11:00:00.000Z",
+    project: "Langclaw",
+    runId: "run-complete",
+    status: "completed",
+    taskName: "Celo scan",
+  });
+  assert.equal(persisted.length, 1);
+});
+
+test("memory error responses distinguish configuration and generic failures", async () => {
+  const unavailable = memoryErrorResponse(
+    new MemoryHttpError(503, "Memory storage is not configured.")
+  );
+  const generic = memoryErrorResponse("unexpected");
+
+  assert.equal(unavailable.status, 503);
+  assert.deepEqual(await unavailable.json(), {
+    configured: false,
+    error: "Memory storage is not configured.",
+  });
+  assert.deepEqual(await generic.json(), {
+    configured: true,
+    error: "Memory request failed.",
+  });
+});
+
+function buildMemoryAccount(supabase: unknown) {
+  return {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: supabase as never,
+      walletUser,
+    },
+  };
+}
+
+function buildMemorySettingsRow() {
+  return {
+    auto_disable_low_confidence: true,
+    capture_enabled: true,
+    created_at: "2026-07-18T09:00:00.000Z",
+    cross_chat_recall: true,
+    project_scoped_recall: true,
+    retention_days: 90,
+    updated_at: "2026-07-18T09:00:00.000Z",
+    wallet_user_id: walletUser.id,
+  };
+}
