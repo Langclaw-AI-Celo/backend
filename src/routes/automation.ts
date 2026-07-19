@@ -359,6 +359,24 @@ async function readAutomationBody(
       throw new TypeError("Automation request body must be an object.");
     }
 
+    const record = body as Record<string, unknown>;
+
+    for (const field of ["task", "settings"] as const) {
+      if (
+        field in record &&
+        (!record[field] ||
+          typeof record[field] !== "object" ||
+          Array.isArray(record[field]))
+      ) {
+        return {
+          response: Response.json(
+            { error: `${field} must be a JSON object.` },
+            { status: 400 }
+          ),
+        };
+      }
+    }
+
     return body as AutomationBody;
   } catch {
     return {
