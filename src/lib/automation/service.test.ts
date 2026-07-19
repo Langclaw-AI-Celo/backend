@@ -220,6 +220,20 @@ test("automation task text fields reject non-string values", async () => {
   }
 });
 
+test("automation task updates reject blank names", async () => {
+  const storage = buildAutomationStorage("active");
+
+  await assert.rejects(
+    updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+      name: "   ",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      error.message === "Task name is required."
+  );
+});
+
 test("scheduled tasks reject unsupported frequencies", async () => {
   const storage = buildAutomationStorage("active");
 

@@ -1791,7 +1791,7 @@ function normalizeTaskInput(
 ) {
   const name = readOptionalInputString(input.name, 120, "name");
 
-  if (requireName && !name) {
+  if ((requireName || input.name !== undefined) && !name) {
     throw new AutomationHttpError(400, "Task name is required.");
   }
 
