@@ -1819,12 +1819,14 @@ function normalizeTaskInput(
 
   return {
     eventName,
-    failureThreshold: 5,
-    maxRetries: settings.retryPolicy === "5-attempts"
-      ? 5
-      : settings.retryPolicy === "none"
-        ? 0
-        : 3,
+    failureThreshold: existing?.failure_threshold ?? 5,
+    maxRetries:
+      existing?.max_retries ??
+      (settings.retryPolicy === "5-attempts"
+        ? 5
+        : settings.retryPolicy === "none"
+          ? 0
+          : 3),
     model: readOptionalString(input.model, 120),
     name,
     project:
