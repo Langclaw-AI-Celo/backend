@@ -336,6 +336,20 @@ test("reads the automation dashboard, runs, settings, and in-app notifications",
   assert.equal(notifications[0]?.status, "unread");
 });
 
+test("automation run filters reject invalid task identifiers", async () => {
+  for (const taskId of [null, "", 42]) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      readAutomationRuns(buildAccount(storage.supabase), taskId),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === "taskId is required.",
+    );
+  }
+});
+
 test("automation list limits reject non-integer values", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);

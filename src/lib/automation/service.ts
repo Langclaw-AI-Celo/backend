@@ -375,11 +375,9 @@ export async function readAutomationRuns(
   taskId?: unknown
 ) {
   const context = await requireAutomationContext(authInput);
+  const taskFilter = taskId === undefined ? undefined : readTaskId(taskId);
 
-  return readAutomationRunsForContext(
-    context,
-    typeof taskId === "string" && taskId ? taskId : undefined
-  );
+  return readAutomationRunsForContext(context, taskFilter);
 }
 
 export async function readInAppAutomationNotifications(
