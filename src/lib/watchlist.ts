@@ -248,7 +248,11 @@ function optionalText(value: unknown, maxLength = 500) {
 
 function readCount(value: unknown) {
   const parsed =
-    typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\d+$/.test(value.trim())
+        ? Number(value.trim())
+        : Number.NaN;
 
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
 }
