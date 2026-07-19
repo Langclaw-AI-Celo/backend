@@ -1,3 +1,5 @@
+import { isAddress } from "viem";
+
 import {
   buildBacktestJournalHashes,
   buildPaperJournalHashes,
@@ -230,6 +232,22 @@ async function readStrategyBody(
       };
     }
 
+    if (
+      !isValidOptionalQueryId(strategyBody.queryId) ||
+      !isValidOptionalPairAddress(strategyBody.pairAddress)
+    ) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "queryId must be numeric and pairAddress must be an EVM address when provided.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
     if (!isValidStrategyParams(strategyBody.params)) {
       return {
         response: Response.json(
@@ -392,7 +410,8 @@ function isValidPaperBacktest(value: unknown) {
       isPositiveFiniteNumber(backtest.chainId) &&
       isNonEmptyString(backtest.chainName) &&
       isNonEmptyString(backtest.market) &&
-      isNonEmptyString(backtest.pairAddress) &&
+      typeof backtest.pairAddress === "string" &&
+      isAddress(backtest.pairAddress) &&
       isNonEmptyString(backtest.runId) &&
       isNonEmptyString(backtest.strategyId) &&
       typeof signal.action === "string" &&
@@ -465,6 +484,20 @@ function isPositiveFiniteNumber(value: unknown) {
 
 function isNonEmptyString(value: unknown) {
   return typeof value === "string" && Boolean(value.trim());
+}
+
+function isValidOptionalQueryId(value: unknown) {
+  return (
+    value === undefined ||
+    (typeof value === "string" && /^\d+$/.test(value.trim()))
+  );
+}
+
+function isValidOptionalPairAddress(value: unknown) {
+  return (
+    value === undefined ||
+    (typeof value === "string" && isAddress(value.trim()))
+  );
 }
 
 function strategyErrorResponse(error: unknown) {
