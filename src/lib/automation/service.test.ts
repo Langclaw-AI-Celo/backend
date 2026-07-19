@@ -142,6 +142,22 @@ test("automation tasks reject unsupported trigger types", async () => {
   );
 });
 
+test("scheduled tasks reject unsupported frequencies", async () => {
+  const storage = buildAutomationStorage("active");
+
+  await assert.rejects(
+    createAutomationTask(buildAccount(storage.supabase), {
+      name: "Invalid frequency",
+      scheduleFrequency: "hourly",
+      triggerType: "schedule",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      error.message === "scheduleFrequency must be one of: daily, weekly, monthly.",
+  );
+});
+
 test("automation link and trigger inputs reject malformed values", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);

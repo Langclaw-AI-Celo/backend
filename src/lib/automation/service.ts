@@ -1795,10 +1795,11 @@ function normalizeTaskInput(
   );
   const scheduleFrequency =
     triggerType === "schedule"
-      ? readEnum<AutomationFrequency>(
+      ? readInputEnum<AutomationFrequency>(
           input.scheduleFrequency,
           ["daily", "weekly", "monthly"],
-          existing?.schedule_frequency ?? "daily"
+          existing?.schedule_frequency ?? "daily",
+          "scheduleFrequency"
         )
       : undefined;
   const scheduleTime = readScheduleTime(
