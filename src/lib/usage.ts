@@ -131,11 +131,16 @@ const depositEventAbi = parseAbiItem(
 
 export function usageErrorResponse(error: unknown) {
   if (error instanceof UsageHttpError) {
-    return Response.json({ error: error.message }, { status: error.status });
+    const message =
+      error.status < 500 || error.status === 503
+        ? error.message
+        : "Usage billing failed.";
+
+    return Response.json({ error: message }, { status: error.status });
   }
 
   return Response.json(
-    { error: error instanceof Error ? error.message : "Usage billing failed." },
+    { error: "Usage billing failed." },
     { status: 500 }
   );
 }
