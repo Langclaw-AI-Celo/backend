@@ -7,6 +7,7 @@ import {
   handleAutomationSettings,
   handleAutomationTasks,
   handleAutomationWebhook,
+  incrementWebhookRateLimit,
 } from "./automation";
 
 test("automation routes reject unsupported actions before service calls", async () => {
@@ -194,4 +195,32 @@ test("automation webhook rate limits remain isolated by slug", async () => {
   );
 
   assert.notEqual(response.status, 429);
+});
+
+test("automation webhook rate limit storage stays bounded", async () => {
+  const buckets = new Map<string, { count: number; resetAt: number }>();
+  const options = {
+    buckets,
+    maxEntries: 2,
+    now: 1_000,
+    windowMs: 60_000,
+  };
+
+  assert.equal(incrementWebhookRateLimit("client:first", 10, options), null);
+  assert.equal(incrementWebhookRateLimit("client:second", 10, options), null);
+
+  const limited = incrementWebhookRateLimit("client:third", 10, options);
+
+  assert.equal(limited?.status, 429);
+  assert.equal(buckets.size, 2);
+  assert.equal(buckets.has("client:third"), false);
+
+  const afterExpiry = incrementWebhookRateLimit("client:third", 10, {
+    ...options,
+    now: 61_001,
+  });
+
+  assert.equal(afterExpiry, null);
+  assert.equal(buckets.size, 1);
+  assert.equal(buckets.has("client:third"), true);
 });

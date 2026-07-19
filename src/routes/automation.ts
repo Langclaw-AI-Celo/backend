@@ -49,13 +49,12 @@ const AUTOMATION_WEBHOOK_BODY_LIMIT_BYTES = 64 * 1024;
 const WEBHOOK_CLIENT_RATE_LIMIT = 120;
 const WEBHOOK_SLUG_RATE_LIMIT = 30;
 const WEBHOOK_RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const webhookRateLimits = new Map<
-  string,
-  {
-    count: number;
-    resetAt: number;
-  }
->();
+const WEBHOOK_RATE_LIMIT_MAX_ENTRIES = 10_000;
+type WebhookRateLimitBucket = {
+  count: number;
+  resetAt: number;
+};
+const webhookRateLimits = new Map<string, WebhookRateLimitBucket>();
 
 export async function handleAutomationTasks(request: Request) {
   const body = await readAutomationBody(request);
@@ -435,22 +434,55 @@ function checkAutomationWebhookRateLimit(request: Request, slug: string) {
   );
 }
 
-function incrementWebhookRateLimit(key: string, limit: number) {
-  const now = Date.now();
-  const current = webhookRateLimits.get(key);
+export function incrementWebhookRateLimit(
+  key: string,
+  limit: number,
+  options: {
+    buckets?: Map<string, WebhookRateLimitBucket>;
+    maxEntries?: number;
+    now?: number;
+    windowMs?: number;
+  } = {}
+) {
+  const buckets = options.buckets ?? webhookRateLimits;
+  const maxEntries = options.maxEntries ?? WEBHOOK_RATE_LIMIT_MAX_ENTRIES;
+  const now = options.now ?? Date.now();
+  const windowMs = options.windowMs ?? WEBHOOK_RATE_LIMIT_WINDOW_MS;
+  const current = buckets.get(key);
+
+  if (!current && buckets.size >= maxEntries) {
+    for (const [storedKey, bucket] of buckets) {
+      if (bucket.resetAt <= now) {
+        buckets.delete(storedKey);
+      }
+    }
+
+    if (buckets.size >= maxEntries) {
+      const earliestReset = Math.min(
+        ...Array.from(buckets.values(), (bucket) => bucket.resetAt)
+      );
+
+      return createWebhookRateLimitResponse(earliestReset, now);
+    }
+  }
+
   const bucket =
     current && current.resetAt > now
       ? current
-      : { count: 0, resetAt: now + WEBHOOK_RATE_LIMIT_WINDOW_MS };
+      : { count: 0, resetAt: now + windowMs };
 
   bucket.count += 1;
-  webhookRateLimits.set(key, bucket);
+  buckets.set(key, bucket);
 
   if (bucket.count <= limit) {
     return null;
   }
 
-  const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+  return createWebhookRateLimitResponse(bucket.resetAt, now);
+}
+
+function createWebhookRateLimitResponse(resetAt: number, now: number) {
+  const retryAfter = Math.max(1, Math.ceil((resetAt - now) / 1000));
 
   return Response.json(
     { error: "Too many automation webhook requests." },
