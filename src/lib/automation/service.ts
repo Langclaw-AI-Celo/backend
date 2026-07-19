@@ -244,7 +244,8 @@ export async function updateAutomationTask(
   const { data, error } = await context.supabase
     .from("langclaw_automation_tasks")
     .update({
-      event_name: patch.eventName ?? existing.event_name,
+      event_name:
+        triggerType === "event" ? patch.eventName ?? existing.event_name : null,
       failure_threshold: patch.failureThreshold ?? existing.failure_threshold,
       max_retries: patch.maxRetries ?? existing.max_retries,
       model: patch.model ?? existing.model,

@@ -101,6 +101,20 @@ test("automation metadata updates preserve task retry guardrails", async () => {
   assert.equal(storage.updated?.max_retries, 5);
 });
 
+test("automation trigger changes clear stale event metadata", async () => {
+  const storage = buildAutomationStorage("active", {
+    event_name: "price.changed",
+    trigger_type: "event",
+  });
+
+  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    triggerType: "schedule",
+  });
+
+  assert.equal(storage.updated?.event_name, null);
+  assert.equal(storage.updated?.trigger_type, "schedule");
+});
+
 test("automation error responses preserve safe HTTP status and messages", async () => {
   const invalid = automationErrorResponse(
     new AutomationHttpError(400, "Invalid automation input.")
