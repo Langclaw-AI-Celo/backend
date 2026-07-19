@@ -176,6 +176,31 @@ test("scheduled tasks reject invalid schedule times", async () => {
   }
 });
 
+test("scheduled tasks reject invalid calendar positions", async () => {
+  const cases = [
+    ["scheduleMonthDay", 32, "scheduleMonthDay must be an integer between 1 and 31."],
+    ["scheduleMonthDay", 1.5, "scheduleMonthDay must be an integer between 1 and 31."],
+    ["scheduleWeekday", 7, "scheduleWeekday must be an integer between 0 and 6."],
+    ["scheduleWeekday", -1, "scheduleWeekday must be an integer between 0 and 6."],
+  ] as const;
+
+  for (const [field, value, message] of cases) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      createAutomationTask(buildAccount(storage.supabase), {
+        name: "Invalid calendar position",
+        [field]: value,
+        triggerType: "schedule",
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === message,
+    );
+  }
+});
+
 test("automation link and trigger inputs reject malformed values", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);

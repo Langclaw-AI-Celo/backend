@@ -1832,12 +1832,24 @@ function normalizeTaskInput(
     scheduleFrequency,
     scheduleMonthDay:
       triggerType === "schedule"
-        ? readInteger(input.scheduleMonthDay, existing?.schedule_month_day ?? nowParts.day, 1, 31)
+        ? readInteger(
+            input.scheduleMonthDay,
+            existing?.schedule_month_day ?? nowParts.day,
+            1,
+            31,
+            "scheduleMonthDay"
+          )
         : undefined,
     scheduleTime,
     scheduleWeekday:
       triggerType === "schedule"
-        ? readInteger(input.scheduleWeekday, existing?.schedule_weekday ?? nowParts.weekday, 0, 6)
+        ? readInteger(
+            input.scheduleWeekday,
+            existing?.schedule_weekday ?? nowParts.weekday,
+            0,
+            6,
+            "scheduleWeekday"
+          )
         : undefined,
     status: readEnum<AutomationTaskStatus>(
       input.status,
@@ -1986,13 +1998,26 @@ function readInteger(
   value: unknown,
   fallback: number,
   min: number,
-  max: number
+  max: number,
+  field: string
 ) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+  if (value === undefined) {
     return fallback;
   }
 
-  return Math.min(Math.max(Math.trunc(value), min), max);
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < min ||
+    value > max
+  ) {
+    throw new AutomationHttpError(
+      400,
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  return value;
 }
 
 function readEnum<T extends string>(
