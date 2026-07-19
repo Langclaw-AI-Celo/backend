@@ -374,6 +374,25 @@ test("memory creation rejects an unsupported status", async () => {
   );
 });
 
+test("memory creation rejects an invalid last-used timestamp", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+
+  await assert.rejects(
+    createMemory(account, {
+      lastUsed: "not-a-date",
+      memory: "Keep proof records",
+    }),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 400 &&
+      error.message === "lastUsed must be a valid timestamp.",
+  );
+});
+
 test("memory settings surface persistence failures after normalization", async () => {
   let updatePayload: Record<string, unknown> | undefined;
   const settingsRow = buildMemorySettingsRow();

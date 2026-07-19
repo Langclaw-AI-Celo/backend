@@ -552,14 +552,18 @@ function readOptionalString(value: unknown, maxLength: number) {
 }
 
 function readOptionalDate(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) {
+  if (value === undefined) {
     return undefined;
   }
 
-  const date = new Date(value);
+  if (typeof value !== "string" || !value.trim()) {
+    throw new MemoryHttpError(400, "lastUsed must be a valid timestamp.");
+  }
+
+  const date = new Date(value.trim());
 
   if (Number.isNaN(date.getTime())) {
-    return undefined;
+    throw new MemoryHttpError(400, "lastUsed must be a valid timestamp.");
   }
 
   return date.toISOString();
