@@ -106,6 +106,19 @@ test("chat session normalization rejects invalid timestamps", () => {
   assert.equal(normalizeSession({ ...baseSession, updatedAt: "invalid" }), null);
 });
 
+test("chat session normalization rejects reversed timestamps", () => {
+  assert.equal(
+    normalizeSession({
+      createdAt: "2026-07-19T01:02:00.000Z",
+      id: "session-reversed-time",
+      messages: [],
+      title: "Reversed session time",
+      updatedAt: "2026-07-19T01:01:00.000Z",
+    }),
+    null,
+  );
+});
+
 test("chat session normalization rejects unsupported message context", () => {
   const baseSession = {
     createdAt: "2026-07-19T01:00:00.000Z",
