@@ -588,7 +588,9 @@ export function normalizeSession(value: unknown): ChatSession | null {
 
   if (
     typeof session.id !== "string" ||
+    !session.id.trim() ||
     typeof session.title !== "string" ||
+    !session.title.trim() ||
     typeof session.createdAt !== "string" ||
     typeof session.updatedAt !== "string" ||
     (session.pinned !== undefined && typeof session.pinned !== "boolean") ||
@@ -648,6 +650,7 @@ function normalizeMessage(value: unknown): StoredChatMessage | null {
 
   if (
     typeof message.id !== "string" ||
+    !message.id.trim() ||
     (message.role !== "assistant" && message.role !== "user") ||
     typeof message.content !== "string"
   ) {

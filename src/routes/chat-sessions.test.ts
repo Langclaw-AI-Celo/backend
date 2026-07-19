@@ -58,6 +58,26 @@ test("chat session normalization rejects non-boolean pinned state", () => {
   assert.equal(session, null);
 });
 
+test("chat session normalization rejects empty storage identifiers", () => {
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-id",
+    messages: [{ content: "Hello", id: "message-id", role: "user" }],
+    title: "Stored session",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+
+  assert.equal(normalizeSession({ ...baseSession, id: "   " }), null);
+  assert.equal(normalizeSession({ ...baseSession, title: "" }), null);
+  assert.equal(
+    normalizeSession({
+      ...baseSession,
+      messages: [{ content: "Hello", id: "", role: "user" }],
+    }),
+    null,
+  );
+});
+
 test("chat session metadata accepts omitted titles and rejects invalid values", () => {
   assert.deepEqual(readOptionalTitle(undefined), {});
   assert.deepEqual(readOptionalTitle(42), { error: "title must be a string." });
