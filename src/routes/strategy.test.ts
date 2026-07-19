@@ -257,6 +257,44 @@ test("strategy routes reject malformed positive numbers before provider work", a
   assert.equal(fetchCalls, 0);
 });
 
+test("paper trades reject malformed backtest inputs before journal work", async () => {
+  const valid = paperBacktestInput();
+  const invalidBacktests = [
+    "invalid",
+    {},
+    { ...valid, latestSignal: null },
+    {
+      ...valid,
+      latestSignal: { ...valid.latestSignal, action: "transfer" },
+    },
+    {
+      ...valid,
+      latestSignal: { ...valid.latestSignal, confidence: 101 },
+    },
+    {
+      ...valid,
+      latestSignal: { ...valid.latestSignal, priceUsd: 0 },
+    },
+    { ...valid, runId: "" },
+  ];
+
+  for (const backtest of invalidBacktests) {
+    const response = await handleStrategyPaperTrade(
+      new Request("http://localhost/api/strategy/paper-trade", {
+        body: JSON.stringify({ backtest }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      configured: false,
+      error: "backtest must contain valid paper-trade inputs.",
+    });
+  }
+});
+
 test("strategy routes redact unexpected provider failures", async (t) => {
   const originalFetch = globalThis.fetch;
   const originalApiKey = process.env.DUNE_API_KEY;
@@ -297,3 +335,21 @@ test("strategy routes redact unexpected provider failures", async (t) => {
     error: "Strategy request failed.",
   });
 });
+
+function paperBacktestInput() {
+  return {
+    chain: "celo",
+    chainId: 42220,
+    chainName: "Celo",
+    latestSignal: {
+      action: "buy",
+      confidence: 80,
+      priceUsd: 1.02,
+      rationale: "Liquidity and momentum meet the configured thresholds.",
+    },
+    market: "celo:0xeAfc4D6d4c3391Cd4Fc10c85D2f5f972d58C0dD5",
+    pairAddress: "0xeAfc4D6d4c3391Cd4Fc10c85D2f5f972d58C0dD5",
+    runId: "bt-test",
+    strategyId: "celo-liquidity-momentum-v1",
+  };
+}

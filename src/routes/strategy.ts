@@ -12,6 +12,7 @@ import {
 } from "../lib/strategy/journal";
 import { productChains, readProductChainId } from "../lib/chain-config";
 import type {
+  StrategyAction,
   StrategyBacktestParams,
   StrategyBacktestPayload,
 } from "../lib/strategy/types";
@@ -34,6 +35,12 @@ const strategyParamNames = new Set<keyof StrategyBacktestParams>([
   "minVolumeMultiple",
   "stopLossBps",
   "takeProfitBps",
+]);
+const strategyActions = new Set<StrategyAction>([
+  "buy",
+  "sell",
+  "hold",
+  "exit",
 ]);
 
 export async function handleStrategyBacktest(request: Request) {
@@ -265,6 +272,18 @@ async function readStrategyBody(
       };
     }
 
+    if (!isValidPaperBacktest(strategyBody.backtest)) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error: "backtest must contain valid paper-trade inputs.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
     return strategyBody;
   } catch {
     return {
@@ -329,6 +348,50 @@ function isValidOptionalPositiveNumber(value: unknown) {
   const parsed = typeof value === "number" ? value : Number(value);
 
   return Number.isFinite(parsed) && parsed > 0;
+}
+
+function isValidPaperBacktest(value: unknown) {
+  if (value === undefined) {
+    return true;
+  }
+
+  const backtest = readRecord(value);
+  const signal = readRecord(backtest?.latestSignal);
+
+  return Boolean(
+    backtest &&
+      signal &&
+      typeof backtest.chain === "string" &&
+      isValidOptionalChain(backtest.chain) &&
+      isPositiveFiniteNumber(backtest.chainId) &&
+      isNonEmptyString(backtest.chainName) &&
+      isNonEmptyString(backtest.market) &&
+      isNonEmptyString(backtest.pairAddress) &&
+      isNonEmptyString(backtest.runId) &&
+      isNonEmptyString(backtest.strategyId) &&
+      typeof signal.action === "string" &&
+      strategyActions.has(signal.action as StrategyAction) &&
+      typeof signal.confidence === "number" &&
+      Number.isFinite(signal.confidence) &&
+      signal.confidence >= 0 &&
+      signal.confidence <= 100 &&
+      isPositiveFiniteNumber(signal.priceUsd) &&
+      isNonEmptyString(signal.rationale)
+  );
+}
+
+function readRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function isPositiveFiniteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isNonEmptyString(value: unknown) {
+  return typeof value === "string" && Boolean(value.trim());
 }
 
 function strategyErrorResponse(error: unknown) {
