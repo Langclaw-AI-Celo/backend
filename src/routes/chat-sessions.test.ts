@@ -3,9 +3,32 @@ import test from "node:test";
 
 import { createWalletSessionForVerifiedAddress } from "../lib/server/wallet-auth";
 import { mockFetch, withEnv } from "../test/helpers";
-import { handleChatSessions, readOptionalTitle } from "./chat-sessions";
+import {
+  handleChatSessions,
+  normalizeSession,
+  readOptionalTitle,
+} from "./chat-sessions";
 
 const sessionOwner = "0x1111111111111111111111111111111111111111";
+
+test("chat session normalization preserves message chains", () => {
+  const session = normalizeSession({
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-chain",
+    messages: [
+      {
+        chain: "celo",
+        content: "Check Celo proof state",
+        id: "message-chain",
+        role: "user",
+      },
+    ],
+    title: "Chain context",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  });
+
+  assert.equal(session?.messages[0]?.chain, "celo");
+});
 
 test("chat session metadata accepts omitted titles and rejects invalid values", () => {
   assert.deepEqual(readOptionalTitle(undefined), {});

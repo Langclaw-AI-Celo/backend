@@ -579,7 +579,7 @@ function rowToMessage(row: ChatMessageRow): StoredChatMessage {
   };
 }
 
-function normalizeSession(value: unknown): ChatSession | null {
+export function normalizeSession(value: unknown): ChatSession | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -652,6 +652,10 @@ function normalizeMessage(value: unknown): StoredChatMessage | null {
   }
 
   return {
+    chain:
+      message.chain === "celo" || message.chain === "mantle"
+        ? message.chain
+        : undefined,
     content: message.content,
     directAnswer: message.directAnswer,
     error: typeof message.error === "string" ? message.error : undefined,
