@@ -26,6 +26,16 @@ type StrategyBody = {
   queryId?: unknown;
 };
 
+const strategyParamNames = new Set<keyof StrategyBacktestParams>([
+  "initialCapitalUsd",
+  "maxHoldHours",
+  "minLiquidityUsd",
+  "minMomentumBps",
+  "minVolumeMultiple",
+  "stopLossBps",
+  "takeProfitBps",
+]);
+
 export async function handleStrategyBacktest(request: Request) {
   const body = await readStrategyBody(request);
 
@@ -213,6 +223,19 @@ async function readStrategyBody(
       };
     }
 
+    if (!isValidStrategyParams(strategyBody.params)) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "params must contain only supported positive finite numbers.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
     return strategyBody;
   } catch {
     return {
@@ -226,6 +249,24 @@ async function readStrategyBody(
 
 function isValidOptionalString(value: unknown) {
   return value === undefined || (typeof value === "string" && Boolean(value.trim()));
+}
+
+function isValidStrategyParams(value: unknown) {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.entries(value).every(
+    ([name, parameter]) =>
+      strategyParamNames.has(name as keyof StrategyBacktestParams) &&
+      typeof parameter === "number" &&
+      Number.isFinite(parameter) &&
+      parameter > 0
+  );
 }
 
 function strategyErrorResponse(error: unknown) {
