@@ -1920,11 +1920,15 @@ function readWebhookSlug(value: unknown) {
 }
 
 function readLimit(value: unknown, fallback: number, max = 10) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+  if (value === undefined) {
     return fallback;
   }
 
-  return Math.min(Math.max(Math.trunc(value), 1), max);
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new AutomationHttpError(400, "limit must be an integer.");
+  }
+
+  return Math.min(Math.max(value, 1), max);
 }
 
 function readOptionalString(value: unknown, maxLength: number) {

@@ -336,6 +336,21 @@ test("reads the automation dashboard, runs, settings, and in-app notifications",
   assert.equal(notifications[0]?.status, "unread");
 });
 
+test("automation list limits reject non-integer values", async () => {
+  const storage = buildAutomationStorage("active");
+  const account = buildAccount(storage.supabase);
+
+  for (const limit of ["20", 2.5]) {
+    await assert.rejects(
+      readInAppAutomationNotifications(account, limit),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === "limit must be an integer.",
+    );
+  }
+});
+
 test("updates automation settings with explicit and default guardrails", async () => {
   const explicitStorage = buildAutomationStorage("active");
   const explicit = await updateAutomationSettings(
