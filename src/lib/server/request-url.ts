@@ -8,3 +8,14 @@ export function resolveRequestProtocol(
 
   return protocol === "https" ? "https" : "http";
 }
+
+export function decodePathSegment(value: string) {
+  try {
+    return {
+      ok: true as const,
+      value: decodeURIComponent(value),
+    };
+  } catch {
+    return { ok: false as const };
+  }
+}

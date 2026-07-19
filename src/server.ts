@@ -9,7 +9,10 @@ import { once } from "node:events";
 
 import { createRequestErrorResponse } from "./lib/server/http-errors";
 import { readLimitedRequestBody } from "./lib/server/request-body";
-import { resolveRequestProtocol } from "./lib/server/request-url";
+import {
+  decodePathSegment,
+  resolveRequestProtocol,
+} from "./lib/server/request-url";
 import { handleChatSessions } from "./routes/chat-sessions";
 import { handleChatStream } from "./routes/chat-stream";
 import { handleDiscover } from "./routes/discover";
@@ -112,11 +115,23 @@ async function handleRequest(
       request.method === "POST" &&
       url.pathname.startsWith("/api/automation/webhooks/")
     ) {
-      const slug = decodeURIComponent(
+      const slug = decodePathSegment(
         url.pathname.slice("/api/automation/webhooks/".length)
       );
+
+      if (!slug.ok) {
+        await writeWebResponse(
+          response,
+          Response.json(
+            { error: "Automation webhook path is invalid." },
+            { status: 400 },
+          ),
+        );
+        return;
+      }
+
       const webRequest = await createWebRequest(request, url);
-      const webResponse = await handleAutomationWebhook(webRequest, slug);
+      const webResponse = await handleAutomationWebhook(webRequest, slug.value);
       await writeWebResponse(response, webResponse);
       return;
     }
