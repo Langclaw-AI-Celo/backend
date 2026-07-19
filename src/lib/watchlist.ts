@@ -185,17 +185,17 @@ function normalizeAlphaWatchlistInput(
 ): AlphaWatchlistItem {
   return {
     addedAt: readIsoDate(input.addedAt),
-    agentId: optionalText(input.agentId),
+    agentId: readOptionalText(input.agentId, "agentId"),
     caveat: readRequiredText(input.caveat, "Caveat", 4_000),
     chain: readRequiredText(input.chain || "celo", "Chain", 64),
-    decisionHash: optionalText(input.decisionHash, 160),
-    decisionId: optionalText(input.decisionId, 80),
-    evidenceUri: optionalText(input.evidenceUri, 1_000),
-    explorerUrl: optionalText(input.explorerUrl, 1_000),
+    decisionHash: readOptionalText(input.decisionHash, "decisionHash", 160),
+    decisionId: readOptionalText(input.decisionId, "decisionId", 80),
+    evidenceUri: readOptionalText(input.evidenceUri, "evidenceUri", 1_000),
+    explorerUrl: readOptionalText(input.explorerUrl, "explorerUrl", 1_000),
     gapCount: readCount(input.gapCount),
     id: readRequiredText(input.id, "Watchlist item id", 240),
     intent: readRequiredText(input.intent, "Intent", 500),
-    proofTx: optionalText(input.proofTx, 160),
+    proofTx: readOptionalText(input.proofTx, "proofTx", 160),
     recommendation: readRequiredText(input.recommendation, "Recommendation", 4_000),
     signalType: readRequiredText(input.signalType, "Signal type", 120),
     sourceCount: readCount(input.sourceCount),
@@ -250,6 +250,14 @@ function optionalText(value: unknown, maxLength = 500) {
   const text = value.trim();
 
   return text ? text.slice(0, maxLength) : undefined;
+}
+
+function readOptionalText(value: unknown, field: string, maxLength = 500) {
+  if (value !== undefined && typeof value !== "string") {
+    throw new WatchlistHttpError(400, `${field} must be a string.`);
+  }
+
+  return optionalText(value, maxLength);
 }
 
 function readCount(value: unknown) {

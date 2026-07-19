@@ -156,6 +156,47 @@ test("watchlist upserts normalize input and bind the authenticated wallet", asyn
   );
 });
 
+test("watchlist upserts reject malformed optional text fields", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:optional-text",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Optional metadata must keep its declared shape.",
+    title: "CELO evidence",
+  };
+
+  for (const [field, value] of [
+    ["agentId", 42],
+    ["decisionHash", {}],
+    ["decisionId", []],
+    ["evidenceUri", false],
+    ["explorerUrl", 7],
+    ["proofTx", null],
+  ] as const) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, [field]: value }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a string.`,
+    );
+  }
+});
+
 test("clearing a watchlist deletes only the authenticated wallet rows", async () => {
   const filters: Array<[string, string]> = [];
   const supabase = {
