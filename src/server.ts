@@ -9,6 +9,7 @@ import { Readable } from "node:stream";
 import { once } from "node:events";
 
 import { createInternalErrorResponse } from "./lib/server/http-errors";
+import { resolveRequestProtocol } from "./lib/server/request-url";
 import { handleChatSessions } from "./routes/chat-sessions";
 import { handleChatStream } from "./routes/chat-stream";
 import { handleDiscover } from "./routes/discover";
@@ -219,10 +220,9 @@ async function writeWebResponse(
 }
 
 function getRequestUrl(request: IncomingMessage) {
-  const forwardedProto = request.headers["x-forwarded-proto"];
-  const protocol = Array.isArray(forwardedProto)
-    ? forwardedProto[0]
-    : forwardedProto || "http";
+  const protocol = resolveRequestProtocol(
+    request.headers["x-forwarded-proto"],
+  );
   const hostHeader = request.headers.host || `${host}:${port}`;
 
   return new URL(request.url || "/", `${protocol}://${hostHeader}`);
