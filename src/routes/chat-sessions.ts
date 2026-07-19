@@ -600,8 +600,10 @@ export function normalizeSession(value: unknown): ChatSession | null {
     !session.title.trim() ||
     typeof session.createdAt !== "string" ||
     !Number.isFinite(Date.parse(session.createdAt)) ||
+    Date.parse(session.createdAt) > Date.now() + 5 * 60 * 1000 ||
     typeof session.updatedAt !== "string" ||
     !Number.isFinite(Date.parse(session.updatedAt)) ||
+    Date.parse(session.updatedAt) > Date.now() + 5 * 60 * 1000 ||
     Date.parse(session.updatedAt) < Date.parse(session.createdAt) ||
     (session.pinned !== undefined && typeof session.pinned !== "boolean") ||
     !Array.isArray(session.messages)

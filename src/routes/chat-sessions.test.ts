@@ -119,6 +119,20 @@ test("chat session normalization rejects reversed timestamps", () => {
   );
 });
 
+test("chat session normalization rejects future timestamps", () => {
+  const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-future-time",
+    messages: [],
+    title: "Future session time",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+
+  assert.equal(normalizeSession({ ...baseSession, createdAt: future }), null);
+  assert.equal(normalizeSession({ ...baseSession, updatedAt: future }), null);
+});
+
 test("chat session normalization rejects unsupported message context", () => {
   const baseSession = {
     createdAt: "2026-07-19T01:00:00.000Z",
