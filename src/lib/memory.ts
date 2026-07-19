@@ -611,6 +611,10 @@ function readOptionalDate(value: unknown) {
     throw new MemoryHttpError(400, "lastUsed must be a valid timestamp.");
   }
 
+  if (date.getTime() > Date.now() + 5 * 60 * 1000) {
+    throw new MemoryHttpError(400, "lastUsed cannot be in the future.");
+  }
+
   return date.toISOString();
 }
 
