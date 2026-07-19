@@ -1,5 +1,9 @@
 import type { DirectChatPayload } from "../lib/chat-sessions";
-import { readProductChainId, resolveProductChain } from "../lib/chain-config";
+import {
+  isProductChainId,
+  readProductChainId,
+  resolveProductChain,
+} from "../lib/chain-config";
 import {
   accountAuthErrorResponse,
   requireAccountAuth,
@@ -78,7 +82,19 @@ export async function handleChatStream(request: Request) {
   const context = readContextMessages(body.messages);
   const requestedToolMode = readToolMode(body.toolMode, body.researchTrend);
   const toolMode = resolveEffectiveToolMode(message, requestedToolMode);
-  const selectedChain = resolveProductChain(readProductChainId(body.chain));
+  const requestedChain =
+    body.chain === undefined || typeof body.chain !== "string"
+      ? body.chain
+      : body.chain.trim().toLowerCase();
+
+  if (requestedChain !== undefined && !isProductChainId(requestedChain)) {
+    return Response.json(
+      { error: "chain must be celo or mantle." },
+      { status: 400 }
+    );
+  }
+
+  const selectedChain = resolveProductChain(readProductChainId(requestedChain));
   const useAgent = toolMode === "research" || body.useAgent === true;
   const shouldBillUsage = useAgent;
 

@@ -157,6 +157,22 @@ test("direct chat requires wallet auth", async () => {
   assert.match((await response.json() as { error: string }).error, /required/);
 });
 
+test("chat stream rejects unsupported product chains before authentication", async () => {
+  for (const chain of ["base", "", 42220]) {
+    const response = await handleChatStream(
+      new Request("http://localhost/api/chat/stream", {
+        body: JSON.stringify({ chain, message: "Check liquidity" }),
+        method: "POST",
+      })
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "chain must be celo or mantle.",
+    });
+  }
+});
+
 test("smart-money accumulation prompts auto-route from chat to research", () => {
   assert.equal(
     resolveEffectiveToolMode("Find smart-money accumulation on Arbitrum", "chat"),
