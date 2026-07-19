@@ -3,9 +3,185 @@ import test from "node:test";
 
 import { createWalletSessionForVerifiedAddress } from "../lib/server/wallet-auth";
 import { mockFetch, withEnv } from "../test/helpers";
-import { handleChatSessions, readOptionalTitle } from "./chat-sessions";
+import {
+  handleChatSessions,
+  normalizeSession,
+  readOptionalTitle,
+} from "./chat-sessions";
 
 const sessionOwner = "0x1111111111111111111111111111111111111111";
+
+test("chat session normalization preserves message chains", () => {
+  const session = normalizeSession({
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-chain",
+    messages: [
+      {
+        chain: "celo",
+        content: "Check Celo proof state",
+        id: "message-chain",
+        role: "user",
+      },
+    ],
+    title: "Chain context",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  });
+
+  assert.equal(session?.messages[0]?.chain, "celo");
+});
+
+test("chat session normalization rejects partial message payloads", () => {
+  const session = normalizeSession({
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-partial",
+    messages: [
+      { content: "Keep me", id: "message-valid", role: "user" },
+      { content: "Do not drop me silently", id: "message-invalid", role: "system" },
+    ],
+    title: "Partial session",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  });
+
+  assert.equal(session, null);
+});
+
+test("chat session normalization rejects non-boolean pinned state", () => {
+  const session = normalizeSession({
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-pinned",
+    messages: [],
+    pinned: "false",
+    title: "Pinned state",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  });
+
+  assert.equal(session, null);
+});
+
+test("chat session normalization rejects empty storage identifiers", () => {
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-id",
+    messages: [{ content: "Hello", id: "message-id", role: "user" }],
+    title: "Stored session",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+
+  assert.equal(normalizeSession({ ...baseSession, id: "   " }), null);
+  assert.equal(normalizeSession({ ...baseSession, title: "" }), null);
+  assert.equal(
+    normalizeSession({
+      ...baseSession,
+      messages: [{ content: "Hello", id: "", role: "user" }],
+    }),
+    null,
+  );
+});
+
+test("chat session normalization rejects invalid timestamps", () => {
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-time",
+    messages: [],
+    title: "Session time",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+
+  assert.equal(normalizeSession({ ...baseSession, createdAt: "not-a-date" }), null);
+  assert.equal(normalizeSession({ ...baseSession, updatedAt: "invalid" }), null);
+});
+
+test("chat session normalization rejects unsupported message context", () => {
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-context",
+    title: "Message context",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+
+  for (const message of [
+    { chain: "ethereum", content: "Hello", id: "message-chain", role: "user" },
+    { content: "Hello", id: "message-mode", mode: "tool", role: "assistant" },
+  ]) {
+    assert.equal(normalizeSession({ ...baseSession, messages: [message] }), null);
+  }
+});
+
+test("chat session normalization rejects non-boolean stopped state", () => {
+  const session = normalizeSession({
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-stopped",
+    messages: [
+      {
+        content: "Hello",
+        id: "message-stopped",
+        role: "assistant",
+        stopped: "false",
+      },
+    ],
+    title: "Stopped state",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  });
+
+  assert.equal(session, null);
+});
+
+test("chat session normalization rejects malformed optional metadata", () => {
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-metadata",
+    title: "Message metadata",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+  const baseMessage = {
+    content: "Hello",
+    id: "message-metadata",
+    role: "assistant",
+  };
+
+  for (const metadata of [
+    { error: false },
+    { model: 42 },
+    { progressEvents: {} },
+  ]) {
+    assert.equal(
+      normalizeSession({
+        ...baseSession,
+        messages: [{ ...baseMessage, ...metadata }],
+      }),
+      null,
+    );
+  }
+});
+
+test("chat session normalization rejects malformed structured metadata", () => {
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-structured-metadata",
+    title: "Structured metadata",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+  const baseMessage = {
+    content: "Hello",
+    id: "message-structured-metadata",
+    role: "assistant",
+  };
+
+  for (const metadata of [
+    { directAnswer: "invalid" },
+    { onChain: null },
+    { progressEvents: [null] },
+    { result: [] },
+  ]) {
+    assert.equal(
+      normalizeSession({
+        ...baseSession,
+        messages: [{ ...baseMessage, ...metadata }],
+      }),
+      null,
+    );
+  }
+});
 
 test("chat session metadata accepts omitted titles and rejects invalid values", () => {
   assert.deepEqual(readOptionalTitle(undefined), {});
@@ -52,6 +228,32 @@ test("chat session routes reject malformed JSON and unauthenticated requests", a
         error: "Wallet signature or API key is required.",
       });
     }
+  );
+});
+
+test("chat session routes reject non-object JSON before authentication", async () => {
+  await withEnv(
+    {
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+      SUPABASE_URL: "https://supabase.test",
+    },
+    async () => {
+      for (const body of [null, [], "invalid"]) {
+        const response = await handleChatSessions(
+          new Request("http://localhost/api/chat/sessions", {
+            body: JSON.stringify(body),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          }),
+        );
+
+        assert.equal(response.status, 400);
+        assert.deepEqual(await response.json(), {
+          configured: true,
+          error: "Request body must be a JSON object.",
+        });
+      }
+    },
   );
 });
 

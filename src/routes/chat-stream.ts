@@ -258,7 +258,7 @@ export async function handleChatStream(request: Request) {
         if (!request.signal.aborted) {
           write({
             type: "error",
-            error: error instanceof Error ? error.message : "Chat failed.",
+            error: readChatStreamError(error),
           });
         }
       } finally {
@@ -278,6 +278,11 @@ export async function handleChatStream(request: Request) {
       "X-Accel-Buffering": "no",
     },
   });
+}
+
+export function readChatStreamError(error: unknown) {
+  void error;
+  return "Chat failed.";
 }
 
 function readContextMessages(value: unknown): ContextMessage[] {

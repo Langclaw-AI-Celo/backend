@@ -59,7 +59,16 @@ export async function handleChatSessions(request: Request) {
   let body: ChatSessionsBody;
 
   try {
-    body = (await request.json()) as ChatSessionsBody;
+    const value = await request.json();
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return Response.json(
+        { configured: true, error: "Request body must be a JSON object." },
+        { status: 400 }
+      );
+    }
+
+    body = value as ChatSessionsBody;
   } catch {
     return Response.json(
       { configured: true, error: "Request body must be valid JSON." },
@@ -570,7 +579,7 @@ function rowToMessage(row: ChatMessageRow): StoredChatMessage {
   };
 }
 
-function normalizeSession(value: unknown): ChatSession | null {
+export function normalizeSession(value: unknown): ChatSession | null {
   if (!value || typeof value !== "object") {
     return null;
   }
@@ -579,23 +588,30 @@ function normalizeSession(value: unknown): ChatSession | null {
 
   if (
     typeof session.id !== "string" ||
+    !session.id.trim() ||
     typeof session.title !== "string" ||
+    !session.title.trim() ||
     typeof session.createdAt !== "string" ||
+    !Number.isFinite(Date.parse(session.createdAt)) ||
     typeof session.updatedAt !== "string" ||
+    !Number.isFinite(Date.parse(session.updatedAt)) ||
+    (session.pinned !== undefined && typeof session.pinned !== "boolean") ||
     !Array.isArray(session.messages)
   ) {
     return null;
   }
 
-  const messages = session.messages
-    .map(normalizeMessage)
-    .filter((message): message is StoredChatMessage => Boolean(message));
+  const messages = session.messages.map(normalizeMessage);
+
+  if (messages.some((message) => message === null)) {
+    return null;
+  }
 
   return {
     createdAt: session.createdAt,
     id: session.id,
-    messages,
-    pinned: Boolean(session.pinned),
+    messages: messages as StoredChatMessage[],
+    pinned: session.pinned ?? false,
     title: session.title,
     updatedAt: session.updatedAt,
   };
@@ -636,13 +652,35 @@ function normalizeMessage(value: unknown): StoredChatMessage | null {
 
   if (
     typeof message.id !== "string" ||
+    !message.id.trim() ||
     (message.role !== "assistant" && message.role !== "user") ||
-    typeof message.content !== "string"
+    typeof message.content !== "string" ||
+    (message.chain !== undefined &&
+      message.chain !== "celo" &&
+      message.chain !== "mantle") ||
+    (message.mode !== undefined &&
+      message.mode !== "chat" &&
+      message.mode !== "onchain" &&
+      message.mode !== "research") ||
+    (message.directAnswer !== undefined &&
+      !isNonArrayObject(message.directAnswer)) ||
+    (message.error !== undefined && typeof message.error !== "string") ||
+    (message.model !== undefined && typeof message.model !== "string") ||
+    (message.onChain !== undefined && !isNonArrayObject(message.onChain)) ||
+    (message.progressEvents !== undefined &&
+      (!Array.isArray(message.progressEvents) ||
+        message.progressEvents.some((event) => !isNonArrayObject(event)))) ||
+    (message.result !== undefined && !isNonArrayObject(message.result)) ||
+    (message.stopped !== undefined && typeof message.stopped !== "boolean")
   ) {
     return null;
   }
 
   return {
+    chain:
+      message.chain === "celo" || message.chain === "mantle"
+        ? message.chain
+        : undefined,
     content: message.content,
     directAnswer: message.directAnswer,
     error: typeof message.error === "string" ? message.error : undefined,
@@ -660,6 +698,10 @@ function normalizeMessage(value: unknown): StoredChatMessage | null {
       : undefined,
     result: message.result,
     role: message.role,
-    stopped: Boolean(message.stopped),
+    stopped: message.stopped ?? false,
   };
+}
+
+function isNonArrayObject(value: unknown) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

@@ -2,7 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handleDiscover } from "./discover";
-import { handleDiscoverStream } from "./discover-stream";
+import {
+  handleDiscoverStream,
+  readDiscoverStreamError,
+} from "./discover-stream";
+
+test("discovery streams hide internal workflow failures", () => {
+  assert.equal(
+    readDiscoverStreamError(
+      new Error("postgres://internal-user:secret@database.test failed"),
+    ),
+    "Discovery failed.",
+  );
+  assert.equal(readDiscoverStreamError("unknown failure"), "Discovery failed.");
+});
 
 test("discovery routes reject non-object JSON before workflow access", async () => {
   for (const handler of [handleDiscover, handleDiscoverStream]) {

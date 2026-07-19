@@ -209,17 +209,17 @@ async function readStrategyBody(
 function strategyErrorResponse(error: unknown) {
   const message =
     error instanceof Error ? error.message : "Strategy request failed.";
-  const status =
-    /DUNE_|Dune strategy query|LANGCLAW_TRADING_JOURNAL_ADDRESS|Set /.test(message)
-      ? 503
-      : 400;
+  const unavailable =
+    /DUNE_|Dune strategy query|LANGCLAW_TRADING_JOURNAL_ADDRESS|Set /.test(
+      message
+    );
 
   return Response.json(
     {
       configured: false,
-      error: message,
+      error: unavailable ? message : "Strategy request failed.",
     },
-    { status }
+    { status: unavailable ? 503 : 500 }
   );
 }
 
