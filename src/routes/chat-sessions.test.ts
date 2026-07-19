@@ -204,6 +204,48 @@ test("chat session routes list owned data and report missing sessions", async ()
   }
 });
 
+test("chat session listing does not expose storage details", async () => {
+  const restoreFetch = mockFetch((url) => {
+    const parsed = new URL(url);
+
+    if (parsed.pathname.endsWith("/langclaw_wallet_users")) {
+      return Response.json({
+        id: "wallet-user-owner",
+        wallet_address: sessionOwner,
+      });
+    }
+
+    return Response.json(
+      { message: "relation langclaw_chat_sessions is missing" },
+      { status: 500 },
+    );
+  });
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_WALLET_SESSION_SECRET: "chat-route-test-secret",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+        SUPABASE_URL: "https://supabase.test",
+      },
+      async () => {
+        const wallet = createWalletSessionForVerifiedAddress(sessionOwner);
+        const response = await handleChatSessions(
+          chatSessionRequest({ action: "list", wallet }),
+        );
+
+        assert.equal(response.status, 500);
+        assert.deepEqual(await response.json(), {
+          configured: true,
+          error: "Unable to list chat sessions.",
+        });
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("chat session mutations reject sessions owned by another wallet", async () => {
   let ownerReads = 0;
   const restoreFetch = mockFetch((url) => {

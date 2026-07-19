@@ -88,7 +88,7 @@ export async function handleChatSessions(request: Request) {
 
     if (error) {
       return Response.json(
-        { configured: true, error: error.message },
+        { configured: true, error: "Unable to list chat sessions." },
         { status: 500 }
       );
     }
