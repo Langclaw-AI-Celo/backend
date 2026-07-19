@@ -92,10 +92,15 @@ export class MemoryHttpError extends Error {
 
 export function memoryErrorResponse(error: unknown) {
   if (error instanceof MemoryHttpError) {
+    const message =
+      error.status < 500 || error.status === 503
+        ? error.message
+        : "Memory request failed.";
+
     return Response.json(
       {
         configured: error.status !== 503,
-        error: error.message,
+        error: message,
       },
       { status: error.status }
     );
@@ -104,8 +109,7 @@ export function memoryErrorResponse(error: unknown) {
   return Response.json(
     {
       configured: true,
-      error:
-        error instanceof Error ? error.message : "Memory request failed.",
+      error: "Memory request failed.",
     },
     { status: 500 }
   );
