@@ -355,6 +355,25 @@ test("memory creation rejects an unsupported category", async () => {
   );
 });
 
+test("memory creation rejects an unsupported status", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+
+  await assert.rejects(
+    createMemory(account, {
+      memory: "Keep proof records",
+      status: "archived",
+    }),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 400 &&
+      error.message === "A valid memory status is required.",
+  );
+});
+
 test("memory settings surface persistence failures after normalization", async () => {
   let updatePayload: Record<string, unknown> | undefined;
   const settingsRow = buildMemorySettingsRow();

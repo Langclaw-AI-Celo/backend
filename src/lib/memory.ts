@@ -509,12 +509,12 @@ function readMemoryCategory(value: unknown, fallback: MemoryCategory) {
 }
 
 function readMemoryStatus(value: unknown, fallback?: MemoryStatus) {
-  if (typeof value === "string" && memoryStatuses.includes(value as MemoryStatus)) {
-    return value as MemoryStatus;
+  if (value === undefined && fallback) {
+    return fallback;
   }
 
-  if (fallback) {
-    return fallback;
+  if (typeof value === "string" && memoryStatuses.includes(value as MemoryStatus)) {
+    return value as MemoryStatus;
   }
 
   throw new MemoryHttpError(400, "A valid memory status is required.");
