@@ -226,6 +226,23 @@ test("automation tasks reject unsupported statuses", async () => {
   );
 });
 
+test("automation tasks reject invalid time zones", async () => {
+  for (const timezone of ["Mars/Olympus", 7]) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      createAutomationTask(buildAccount(storage.supabase), {
+        name: "Invalid time zone",
+        timezone,
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === "timezone must be a valid IANA time zone.",
+    );
+  }
+});
+
 test("automation link and trigger inputs reject malformed values", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);

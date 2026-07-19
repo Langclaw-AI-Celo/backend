@@ -1806,8 +1806,10 @@ function normalizeTaskInput(
     input.scheduleTime,
     existing?.schedule_time ?? "09:00"
   );
-  const timezone =
-    readOptionalString(input.timezone, 80) || existing?.timezone || defaultTimezone;
+  const timezone = readTimezone(
+    input.timezone,
+    existing?.timezone || defaultTimezone
+  );
   const nowParts = getZonedParts(new Date(), timezone);
   const eventName =
     triggerType === "event"
@@ -1995,6 +1997,30 @@ function readScheduleTime(value: unknown, fallback: string) {
   throw new AutomationHttpError(
     400,
     "scheduleTime must use 24-hour HH:MM format."
+  );
+}
+
+function readTimezone(value: unknown, fallback: string) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value === "string") {
+    const timezone = value.trim();
+
+    if (timezone && timezone.length <= 80) {
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+        return timezone;
+      } catch {
+        // The common validation error below keeps the API response stable.
+      }
+    }
+  }
+
+  throw new AutomationHttpError(
+    400,
+    "timezone must be a valid IANA time zone."
   );
 }
 
