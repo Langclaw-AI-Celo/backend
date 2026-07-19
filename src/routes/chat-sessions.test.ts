@@ -45,6 +45,21 @@ test("chat session normalization rejects partial message payloads", () => {
   assert.equal(session, null);
 });
 
+test("chat session normalization rejects duplicate message identifiers", () => {
+  const session = normalizeSession({
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-duplicate-message",
+    messages: [
+      { content: "First", id: "message-duplicate", role: "user" },
+      { content: "Second", id: "message-duplicate", role: "assistant" },
+    ],
+    title: "Duplicate messages",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  });
+
+  assert.equal(session, null);
+});
+
 test("chat session normalization rejects non-boolean pinned state", () => {
   const session = normalizeSession({
     createdAt: "2026-07-19T01:00:00.000Z",

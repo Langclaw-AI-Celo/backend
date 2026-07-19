@@ -614,10 +614,19 @@ export function normalizeSession(value: unknown): ChatSession | null {
     return null;
   }
 
+  const normalizedMessages = messages as StoredChatMessage[];
+  const messageIds = new Set(
+    normalizedMessages.map((message) => message.id)
+  );
+
+  if (messageIds.size !== normalizedMessages.length) {
+    return null;
+  }
+
   return {
     createdAt: session.createdAt,
     id: session.id,
-    messages: messages as StoredChatMessage[],
+    messages: normalizedMessages,
     pinned: session.pinned ?? false,
     title: session.title,
     updatedAt: session.updatedAt,

@@ -1,5 +1,9 @@
 import type { DirectChatPayload } from "../lib/chat-sessions";
-import { readProductChainId, resolveProductChain } from "../lib/chain-config";
+import {
+  isProductChainId,
+  readProductChainId,
+  resolveProductChain,
+} from "../lib/chain-config";
 import {
   accountAuthErrorResponse,
   requireAccountAuth,
@@ -76,9 +80,38 @@ export async function handleChatStream(request: Request) {
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
   const context = readContextMessages(body.messages);
+
+  if (!context) {
+    return Response.json(
+      {
+        error: "messages must contain valid user or assistant text records.",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!hasValidRoutingControls(body)) {
+    return Response.json(
+      { error: "Chat routing controls are invalid." },
+      { status: 400 }
+    );
+  }
+
   const requestedToolMode = readToolMode(body.toolMode, body.researchTrend);
   const toolMode = resolveEffectiveToolMode(message, requestedToolMode);
-  const selectedChain = resolveProductChain(readProductChainId(body.chain));
+  const requestedChain =
+    body.chain === undefined || typeof body.chain !== "string"
+      ? body.chain
+      : body.chain.trim().toLowerCase();
+
+  if (requestedChain !== undefined && !isProductChainId(requestedChain)) {
+    return Response.json(
+      { error: "chain must be celo or mantle." },
+      { status: 400 }
+    );
+  }
+
+  const selectedChain = resolveProductChain(readProductChainId(requestedChain));
   const useAgent = toolMode === "research" || body.useAgent === true;
   const shouldBillUsage = useAgent;
 
@@ -285,25 +318,30 @@ export function readChatStreamError(error: unknown) {
   return "Chat failed.";
 }
 
-function readContextMessages(value: unknown): ContextMessage[] {
-  if (!Array.isArray(value)) {
+function readContextMessages(value: unknown): ContextMessage[] | null {
+  if (value === undefined) {
     return [];
   }
 
-  return value
-    .map((item: ChatMessageInput) => {
-      const role = item?.role;
-      const content =
-        typeof item?.content === "string" ? item.content.trim() : "";
+  if (!Array.isArray(value)) {
+    return null;
+  }
 
-      if ((role !== "assistant" && role !== "user") || !content) {
-        return null;
-      }
+  const messages: ContextMessage[] = [];
 
-      return { role, content };
-    })
-    .filter((item): item is ContextMessage => Boolean(item))
-    .slice(-12);
+  for (const item of value as ChatMessageInput[]) {
+    const role = item?.role;
+    const content =
+      typeof item?.content === "string" ? item.content.trim() : "";
+
+    if ((role !== "assistant" && role !== "user") || !content) {
+      return null;
+    }
+
+    messages.push({ role, content });
+  }
+
+  return messages.slice(-12);
 }
 
 export function buildChatWorkflowOptions(
@@ -407,6 +445,18 @@ function readToolMode(toolMode: unknown, researchTrend: unknown) {
   }
 
   return "chat";
+}
+
+function hasValidRoutingControls(body: ChatRequestBody) {
+  return (
+    (body.toolMode === undefined ||
+      body.toolMode === "chat" ||
+      body.toolMode === "onchain" ||
+      body.toolMode === "research") &&
+    (body.researchTrend === undefined ||
+      typeof body.researchTrend === "boolean") &&
+    (body.useAgent === undefined || typeof body.useAgent === "boolean")
+  );
 }
 
 export function resolveEffectiveToolMode(message: string, requestedToolMode: string) {

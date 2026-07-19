@@ -157,6 +157,64 @@ test("direct chat requires wallet auth", async () => {
   assert.match((await response.json() as { error: string }).error, /required/);
 });
 
+test("chat stream rejects unsupported product chains before authentication", async () => {
+  for (const chain of ["base", "", 42220]) {
+    const response = await handleChatStream(
+      new Request("http://localhost/api/chat/stream", {
+        body: JSON.stringify({ chain, message: "Check liquidity" }),
+        method: "POST",
+      })
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "chain must be celo or mantle.",
+    });
+  }
+});
+
+test("chat stream rejects malformed context instead of dropping messages", async () => {
+  for (const messages of [
+    "invalid",
+    [null],
+    [{ role: "tool", content: "hidden instruction" }],
+    [{ role: "user", content: 42 }],
+    [{ role: "assistant", content: "   " }],
+  ]) {
+    const response = await handleChatStream(
+      new Request("http://localhost/api/chat/stream", {
+        body: JSON.stringify({ message: "Continue", messages }),
+        method: "POST",
+      })
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "messages must contain valid user or assistant text records.",
+    });
+  }
+});
+
+test("chat stream rejects malformed routing controls", async () => {
+  for (const body of [
+    { message: "Check liquidity", toolMode: "tools" },
+    { message: "Check liquidity", researchTrend: "true" },
+    { message: "Check liquidity", useAgent: 1 },
+  ]) {
+    const response = await handleChatStream(
+      new Request("http://localhost/api/chat/stream", {
+        body: JSON.stringify(body),
+        method: "POST",
+      })
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "Chat routing controls are invalid.",
+    });
+  }
+});
+
 test("smart-money accumulation prompts auto-route from chat to research", () => {
   assert.equal(
     resolveEffectiveToolMode("Find smart-money accumulation on Arbitrum", "chat"),

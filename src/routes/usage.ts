@@ -1,5 +1,5 @@
 import type { WalletAuthInput } from "../lib/server/wallet-auth";
-import { readProductChainId } from "../lib/chain-config";
+import { isProductChainId, readProductChainId } from "../lib/chain-config";
 import {
   buildUsageVaultInfo,
   buildUsageQuote,
@@ -127,7 +127,23 @@ async function readUsageBody(request?: Request) {
       );
     }
 
-    return body as UsageRequestBody;
+    const usageBody = body as UsageRequestBody;
+    const normalizedChain =
+      typeof usageBody.chain === "string"
+        ? usageBody.chain.trim().toLowerCase()
+        : usageBody.chain;
+
+    if (
+      normalizedChain !== undefined &&
+      !isProductChainId(normalizedChain)
+    ) {
+      return Response.json(
+        { error: "chain must be celo or mantle." },
+        { status: 400 }
+      );
+    }
+
+    return { ...usageBody, chain: normalizedChain };
   } catch {
     return Response.json(
       { error: "Request body must be valid JSON." },

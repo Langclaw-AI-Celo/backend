@@ -9,8 +9,10 @@ import {
 } from "viem";
 import {
   getProductChain,
+  isProductChainId,
   readChainEnv,
   readProductChainId,
+  type ProductChainId,
 } from "../lib/chain-config";
 import { buildProofReadinessReport } from "../lib/proof-readiness";
 
@@ -76,14 +78,31 @@ export async function handleProofDecisions(request: Request) {
       );
     }
 
-    chain = getProductChain(readProductChainId((body as { chain?: unknown }).chain));
-    const requestedLimit =
-      body && typeof body === "object" && "limit" in body
-        ? Number((body as { limit?: unknown }).limit)
-        : limit;
+    const chainInput = readProofChainInput(
+      (body as { chain?: unknown }).chain
+    );
 
-    if (Number.isFinite(requestedLimit) && requestedLimit > 0) {
-      limit = Math.min(Math.trunc(requestedLimit), 100);
+    if (chainInput === null) {
+      return invalidProofChainResponse();
+    }
+
+    chain = getProductChain(readProductChainId(chainInput));
+    if ("limit" in body) {
+      const requestedLimit = (body as { limit?: unknown }).limit;
+
+      if (
+        typeof requestedLimit !== "number" ||
+        !Number.isFinite(requestedLimit) ||
+        !Number.isInteger(requestedLimit) ||
+        requestedLimit <= 0
+      ) {
+        return Response.json(
+          { error: "limit must be a positive integer." },
+          { status: 400 }
+        );
+      }
+
+      limit = Math.min(requestedLimit, 100);
     }
   } catch {
     return Response.json(
@@ -172,7 +191,15 @@ export async function handleProofReadiness(request: Request) {
       );
     }
 
-    body = value as { chain?: unknown };
+    const chainInput = readProofChainInput(
+      (value as { chain?: unknown }).chain
+    );
+
+    if (chainInput === null) {
+      return invalidProofChainResponse();
+    }
+
+    body = { chain: chainInput };
   } catch {
     return Response.json(
       { error: "Request body must be valid JSON." },
@@ -269,4 +296,22 @@ function readChainId(chain: ReturnType<typeof getProductChain>) {
 
 function trimSlash(value: string) {
   return value.replace(/\/+$/, "");
+}
+
+function readProofChainInput(value: unknown): ProductChainId | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized =
+    typeof value === "string" ? value.trim().toLowerCase() : value;
+
+  return isProductChainId(normalized) ? normalized : null;
+}
+
+function invalidProofChainResponse() {
+  return Response.json(
+    { error: "chain must be celo or mantle." },
+    { status: 400 }
+  );
 }

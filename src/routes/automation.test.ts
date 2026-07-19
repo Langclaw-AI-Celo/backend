@@ -56,6 +56,30 @@ test("automation routes reject non-object JSON bodies", async () => {
   }
 });
 
+test("automation routes reject malformed nested input objects", async () => {
+  const cases = [
+    [handleAutomationTasks, { action: "create", task: "invalid" }, "task"],
+    [handleAutomationTasks, { action: "update", task: [] }, "task"],
+    [handleAutomationSettings, { action: "update", settings: "invalid" }, "settings"],
+    [handleAutomationSettings, { action: "update", settings: null }, "settings"],
+  ] as const;
+
+  for (const [handler, body, field] of cases) {
+    const response = await handler(
+      new Request("http://localhost/api/automation", {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: `${field} must be a JSON object.`,
+    });
+  }
+});
+
 test("automation routes keep every supported action behind account authentication", async () => {
   const cases = [
     {
