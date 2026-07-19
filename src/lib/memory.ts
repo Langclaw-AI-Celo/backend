@@ -438,7 +438,7 @@ function normalizeMemoryInput(input: MemoryInput) {
 
   return {
     category: readMemoryCategory(input.category, "Preference"),
-    confidence: readInteger(input.confidence, 80, 0, 100),
+    confidence: readConfidence(input.confidence),
     lastUsed: readOptionalDate(input.lastUsed),
     memory,
     scope: readOptionalString(input.scope, 120) ?? "Global",
@@ -562,17 +562,24 @@ function readRetentionDays(value: unknown, fallback: number) {
   return value;
 }
 
-function readInteger(
-  value: unknown,
-  fallback: number,
-  min: number,
-  max: number
-) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return fallback;
+function readConfidence(value: unknown) {
+  if (value === undefined) {
+    return 80;
   }
 
-  return Math.min(Math.max(Math.trunc(value), min), max);
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value > 100
+  ) {
+    throw new MemoryHttpError(
+      400,
+      "confidence must be an integer from 0 to 100."
+    );
+  }
+
+  return value;
 }
 
 function readOptionalString(value: unknown, maxLength: number) {

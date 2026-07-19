@@ -325,7 +325,7 @@ test("memory creation normalizes input and persists wallet ownership", async () 
 
   const memory = await createMemory(buildMemoryAccount(supabase), {
     category: "API",
-    confidence: 140,
+    confidence: 100,
     lastUsed: "2026-07-18T09:30:00.000Z",
     memory: "  Prefer Celo proof routes  ",
     scope: "  Langclaw  ",
@@ -396,6 +396,27 @@ test("memory creation rejects an invalid last-used timestamp", async () => {
       error.status === 400 &&
       error.message === "lastUsed must be a valid timestamp.",
   );
+});
+
+test("memory creation rejects invalid confidence values", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+
+  for (const confidence of ["80", 80.5, -1, 101]) {
+    await assert.rejects(
+      createMemory(account, {
+        confidence,
+        memory: "Keep proof records",
+      }),
+      (error: unknown) =>
+        error instanceof MemoryHttpError &&
+        error.status === 400 &&
+        error.message === "confidence must be an integer from 0 to 100.",
+    );
+  }
 });
 
 test("memory settings surface persistence failures after normalization", async () => {
