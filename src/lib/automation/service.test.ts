@@ -762,6 +762,35 @@ test("automation settings reject invalid 0G amounts", async () => {
   }
 });
 
+test("automation settings enforce stored 0G amount precision", async () => {
+  const oversized = `1${"0".repeat(60)}`;
+
+  for (const field of [
+    "dailyLimit0G",
+    "lowBalanceThreshold0G",
+    "monthlyCap0G",
+  ] as const) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationSettings(buildAccount(storage.supabase), {
+        [field]: oversized,
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === `${field} exceeds the supported 0G amount.`,
+    );
+  }
+
+  const boundaryStorage = buildAutomationStorage("active");
+  await updateAutomationSettings(buildAccount(boundaryStorage.supabase), {
+    dailyLimit0G: `${"9".repeat(60)}.${"9".repeat(18)}`,
+  });
+
+  assert.equal(boundaryStorage.settings.daily_limit_neuron, "9".repeat(78));
+});
+
 test("marks one or all in-app automation notifications as read", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);

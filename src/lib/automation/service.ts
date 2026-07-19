@@ -75,6 +75,7 @@ type TelegramLinkCandidate = {
 
 const defaultTimezone = "Asia/Jakarta";
 const neuronPer0G = 1_000_000_000_000_000_000n;
+const maxStoredNeuron = 10n ** 78n - 1n;
 const defaultTelegramBotUsername = "langclawaibot";
 
 export class AutomationHttpError extends Error {
@@ -2451,6 +2452,13 @@ function read0GAmount(value: unknown, fallback: string, field: string) {
     throw new AutomationHttpError(
       400,
       `${field} must be a non-negative decimal with up to 18 fractional digits.`
+    );
+  }
+
+  if (BigInt(parse0GToNeuron(raw)) > maxStoredNeuron) {
+    throw new AutomationHttpError(
+      400,
+      `${field} exceeds the supported 0G amount.`,
     );
   }
 
