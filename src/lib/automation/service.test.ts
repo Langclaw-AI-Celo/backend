@@ -77,13 +77,20 @@ test("automation error responses preserve safe HTTP status and messages", async 
   const invalid = automationErrorResponse(
     new AutomationHttpError(400, "Invalid automation input.")
   );
+  const storage = automationErrorResponse(
+    new AutomationHttpError(500, "duplicate key value exposes table name"),
+  );
   const failed = automationErrorResponse(new Error("Storage unavailable."));
   const unknown = automationErrorResponse("unexpected");
 
   assert.equal(invalid.status, 400);
   assert.deepEqual(await invalid.json(), { error: "Invalid automation input." });
+  assert.equal(storage.status, 500);
+  assert.deepEqual(await storage.json(), {
+    error: "Automation request failed.",
+  });
   assert.equal(failed.status, 500);
-  assert.deepEqual(await failed.json(), { error: "Storage unavailable." });
+  assert.deepEqual(await failed.json(), { error: "Automation request failed." });
   assert.deepEqual(await unknown.json(), {
     error: "Automation request failed.",
   });
