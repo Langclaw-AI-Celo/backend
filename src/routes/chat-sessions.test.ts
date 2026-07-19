@@ -91,6 +91,22 @@ test("chat session normalization rejects invalid timestamps", () => {
   assert.equal(normalizeSession({ ...baseSession, updatedAt: "invalid" }), null);
 });
 
+test("chat session normalization rejects unsupported message context", () => {
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-context",
+    title: "Message context",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+
+  for (const message of [
+    { chain: "ethereum", content: "Hello", id: "message-chain", role: "user" },
+    { content: "Hello", id: "message-mode", mode: "tool", role: "assistant" },
+  ]) {
+    assert.equal(normalizeSession({ ...baseSession, messages: [message] }), null);
+  }
+});
+
 test("chat session metadata accepts omitted titles and rejects invalid values", () => {
   assert.deepEqual(readOptionalTitle(undefined), {});
   assert.deepEqual(readOptionalTitle(42), { error: "title must be a string." });

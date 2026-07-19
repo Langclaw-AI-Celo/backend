@@ -654,7 +654,14 @@ function normalizeMessage(value: unknown): StoredChatMessage | null {
     typeof message.id !== "string" ||
     !message.id.trim() ||
     (message.role !== "assistant" && message.role !== "user") ||
-    typeof message.content !== "string"
+    typeof message.content !== "string" ||
+    (message.chain !== undefined &&
+      message.chain !== "celo" &&
+      message.chain !== "mantle") ||
+    (message.mode !== undefined &&
+      message.mode !== "chat" &&
+      message.mode !== "onchain" &&
+      message.mode !== "research")
   ) {
     return null;
   }
