@@ -41,3 +41,31 @@ test("proof readiness rejects malformed JSON before RPC checks", async () => {
     },
   );
 });
+
+test("proof routes reject non-object JSON before chain access", async () => {
+  await withEnv(
+    {
+      CELO_CHAIN_RPC_URL: "http://127.0.0.1:1",
+      LANGCLAW_REGISTRY_ADDRESS: "",
+      MANTLE_LANGCLAW_REGISTRY_ADDRESS: "",
+    },
+    async () => {
+      for (const handler of [handleProofDecisions, handleProofReadiness]) {
+        for (const body of [null, [], "invalid"]) {
+          const response = await handler(
+            new Request("http://localhost/api/proofs", {
+              body: JSON.stringify(body),
+              headers: { "content-type": "application/json" },
+              method: "POST",
+            }),
+          );
+
+          assert.equal(response.status, 400);
+          assert.deepEqual(await response.json(), {
+            error: "Request body must be a JSON object.",
+          });
+        }
+      }
+    },
+  );
+});
