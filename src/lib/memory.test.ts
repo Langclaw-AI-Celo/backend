@@ -379,6 +379,30 @@ test("memory creation rejects an unsupported status", async () => {
   );
 });
 
+test("memory creation rejects malformed optional text fields", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+
+  for (const [field, value] of [
+    ["scope", 42],
+    ["source", {}],
+  ] as const) {
+    await assert.rejects(
+      createMemory(account, {
+        memory: "Keep proof records",
+        [field]: value,
+      }),
+      (error: unknown) =>
+        error instanceof MemoryHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a string.`,
+    );
+  }
+});
+
 test("memory creation rejects an invalid last-used timestamp", async () => {
   const account = buildMemoryAccount({
     from() {
