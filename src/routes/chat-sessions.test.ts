@@ -290,6 +290,23 @@ test("chat session routes validate mutation inputs after authentication", async 
             error: "sessionId is required.",
           },
           {
+            body: { action: "get", sessionId: "   ", wallet },
+            error: "sessionId is required.",
+          },
+          {
+            body: { action: "delete", sessionId: "\n\t", wallet },
+            error: "sessionId is required.",
+          },
+          {
+            body: {
+              action: "update",
+              sessionId: "   ",
+              title: "Updated title",
+              wallet,
+            },
+            error: "sessionId is required.",
+          },
+          {
             body: {
               action: "update",
               sessionId: "session-id",

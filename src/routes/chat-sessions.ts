@@ -111,7 +111,7 @@ export async function handleChatSessions(request: Request) {
   }
 
   if (body.action === "get") {
-    const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+    const sessionId = readSessionId(body.sessionId);
 
     if (!sessionId) {
       return Response.json(
@@ -139,7 +139,7 @@ export async function handleChatSessions(request: Request) {
   }
 
   if (body.action === "delete") {
-    const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+    const sessionId = readSessionId(body.sessionId);
 
     if (!sessionId) {
       return Response.json(
@@ -182,7 +182,7 @@ export async function handleChatSessions(request: Request) {
   }
 
   if (body.action === "update") {
-    const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+    const sessionId = readSessionId(body.sessionId);
 
     if (!sessionId) {
       return Response.json(
@@ -641,6 +641,10 @@ export function readOptionalTitle(value: unknown): { error?: string; value?: str
   }
 
   return { value: title.length > 120 ? `${title.slice(0, 117)}...` : title };
+}
+
+function readSessionId(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : "";
 }
 
 function normalizeMessage(value: unknown): StoredChatMessage | null {
