@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   handleUsageBalance,
   handleUsageDepositVerify,
+  handleUsageQuote,
+  handleUsageVaultInfo,
   handleUsageWithdrawRequest,
 } from "./usage";
 
@@ -11,6 +13,8 @@ test("usage routes reject malformed JSON before service calls", async () => {
   for (const handler of [
     handleUsageBalance,
     handleUsageDepositVerify,
+    handleUsageQuote,
+    handleUsageVaultInfo,
     handleUsageWithdrawRequest,
   ]) {
     const response = await handler(

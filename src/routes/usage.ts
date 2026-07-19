@@ -41,10 +41,20 @@ export async function handleUsageBalance(request: Request) {
 }
 
 export async function handleUsageQuote(request?: Request) {
+  let body: UsageRequestBody = {};
+
   try {
-    const body = request ? await request.json().catch(() => ({})) : {};
+    body = request ? (await request.json()) as UsageRequestBody : {};
+  } catch {
+    return Response.json(
+      { error: "Request body must be valid JSON." },
+      { status: 400 }
+    );
+  }
+
+  try {
     const quote = await buildUsageQuote({
-      chain: readProductChainId((body as UsageRequestBody).chain),
+      chain: readProductChainId(body.chain),
     });
 
     return Response.json({
@@ -57,9 +67,19 @@ export async function handleUsageQuote(request?: Request) {
 }
 
 export async function handleUsageVaultInfo(request?: Request) {
+  let body: UsageRequestBody = {};
+
   try {
-    const body = request ? await request.json().catch(() => ({})) : {};
-    const vault = buildUsageVaultInfo(readProductChainId((body as UsageRequestBody).chain));
+    body = request ? (await request.json()) as UsageRequestBody : {};
+  } catch {
+    return Response.json(
+      { error: "Request body must be valid JSON." },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const vault = buildUsageVaultInfo(readProductChainId(body.chain));
 
     return Response.json(vault);
   } catch (error) {
