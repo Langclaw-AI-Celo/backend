@@ -55,6 +55,32 @@ test("chat session routes reject malformed JSON and unauthenticated requests", a
   );
 });
 
+test("chat session routes reject non-object JSON before authentication", async () => {
+  await withEnv(
+    {
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+      SUPABASE_URL: "https://supabase.test",
+    },
+    async () => {
+      for (const body of [null, [], "invalid"]) {
+        const response = await handleChatSessions(
+          new Request("http://localhost/api/chat/sessions", {
+            body: JSON.stringify(body),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+          }),
+        );
+
+        assert.equal(response.status, 400);
+        assert.deepEqual(await response.json(), {
+          configured: true,
+          error: "Request body must be a JSON object.",
+        });
+      }
+    },
+  );
+});
+
 test("chat session routes validate mutation inputs after authentication", async () => {
   const restoreFetch = mockFetch((url) => {
     assert.match(new URL(url).pathname, /\/langclaw_wallet_users$/);

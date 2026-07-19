@@ -59,7 +59,16 @@ export async function handleChatSessions(request: Request) {
   let body: ChatSessionsBody;
 
   try {
-    body = (await request.json()) as ChatSessionsBody;
+    const value = await request.json();
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return Response.json(
+        { configured: true, error: "Request body must be a JSON object." },
+        { status: 400 }
+      );
+    }
+
+    body = value as ChatSessionsBody;
   } catch {
     return Response.json(
       { configured: true, error: "Request body must be valid JSON." },
