@@ -249,6 +249,22 @@ async function readStrategyBody(
       };
     }
 
+    if (
+      !isValidOptionalPositiveNumber(strategyBody.limit) ||
+      !isValidOptionalPositiveNumber(strategyBody.notionalUsd)
+    ) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "limit and notionalUsd must be positive finite numbers when provided.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
     return strategyBody;
   } catch {
     return {
@@ -296,6 +312,23 @@ function isValidOptionalChain(value: unknown) {
   return Object.values(productChains).some(
     (chain) => chain.id === normalized || chain.aliases.includes(normalized)
   );
+}
+
+function isValidOptionalPositiveNumber(value: unknown) {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (
+    typeof value !== "number" &&
+    (typeof value !== "string" || !value.trim())
+  ) {
+    return false;
+  }
+
+  const parsed = typeof value === "number" ? value : Number(value);
+
+  return Number.isFinite(parsed) && parsed > 0;
 }
 
 function strategyErrorResponse(error: unknown) {
