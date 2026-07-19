@@ -284,6 +284,19 @@ async function readStrategyBody(
       };
     }
 
+    if (!hasConsistentBacktestChain(strategyBody.backtest, strategyBody.chain)) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "backtest chain metadata must match the requested product chain.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
     return strategyBody;
   } catch {
     return {
@@ -377,6 +390,32 @@ function isValidPaperBacktest(value: unknown) {
       signal.confidence <= 100 &&
       isPositiveFiniteNumber(signal.priceUsd) &&
       isNonEmptyString(signal.rationale)
+  );
+}
+
+function hasConsistentBacktestChain(
+  backtestValue: unknown,
+  requestedChain: unknown
+) {
+  if (backtestValue === undefined) {
+    return true;
+  }
+
+  const backtest = readRecord(backtestValue);
+
+  if (!backtest || typeof backtest.chain !== "string") {
+    return false;
+  }
+
+  const backtestChain = readProductChainId(backtest.chain);
+  const requested = readProductChainId(requestedChain, backtestChain);
+  const config = productChains[backtestChain];
+
+  return (
+    requested === backtestChain &&
+    backtest.chain === config.id &&
+    backtest.chainId === config.chainId &&
+    backtest.chainName === config.name
   );
 }
 

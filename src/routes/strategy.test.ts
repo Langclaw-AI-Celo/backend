@@ -295,6 +295,31 @@ test("paper trades reject malformed backtest inputs before journal work", async 
   }
 });
 
+test("paper trades reject inconsistent backtest chain metadata", async () => {
+  const valid = paperBacktestInput();
+  const requests = [
+    { backtest: { ...valid, chainId: 5000 } },
+    { backtest: { ...valid, chainName: "Mantle" } },
+    { backtest: valid, chain: "mantle" },
+  ];
+
+  for (const body of requests) {
+    const response = await handleStrategyPaperTrade(
+      new Request("http://localhost/api/strategy/paper-trade", {
+        body: JSON.stringify(body),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      configured: false,
+      error: "backtest chain metadata must match the requested product chain.",
+    });
+  }
+});
+
 test("strategy routes redact unexpected provider failures", async (t) => {
   const originalFetch = globalThis.fetch;
   const originalApiKey = process.env.DUNE_API_KEY;
