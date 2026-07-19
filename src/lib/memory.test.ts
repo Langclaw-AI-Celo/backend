@@ -138,6 +138,11 @@ test("bulk memory status validation rejects missing ids and unsupported states",
   for (const [memoryIds, status, message] of [
     [undefined, "active", "memoryIds are required."],
     [[], "active", "At least one memory id is required."],
+    [
+      ["memory-1", 42],
+      "active",
+      "memoryIds must contain only non-empty strings.",
+    ],
     [["memory-1"], "archived", "A valid memory status is required."],
   ] as const) {
     await assert.rejects(
@@ -188,7 +193,7 @@ test("bulk memory status updates trim and deduplicate ids", async () => {
         walletUser,
       },
     },
-    [" memory-1 ", "memory-1", "", 42, "memory-2"],
+    [" memory-1 ", "memory-1", "memory-2"],
     "disabled",
   );
 
@@ -320,7 +325,7 @@ test("memory creation normalizes input and persists wallet ownership", async () 
 
   const memory = await createMemory(buildMemoryAccount(supabase), {
     category: "API",
-    confidence: 140,
+    confidence: 100,
     lastUsed: "2026-07-18T09:30:00.000Z",
     memory: "  Prefer Celo proof routes  ",
     scope: "  Langclaw  ",
@@ -334,6 +339,84 @@ test("memory creation normalizes input and persists wallet ownership", async () 
   assert.equal(memory.lastUsed, "2026-07-18");
   assert.equal(inserted?.wallet_user_id, walletUser.id);
   assert.deepEqual(inserted?.metadata, {});
+});
+
+test("memory creation rejects an unsupported category", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+
+  await assert.rejects(
+    createMemory(account, {
+      category: "Security",
+      memory: "Keep proof records",
+    }),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 400 &&
+      error.message === "A valid memory category is required.",
+  );
+});
+
+test("memory creation rejects an unsupported status", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+
+  await assert.rejects(
+    createMemory(account, {
+      memory: "Keep proof records",
+      status: "archived",
+    }),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 400 &&
+      error.message === "A valid memory status is required.",
+  );
+});
+
+test("memory creation rejects an invalid last-used timestamp", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+
+  await assert.rejects(
+    createMemory(account, {
+      lastUsed: "not-a-date",
+      memory: "Keep proof records",
+    }),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 400 &&
+      error.message === "lastUsed must be a valid timestamp.",
+  );
+});
+
+test("memory creation rejects invalid confidence values", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+
+  for (const confidence of ["80", 80.5, -1, 101]) {
+    await assert.rejects(
+      createMemory(account, {
+        confidence,
+        memory: "Keep proof records",
+      }),
+      (error: unknown) =>
+        error instanceof MemoryHttpError &&
+        error.status === 400 &&
+        error.message === "confidence must be an integer from 0 to 100.",
+    );
+  }
 });
 
 test("memory settings surface persistence failures after normalization", async () => {
@@ -377,7 +460,7 @@ test("memory settings surface persistence failures after normalization", async (
   await assert.rejects(
     updateMemorySettings(buildMemoryAccount(supabase), {
       captureEnabled: false,
-      retentionDays: 9999,
+      retentionDays: 3650,
     }),
     (error: unknown) =>
       error instanceof MemoryHttpError &&
@@ -388,6 +471,80 @@ test("memory settings surface persistence failures after normalization", async (
   assert.equal(updatePayload?.capture_enabled, false);
   assert.equal(updatePayload?.retention_days, 3650);
   assert.equal(updatePayload?.cross_chat_recall, true);
+});
+
+test("memory settings reject malformed boolean fields", async () => {
+  for (const field of [
+    "autoDisableLowConfidence",
+    "captureEnabled",
+    "crossChatRecall",
+    "projectScopedRecall",
+  ] as const) {
+    const settingsRow = buildMemorySettingsRow();
+    const supabase = {
+      from(table: string) {
+        assert.equal(table, "langclaw_memory_settings");
+        return {
+          update() {
+            throw new Error("validation should finish before updating storage");
+          },
+          upsert() {
+            return {
+              select() {
+                return {
+                  single: () =>
+                    Promise.resolve({ data: settingsRow, error: null }),
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+
+    await assert.rejects(
+      updateMemorySettings(buildMemoryAccount(supabase), { [field]: "false" }),
+      (error: unknown) =>
+        error instanceof MemoryHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a boolean.`,
+    );
+  }
+});
+
+test("memory settings reject invalid retention days", async () => {
+  for (const retentionDays of ["90", 90.5, -1, 3651]) {
+    const settingsRow = buildMemorySettingsRow();
+    const supabase = {
+      from(table: string) {
+        assert.equal(table, "langclaw_memory_settings");
+        return {
+          update() {
+            throw new Error("validation should finish before updating storage");
+          },
+          upsert() {
+            return {
+              select() {
+                return {
+                  single: () =>
+                    Promise.resolve({ data: settingsRow, error: null }),
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+
+    await assert.rejects(
+      updateMemorySettings(buildMemoryAccount(supabase), { retentionDays }),
+      (error: unknown) =>
+        error instanceof MemoryHttpError &&
+        error.status === 400 &&
+        error.message ===
+          "retentionDays must be an integer from 0 to 3650.",
+    );
+  }
 });
 
 test("automation memory persistence honors capture and confidence settings", async () => {

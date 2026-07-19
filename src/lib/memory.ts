@@ -438,7 +438,7 @@ function normalizeMemoryInput(input: MemoryInput) {
 
   return {
     category: readMemoryCategory(input.category, "Preference"),
-    confidence: readInteger(input.confidence, 80, 0, 100),
+    confidence: readConfidence(input.confidence),
     lastUsed: readOptionalDate(input.lastUsed),
     memory,
     scope: readOptionalString(input.scope, 120) ?? "Global",
@@ -454,15 +454,25 @@ function normalizeMemorySettingsInput(
   return {
     autoDisableLowConfidence: readBoolean(
       input.autoDisableLowConfidence,
-      fallback.autoDisableLowConfidence
+      fallback.autoDisableLowConfidence,
+      "autoDisableLowConfidence"
     ),
-    captureEnabled: readBoolean(input.captureEnabled, fallback.captureEnabled),
-    crossChatRecall: readBoolean(input.crossChatRecall, fallback.crossChatRecall),
+    captureEnabled: readBoolean(
+      input.captureEnabled,
+      fallback.captureEnabled,
+      "captureEnabled"
+    ),
+    crossChatRecall: readBoolean(
+      input.crossChatRecall,
+      fallback.crossChatRecall,
+      "crossChatRecall"
+    ),
     projectScopedRecall: readBoolean(
       input.projectScopedRecall,
-      fallback.projectScopedRecall
+      fallback.projectScopedRecall,
+      "projectScopedRecall"
     ),
-    retentionDays: readInteger(input.retentionDays, fallback.retentionDays, 0, 3650),
+    retentionDays: readRetentionDays(input.retentionDays, fallback.retentionDays),
     updatedAt: fallback.updatedAt,
   };
 }
@@ -480,14 +490,14 @@ function readMemoryIds(value: unknown) {
     throw new MemoryHttpError(400, "memoryIds are required.");
   }
 
-  const ids = Array.from(
-    new Set(
-      value
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean)
-    )
-  );
+  if (value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new MemoryHttpError(
+      400,
+      "memoryIds must contain only non-empty strings."
+    );
+  }
+
+  const ids = Array.from(new Set((value as string[]).map((item) => item.trim())));
 
   if (!ids.length) {
     throw new MemoryHttpError(400, "At least one memory id is required.");
@@ -497,40 +507,79 @@ function readMemoryIds(value: unknown) {
 }
 
 function readMemoryCategory(value: unknown, fallback: MemoryCategory) {
+  if (value === undefined) {
+    return fallback;
+  }
+
   if (typeof value === "string" && memoryCategories.includes(value as MemoryCategory)) {
     return value as MemoryCategory;
   }
 
-  return fallback;
+  throw new MemoryHttpError(400, "A valid memory category is required.");
 }
 
 function readMemoryStatus(value: unknown, fallback?: MemoryStatus) {
-  if (typeof value === "string" && memoryStatuses.includes(value as MemoryStatus)) {
-    return value as MemoryStatus;
+  if (value === undefined && fallback) {
+    return fallback;
   }
 
-  if (fallback) {
-    return fallback;
+  if (typeof value === "string" && memoryStatuses.includes(value as MemoryStatus)) {
+    return value as MemoryStatus;
   }
 
   throw new MemoryHttpError(400, "A valid memory status is required.");
 }
 
-function readBoolean(value: unknown, fallback: boolean) {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function readInteger(
-  value: unknown,
-  fallback: number,
-  min: number,
-  max: number
-) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+function readBoolean(value: unknown, fallback: boolean, field: string) {
+  if (value === undefined) {
     return fallback;
   }
 
-  return Math.min(Math.max(Math.trunc(value), min), max);
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  throw new MemoryHttpError(400, `${field} must be a boolean.`);
+}
+
+function readRetentionDays(value: unknown, fallback: number) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value > 3650
+  ) {
+    throw new MemoryHttpError(
+      400,
+      "retentionDays must be an integer from 0 to 3650."
+    );
+  }
+
+  return value;
+}
+
+function readConfidence(value: unknown) {
+  if (value === undefined) {
+    return 80;
+  }
+
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value > 100
+  ) {
+    throw new MemoryHttpError(
+      400,
+      "confidence must be an integer from 0 to 100."
+    );
+  }
+
+  return value;
 }
 
 function readOptionalString(value: unknown, maxLength: number) {
@@ -548,14 +597,18 @@ function readOptionalString(value: unknown, maxLength: number) {
 }
 
 function readOptionalDate(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) {
+  if (value === undefined) {
     return undefined;
   }
 
-  const date = new Date(value);
+  if (typeof value !== "string" || !value.trim()) {
+    throw new MemoryHttpError(400, "lastUsed must be a valid timestamp.");
+  }
+
+  const date = new Date(value.trim());
 
   if (Number.isNaN(date.getTime())) {
-    return undefined;
+    throw new MemoryHttpError(400, "lastUsed must be a valid timestamp.");
   }
 
   return date.toISOString();
