@@ -661,7 +661,8 @@ function normalizeMessage(value: unknown): StoredChatMessage | null {
     (message.mode !== undefined &&
       message.mode !== "chat" &&
       message.mode !== "onchain" &&
-      message.mode !== "research")
+      message.mode !== "research") ||
+    (message.stopped !== undefined && typeof message.stopped !== "boolean")
   ) {
     return null;
   }
@@ -688,6 +689,6 @@ function normalizeMessage(value: unknown): StoredChatMessage | null {
       : undefined,
     result: message.result,
     role: message.role,
-    stopped: Boolean(message.stopped),
+    stopped: message.stopped ?? false,
   };
 }
