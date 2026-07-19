@@ -497,11 +497,15 @@ function readMemoryIds(value: unknown) {
 }
 
 function readMemoryCategory(value: unknown, fallback: MemoryCategory) {
+  if (value === undefined) {
+    return fallback;
+  }
+
   if (typeof value === "string" && memoryCategories.includes(value as MemoryCategory)) {
     return value as MemoryCategory;
   }
 
-  return fallback;
+  throw new MemoryHttpError(400, "A valid memory category is required.");
 }
 
 function readMemoryStatus(value: unknown, fallback?: MemoryStatus) {

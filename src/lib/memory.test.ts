@@ -336,6 +336,25 @@ test("memory creation normalizes input and persists wallet ownership", async () 
   assert.deepEqual(inserted?.metadata, {});
 });
 
+test("memory creation rejects an unsupported category", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+
+  await assert.rejects(
+    createMemory(account, {
+      category: "Security",
+      memory: "Keep proof records",
+    }),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 400 &&
+      error.message === "A valid memory category is required.",
+  );
+});
+
 test("memory settings surface persistence failures after normalization", async () => {
   let updatePayload: Record<string, unknown> | undefined;
   const settingsRow = buildMemorySettingsRow();
