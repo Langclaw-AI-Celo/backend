@@ -127,6 +127,122 @@ test("automation task inputs reject missing identifiers and required fields", as
   );
 });
 
+test("automation tasks reject unsupported trigger types", async () => {
+  const storage = buildAutomationStorage("active");
+
+  await assert.rejects(
+    createAutomationTask(buildAccount(storage.supabase), {
+      name: "Invalid trigger",
+      triggerType: "interval",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      error.message === "triggerType must be one of: schedule, event, webhook.",
+  );
+});
+
+test("scheduled tasks reject unsupported frequencies", async () => {
+  const storage = buildAutomationStorage("active");
+
+  await assert.rejects(
+    createAutomationTask(buildAccount(storage.supabase), {
+      name: "Invalid frequency",
+      scheduleFrequency: "hourly",
+      triggerType: "schedule",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      error.message === "scheduleFrequency must be one of: daily, weekly, monthly.",
+  );
+});
+
+test("scheduled tasks reject invalid schedule times", async () => {
+  for (const scheduleTime of ["24:00", "8:30", 930]) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      createAutomationTask(buildAccount(storage.supabase), {
+        name: "Invalid time",
+        scheduleTime,
+        triggerType: "schedule",
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === "scheduleTime must use 24-hour HH:MM format.",
+    );
+  }
+});
+
+test("scheduled tasks reject invalid calendar positions", async () => {
+  const cases = [
+    ["scheduleMonthDay", 32, "scheduleMonthDay must be an integer between 1 and 31."],
+    ["scheduleMonthDay", 1.5, "scheduleMonthDay must be an integer between 1 and 31."],
+    ["scheduleWeekday", 7, "scheduleWeekday must be an integer between 0 and 6."],
+    ["scheduleWeekday", -1, "scheduleWeekday must be an integer between 0 and 6."],
+  ] as const;
+
+  for (const [field, value, message] of cases) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      createAutomationTask(buildAccount(storage.supabase), {
+        name: "Invalid calendar position",
+        [field]: value,
+        triggerType: "schedule",
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === message,
+    );
+  }
+});
+
+test("automation tasks reject unsupported statuses", async () => {
+  const createStorage = buildAutomationStorage("active");
+  await assert.rejects(
+    createAutomationTask(buildAccount(createStorage.supabase), {
+      name: "Invalid status",
+      status: "running",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      error.message === "status must be one of: draft, active, paused.",
+  );
+
+  const updateStorage = buildAutomationStorage("active");
+  await assert.rejects(
+    updateAutomationTask(buildAccount(updateStorage.supabase), "task-1", {
+      status: "running",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      error.message === "status must be one of: draft, active, paused.",
+  );
+});
+
+test("automation tasks reject invalid time zones", async () => {
+  for (const timezone of ["Mars/Olympus", 7]) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      createAutomationTask(buildAccount(storage.supabase), {
+        name: "Invalid time zone",
+        timezone,
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === "timezone must be a valid IANA time zone.",
+    );
+  }
+});
+
 test("automation link and trigger inputs reject malformed values", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);
@@ -336,6 +452,20 @@ test("reads the automation dashboard, runs, settings, and in-app notifications",
   assert.equal(notifications[0]?.status, "unread");
 });
 
+test("automation run filters reject invalid task identifiers", async () => {
+  for (const taskId of [null, "", 42]) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      readAutomationRuns(buildAccount(storage.supabase), taskId),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === "taskId is required.",
+    );
+  }
+});
+
 test("automation list limits reject non-integer values", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);
@@ -381,10 +511,7 @@ test("updates automation settings with explicit and default guardrails", async (
   const defaultsStorage = buildAutomationStorage("active");
   const defaults = await updateAutomationSettings(
     buildAccount(defaultsStorage.supabase),
-    {
-      notificationChannels: ["invalid" as "email"],
-      retryPolicy: "invalid" as "none",
-    }
+    {}
   );
 
   assert.equal(defaults.autoPauseRepeatedFailures, true);
@@ -392,6 +519,66 @@ test("updates automation settings with explicit and default guardrails", async (
   assert.deepEqual(defaults.notificationChannels, ["email"]);
   assert.equal(defaults.retryPolicy, "3-attempts");
   assert.equal(defaults.thresholdAction, "notify");
+});
+
+test("automation settings reject unsupported option values", async () => {
+  for (const field of [
+    "failureNotification",
+    "limitBehavior",
+    "retryPolicy",
+    "thresholdAction",
+  ] as const) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationSettings(buildAccount(storage.supabase), {
+        [field]: "invalid",
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message.startsWith(`${field} must be one of:`),
+    );
+  }
+});
+
+test("automation settings reject malformed notification channels", async () => {
+  for (const notificationChannels of [
+    "email",
+    ["email", "invalid"],
+  ]) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationSettings(buildAccount(storage.supabase), {
+        notificationChannels,
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message ===
+          "notificationChannels must contain only email, telegram, or in-app.",
+    );
+  }
+});
+
+test("automation settings reject non-boolean flags", async () => {
+  for (const field of [
+    "autoPauseRepeatedFailures",
+    "writeRunLogsToMemory",
+  ] as const) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationSettings(buildAccount(storage.supabase), {
+        [field]: "false",
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a boolean.`,
+    );
+  }
 });
 
 test("automation settings reject invalid 0G amounts", async () => {

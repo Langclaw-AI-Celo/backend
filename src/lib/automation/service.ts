@@ -375,11 +375,9 @@ export async function readAutomationRuns(
   taskId?: unknown
 ) {
   const context = await requireAutomationContext(authInput);
+  const taskFilter = taskId === undefined ? undefined : readTaskId(taskId);
 
-  return readAutomationRunsForContext(
-    context,
-    typeof taskId === "string" && taskId ? taskId : undefined
-  );
+  return readAutomationRunsForContext(context, taskFilter);
 }
 
 export async function readInAppAutomationNotifications(
@@ -1789,25 +1787,29 @@ function normalizeTaskInput(
     throw new AutomationHttpError(400, "Task name is required.");
   }
 
-  const triggerType = readEnum<AutomationTriggerType>(
+  const triggerType = readInputEnum<AutomationTriggerType>(
     input.triggerType,
     ["schedule", "event", "webhook"],
-    existing?.trigger_type ?? "schedule"
+    existing?.trigger_type ?? "schedule",
+    "triggerType"
   );
   const scheduleFrequency =
     triggerType === "schedule"
-      ? readEnum<AutomationFrequency>(
+      ? readInputEnum<AutomationFrequency>(
           input.scheduleFrequency,
           ["daily", "weekly", "monthly"],
-          existing?.schedule_frequency ?? "daily"
+          existing?.schedule_frequency ?? "daily",
+          "scheduleFrequency"
         )
       : undefined;
   const scheduleTime = readScheduleTime(
     input.scheduleTime,
     existing?.schedule_time ?? "09:00"
   );
-  const timezone =
-    readOptionalString(input.timezone, 80) || existing?.timezone || defaultTimezone;
+  const timezone = readTimezone(
+    input.timezone,
+    existing?.timezone || defaultTimezone
+  );
   const nowParts = getZonedParts(new Date(), timezone);
   const eventName =
     triggerType === "event"
@@ -1832,18 +1834,34 @@ function normalizeTaskInput(
     scheduleFrequency,
     scheduleMonthDay:
       triggerType === "schedule"
-        ? readInteger(input.scheduleMonthDay, existing?.schedule_month_day ?? nowParts.day, 1, 31)
+        ? readInteger(
+            input.scheduleMonthDay,
+            existing?.schedule_month_day ?? nowParts.day,
+            1,
+            31,
+            "scheduleMonthDay"
+          )
         : undefined,
     scheduleTime,
     scheduleWeekday:
       triggerType === "schedule"
-        ? readInteger(input.scheduleWeekday, existing?.schedule_weekday ?? nowParts.weekday, 0, 6)
+        ? readInteger(
+            input.scheduleWeekday,
+            existing?.schedule_weekday ?? nowParts.weekday,
+            0,
+            6,
+            "scheduleWeekday"
+          )
         : undefined,
-    status: readEnum<AutomationTaskStatus>(
-      input.status,
-      ["draft", "active", "paused"],
-      existing?.status
-    ),
+    status:
+      input.status === undefined
+        ? existing?.status
+        : readInputEnum<AutomationTaskStatus>(
+            input.status,
+            ["draft", "active", "paused"],
+            existing?.status ?? "draft",
+            "status"
+          ),
     timezone,
     triggerType,
   };
@@ -1851,17 +1869,24 @@ function normalizeTaskInput(
 
 function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSettings {
   return {
-    autoPauseRepeatedFailures:
-      typeof input.autoPauseRepeatedFailures === "boolean"
-        ? input.autoPauseRepeatedFailures
-        : true,
+    autoPauseRepeatedFailures: readSettingsBoolean(
+      input.autoPauseRepeatedFailures,
+      true,
+      "autoPauseRepeatedFailures"
+    ),
     dailyLimit0G: read0GAmount(input.dailyLimit0G, "25", "dailyLimit0G"),
-    failureNotification: readEnum(
+    failureNotification: readInputEnum(
       input.failureNotification,
       ["email", "in-app", "none"],
-      "email"
-    ) ?? "email",
-    limitBehavior: readEnum(input.limitBehavior, ["pause", "alert", "allow"], "pause") ?? "pause",
+      "email",
+      "failureNotification"
+    ),
+    limitBehavior: readInputEnum(
+      input.limitBehavior,
+      ["pause", "alert", "allow"],
+      "pause",
+      "limitBehavior"
+    ),
     lowBalanceThreshold0G: read0GAmount(
       input.lowBalanceThreshold0G,
       "10",
@@ -1871,18 +1896,25 @@ function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSetti
     notificationChannels: readNotificationChannels(input.notificationChannels),
     notificationEmail: readOptionalString(input.notificationEmail, 320),
     notificationEmailVerified: false,
-    retryPolicy: readEnum(input.retryPolicy, ["none", "3-attempts", "5-attempts"], "3-attempts") ?? "3-attempts",
+    retryPolicy: readInputEnum(
+      input.retryPolicy,
+      ["none", "3-attempts", "5-attempts"],
+      "3-attempts",
+      "retryPolicy"
+    ),
     telegramChatId: readOptionalString(input.telegramChatId, 120),
     telegramVerified: false,
-    thresholdAction: readEnum(
+    thresholdAction: readInputEnum(
       input.thresholdAction,
       ["notify", "pause", "continue"],
-      "notify"
-    ) ?? "notify",
-    writeRunLogsToMemory:
-      typeof input.writeRunLogsToMemory === "boolean"
-        ? input.writeRunLogsToMemory
-        : false,
+      "notify",
+      "thresholdAction"
+    ),
+    writeRunLogsToMemory: readSettingsBoolean(
+      input.writeRunLogsToMemory,
+      false,
+      "writeRunLogsToMemory"
+    ),
   };
 }
 
@@ -1950,26 +1982,72 @@ function readOptionalString(value: unknown, maxLength: number) {
 }
 
 function readScheduleTime(value: unknown, fallback: string) {
-  if (typeof value !== "string" || !/^[0-2][0-9]:[0-5][0-9]$/.test(value)) {
+  if (value === undefined) {
     return fallback;
   }
 
-  const [hour] = value.split(":").map(Number);
+  if (typeof value === "string" && /^[0-2][0-9]:[0-5][0-9]$/.test(value)) {
+    const [hour] = value.split(":").map(Number);
 
-  return hour > 23 ? fallback : value;
+    if (hour <= 23) {
+      return value;
+    }
+  }
+
+  throw new AutomationHttpError(
+    400,
+    "scheduleTime must use 24-hour HH:MM format."
+  );
+}
+
+function readTimezone(value: unknown, fallback: string) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value === "string") {
+    const timezone = value.trim();
+
+    if (timezone && timezone.length <= 80) {
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
+        return timezone;
+      } catch {
+        // The common validation error below keeps the API response stable.
+      }
+    }
+  }
+
+  throw new AutomationHttpError(
+    400,
+    "timezone must be a valid IANA time zone."
+  );
 }
 
 function readInteger(
   value: unknown,
   fallback: number,
   min: number,
-  max: number
+  max: number,
+  field: string
 ) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+  if (value === undefined) {
     return fallback;
   }
 
-  return Math.min(Math.max(Math.trunc(value), min), max);
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < min ||
+    value > max
+  ) {
+    throw new AutomationHttpError(
+      400,
+      `${field} must be an integer between ${min} and ${max}.`
+    );
+  }
+
+  return value;
 }
 
 function readEnum<T extends string>(
@@ -1984,19 +2062,68 @@ function readEnum<T extends string>(
   return fallback;
 }
 
+function readInputEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T,
+  field: string
+) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const result = readEnum(value, allowed);
+
+  if (!result) {
+    throw new AutomationHttpError(
+      400,
+      `${field} must be one of: ${allowed.join(", ")}.`
+    );
+  }
+
+  return result;
+}
+
+function readSettingsBoolean(
+  value: unknown,
+  fallback: boolean,
+  field: string
+) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value !== "boolean") {
+    throw new AutomationHttpError(400, `${field} must be a boolean.`);
+  }
+
+  return value;
+}
+
 function readNotificationChannels(
   value: unknown
 ): Array<"email" | "telegram" | "in-app"> {
-  if (!Array.isArray(value)) {
+  if (value === undefined) {
     return ["email"];
   }
 
-  const channels = value.filter(
-    (item): item is "email" | "telegram" | "in-app" =>
-      item === "email" || item === "telegram" || item === "in-app"
-  );
+  if (
+    !Array.isArray(value) ||
+    !value.every(
+      (item) => item === "email" || item === "telegram" || item === "in-app"
+    )
+  ) {
+    throw new AutomationHttpError(
+      400,
+      "notificationChannels must contain only email, telegram, or in-app."
+    );
+  }
 
-  return channels.length ? Array.from(new Set(channels)) : ["email"];
+  const channels = value as Array<"email" | "telegram" | "in-app">;
+
+  return channels.length
+    ? Array.from(new Set(channels))
+    : ["email"];
 }
 
 async function findTelegramUpdateByCodeHash(codeHash: string) {
