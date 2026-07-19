@@ -157,22 +157,27 @@ export async function handleChatSessions(request: Request) {
     const existing =
       ownerLookup.status === "found" ? ownerLookup.owner : null;
 
-    if (existing && existing.wallet_user_id !== walletUserId) {
+    if (!existing) {
+      return Response.json(
+        { configured: true, error: "Chat session was not found." },
+        { status: 404 },
+      );
+    }
+
+    if (existing.wallet_user_id !== walletUserId) {
       return Response.json(
         { configured: true, error: "Session belongs to another wallet." },
         { status: 403 }
       );
     }
 
-    if (existing) {
-      const deleted = await deleteSession(walletUserId, sessionId);
+    const deleted = await deleteSession(walletUserId, sessionId);
 
-      if (!deleted) {
-        return Response.json(
-          { configured: true, error: "Unable to delete chat session." },
-          { status: 500 }
-        );
-      }
+    if (!deleted) {
+      return Response.json(
+        { configured: true, error: "Unable to delete chat session." },
+        { status: 500 }
+      );
     }
 
     return Response.json({

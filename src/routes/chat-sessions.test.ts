@@ -454,6 +454,13 @@ test("chat session routes list owned data and report missing sessions", async ()
             wallet,
           })
         );
+        const deleted = await handleChatSessions(
+          chatSessionRequest({
+            action: "delete",
+            sessionId: "missing-session",
+            wallet,
+          }),
+        );
 
         assert.deepEqual(await listed.json(), {
           configured: true,
@@ -465,6 +472,11 @@ test("chat session routes list owned data and report missing sessions", async ()
         });
         assert.equal(updated.status, 404);
         assert.deepEqual(await updated.json(), {
+          configured: true,
+          error: "Chat session was not found.",
+        });
+        assert.equal(deleted.status, 404);
+        assert.deepEqual(await deleted.json(), {
           configured: true,
           error: "Chat session was not found.",
         });
