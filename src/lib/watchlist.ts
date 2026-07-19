@@ -258,7 +258,11 @@ function readCount(value: unknown) {
 }
 
 function readIsoDate(value: unknown) {
-  if (typeof value === "string") {
+  if (value === undefined) {
+    return new Date().toISOString();
+  }
+
+  if (typeof value === "string" && value.trim()) {
     const date = new Date(value);
 
     if (!Number.isNaN(date.getTime())) {
@@ -266,5 +270,5 @@ function readIsoDate(value: unknown) {
     }
   }
 
-  return new Date().toISOString();
+  throw new WatchlistHttpError(400, "Added at must be a valid date.");
 }

@@ -126,6 +126,33 @@ test("watchlist upserts normalize input and bind the authenticated wallet", asyn
 
   assert.equal(saved?.source_count, 0);
   assert.equal(saved?.gap_count, 0);
+
+  await assert.rejects(
+    upsertAlphaWatchlistItem(
+      {
+        account: {
+          authMethod: "wallet",
+          supabase: supabase as never,
+          walletUser,
+        },
+      },
+      {
+        addedAt: "not-a-date",
+        caveat: "Verify the source.",
+        id: "proof:invalid-date",
+        intent: "track activity",
+        recommendation: "Review the evidence.",
+        signalType: "smart-money",
+        subject: "CELO",
+        summary: "The timestamp must remain trustworthy.",
+        title: "CELO evidence",
+      },
+    ),
+    (error) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "Added at must be a valid date.",
+  );
 });
 
 test("clearing a watchlist deletes only the authenticated wallet rows", async () => {
