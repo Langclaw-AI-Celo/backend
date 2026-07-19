@@ -129,7 +129,14 @@ export async function handleChatSessions(request: Request) {
       );
     }
 
-    const existing = await readSessionOwner(sessionId);
+    const ownerLookup = await readSessionOwner(sessionId);
+
+    if (ownerLookup.status === "error") {
+      return sessionOwnerLookupErrorResponse();
+    }
+
+    const existing =
+      ownerLookup.status === "found" ? ownerLookup.owner : null;
 
     if (existing && existing.wallet_user_id !== walletUserId) {
       return Response.json(
@@ -182,7 +189,14 @@ export async function handleChatSessions(request: Request) {
       );
     }
 
-    const existing = await readSessionOwner(sessionId);
+    const ownerLookup = await readSessionOwner(sessionId);
+
+    if (ownerLookup.status === "error") {
+      return sessionOwnerLookupErrorResponse();
+    }
+
+    const existing =
+      ownerLookup.status === "found" ? ownerLookup.owner : null;
 
     if (!existing) {
       return Response.json(
@@ -226,7 +240,14 @@ export async function handleChatSessions(request: Request) {
       );
     }
 
-    const existing = await readSessionOwner(session.id);
+    const ownerLookup = await readSessionOwner(session.id);
+
+    if (ownerLookup.status === "error") {
+      return sessionOwnerLookupErrorResponse();
+    }
+
+    const existing =
+      ownerLookup.status === "found" ? ownerLookup.owner : null;
 
     if (existing && existing.wallet_user_id !== walletUserId) {
       return Response.json(
@@ -264,7 +285,7 @@ async function readSessionOwner(sessionId: string) {
   const supabase = getSupabaseAdmin();
 
   if (!supabase) {
-    return null;
+    return { status: "error" as const };
   }
 
   const { data, error } = await supabase
@@ -273,11 +294,28 @@ async function readSessionOwner(sessionId: string) {
     .eq("id", sessionId)
     .maybeSingle();
 
-  if (error || !data) {
-    return null;
+  if (error) {
+    return { status: "error" as const };
   }
 
-  return data as { wallet_user_id: string };
+  if (!data) {
+    return { status: "not-found" as const };
+  }
+
+  return {
+    owner: data as { wallet_user_id: string },
+    status: "found" as const,
+  };
+}
+
+function sessionOwnerLookupErrorResponse() {
+  return Response.json(
+    {
+      configured: true,
+      error: "Unable to read chat session ownership.",
+    },
+    { status: 500 },
+  );
 }
 
 async function readSession(walletUserId: string, sessionId: string) {
