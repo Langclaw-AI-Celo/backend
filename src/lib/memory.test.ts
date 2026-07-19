@@ -439,7 +439,7 @@ test("memory settings surface persistence failures after normalization", async (
   await assert.rejects(
     updateMemorySettings(buildMemoryAccount(supabase), {
       captureEnabled: false,
-      retentionDays: 9999,
+      retentionDays: 3650,
     }),
     (error: unknown) =>
       error instanceof MemoryHttpError &&
@@ -487,6 +487,41 @@ test("memory settings reject malformed boolean fields", async () => {
         error instanceof MemoryHttpError &&
         error.status === 400 &&
         error.message === `${field} must be a boolean.`,
+    );
+  }
+});
+
+test("memory settings reject invalid retention days", async () => {
+  for (const retentionDays of ["90", 90.5, -1, 3651]) {
+    const settingsRow = buildMemorySettingsRow();
+    const supabase = {
+      from(table: string) {
+        assert.equal(table, "langclaw_memory_settings");
+        return {
+          update() {
+            throw new Error("validation should finish before updating storage");
+          },
+          upsert() {
+            return {
+              select() {
+                return {
+                  single: () =>
+                    Promise.resolve({ data: settingsRow, error: null }),
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+
+    await assert.rejects(
+      updateMemorySettings(buildMemoryAccount(supabase), { retentionDays }),
+      (error: unknown) =>
+        error instanceof MemoryHttpError &&
+        error.status === 400 &&
+        error.message ===
+          "retentionDays must be an integer from 0 to 3650.",
     );
   }
 });

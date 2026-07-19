@@ -472,7 +472,7 @@ function normalizeMemorySettingsInput(
       fallback.projectScopedRecall,
       "projectScopedRecall"
     ),
-    retentionDays: readInteger(input.retentionDays, fallback.retentionDays, 0, 3650),
+    retentionDays: readRetentionDays(input.retentionDays, fallback.retentionDays),
     updatedAt: fallback.updatedAt,
   };
 }
@@ -540,6 +540,26 @@ function readBoolean(value: unknown, fallback: boolean, field: string) {
   }
 
   throw new MemoryHttpError(400, `${field} must be a boolean.`);
+}
+
+function readRetentionDays(value: unknown, fallback: number) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value > 3650
+  ) {
+    throw new MemoryHttpError(
+      400,
+      "retentionDays must be an integer from 0 to 3650."
+    );
+  }
+
+  return value;
 }
 
 function readInteger(
