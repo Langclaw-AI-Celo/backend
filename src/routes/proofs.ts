@@ -67,7 +67,7 @@ export async function handleProofDecisions(request: Request) {
   let chain = getProductChain("mantle");
 
   try {
-    const body = await request.json().catch(() => ({}));
+    const body = await request.json();
     chain = getProductChain(readProductChainId((body as { chain?: unknown }).chain));
     const requestedLimit =
       body && typeof body === "object" && "limit" in body
@@ -155,7 +155,7 @@ export async function handleProofReadiness(request: Request) {
   let body: { chain?: unknown } = {};
 
   try {
-    body = await request.json().catch(() => ({}));
+    body = await request.json();
   } catch {
     return Response.json(
       { error: "Request body must be valid JSON." },
