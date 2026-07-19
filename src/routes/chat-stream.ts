@@ -90,6 +90,13 @@ export async function handleChatStream(request: Request) {
     );
   }
 
+  if (!hasValidRoutingControls(body)) {
+    return Response.json(
+      { error: "Chat routing controls are invalid." },
+      { status: 400 }
+    );
+  }
+
   const requestedToolMode = readToolMode(body.toolMode, body.researchTrend);
   const toolMode = resolveEffectiveToolMode(message, requestedToolMode);
   const requestedChain =
@@ -438,6 +445,18 @@ function readToolMode(toolMode: unknown, researchTrend: unknown) {
   }
 
   return "chat";
+}
+
+function hasValidRoutingControls(body: ChatRequestBody) {
+  return (
+    (body.toolMode === undefined ||
+      body.toolMode === "chat" ||
+      body.toolMode === "onchain" ||
+      body.toolMode === "research") &&
+    (body.researchTrend === undefined ||
+      typeof body.researchTrend === "boolean") &&
+    (body.useAgent === undefined || typeof body.useAgent === "boolean")
+  );
 }
 
 export function resolveEffectiveToolMode(message: string, requestedToolMode: string) {

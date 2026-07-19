@@ -195,6 +195,26 @@ test("chat stream rejects malformed context instead of dropping messages", async
   }
 });
 
+test("chat stream rejects malformed routing controls", async () => {
+  for (const body of [
+    { message: "Check liquidity", toolMode: "tools" },
+    { message: "Check liquidity", researchTrend: "true" },
+    { message: "Check liquidity", useAgent: 1 },
+  ]) {
+    const response = await handleChatStream(
+      new Request("http://localhost/api/chat/stream", {
+        body: JSON.stringify(body),
+        method: "POST",
+      })
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "Chat routing controls are invalid.",
+    });
+  }
+});
+
 test("smart-money accumulation prompts auto-route from chat to research", () => {
   assert.equal(
     resolveEffectiveToolMode("Find smart-money accumulation on Arbitrum", "chat"),
