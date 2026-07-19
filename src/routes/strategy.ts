@@ -184,7 +184,7 @@ async function readStrategyBody(
   request: Request
 ): Promise<StrategyBody | { response: Response }> {
   try {
-    const body = (await request.json().catch(() => ({}))) as StrategyBody;
+    const body = (await request.json()) as StrategyBody;
 
     return body && typeof body === "object" ? body : {};
   } catch {
