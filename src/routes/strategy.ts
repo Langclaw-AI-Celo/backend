@@ -195,7 +195,25 @@ async function readStrategyBody(
       };
     }
 
-    return body as StrategyBody;
+    const strategyBody = body as StrategyBody;
+
+    if (
+      !isValidOptionalString(strategyBody.queryId) ||
+      !isValidOptionalString(strategyBody.pairAddress)
+    ) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "queryId and pairAddress must be non-empty strings when provided.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
+    return strategyBody;
   } catch {
     return {
       response: Response.json(
@@ -204,6 +222,10 @@ async function readStrategyBody(
       ),
     };
   }
+}
+
+function isValidOptionalString(value: unknown) {
+  return value === undefined || (typeof value === "string" && Boolean(value.trim()));
 }
 
 function strategyErrorResponse(error: unknown) {
