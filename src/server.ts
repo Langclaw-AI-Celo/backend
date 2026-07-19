@@ -8,6 +8,7 @@ import {
 import { Readable } from "node:stream";
 import { once } from "node:events";
 
+import { createInternalErrorResponse } from "./lib/server/http-errors";
 import { handleChatSessions } from "./routes/chat-sessions";
 import { handleChatStream } from "./routes/chat-stream";
 import { handleDiscover } from "./routes/discover";
@@ -142,13 +143,7 @@ async function handleRequest(
     setCorsHeaders(request, response);
     await writeWebResponse(
       response,
-      Response.json(
-        {
-          error:
-            error instanceof Error ? error.message : "Internal server error.",
-        },
-        { status: 500 },
-      ),
+      createInternalErrorResponse(),
     );
   }
 }
