@@ -1851,11 +1851,15 @@ function normalizeTaskInput(
             "scheduleWeekday"
           )
         : undefined,
-    status: readEnum<AutomationTaskStatus>(
-      input.status,
-      ["draft", "active", "paused"],
-      existing?.status
-    ),
+    status:
+      input.status === undefined
+        ? existing?.status
+        : readInputEnum<AutomationTaskStatus>(
+            input.status,
+            ["draft", "active", "paused"],
+            existing?.status ?? "draft",
+            "status"
+          ),
     timezone,
     triggerType,
   };

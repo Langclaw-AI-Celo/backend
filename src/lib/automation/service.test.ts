@@ -201,6 +201,31 @@ test("scheduled tasks reject invalid calendar positions", async () => {
   }
 });
 
+test("automation tasks reject unsupported statuses", async () => {
+  const createStorage = buildAutomationStorage("active");
+  await assert.rejects(
+    createAutomationTask(buildAccount(createStorage.supabase), {
+      name: "Invalid status",
+      status: "running",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      error.message === "status must be one of: draft, active, paused.",
+  );
+
+  const updateStorage = buildAutomationStorage("active");
+  await assert.rejects(
+    updateAutomationTask(buildAccount(updateStorage.supabase), "task-1", {
+      status: "running",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      error.message === "status must be one of: draft, active, paused.",
+  );
+});
+
 test("automation link and trigger inputs reject malformed values", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);
