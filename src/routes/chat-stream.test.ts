@@ -82,6 +82,23 @@ function supabaseAccountResponse(url: string, telegramLinked = true) {
   return supabaseWalletResponse();
 }
 
+test("chat stream rejects non-object JSON bodies", async () => {
+  for (const body of [null, [], "invalid"]) {
+    const response = await handleChatStream(
+      new Request("http://localhost/api/chat/stream", {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "Request body must be valid JSON.",
+    });
+  }
+});
+
 test("direct chat rejects attachments until multimodal contract exists", async () => {
   const response = await handleChatStream(
     new Request("http://localhost/api/chat/stream", {

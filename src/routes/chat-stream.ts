@@ -50,7 +50,13 @@ export async function handleChatStream(request: Request) {
   let body: ChatRequestBody;
 
   try {
-    body = (await request.json()) as ChatRequestBody;
+    const value = await request.json();
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new TypeError("Chat request body must be an object.");
+    }
+
+    body = value as ChatRequestBody;
   } catch {
     return Response.json(
       { error: "Request body must be valid JSON." },
