@@ -184,9 +184,18 @@ async function readStrategyBody(
   request: Request
 ): Promise<StrategyBody | { response: Response }> {
   try {
-    const body = (await request.json()) as StrategyBody;
+    const body = await request.json();
 
-    return body && typeof body === "object" ? body : {};
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return {
+        response: Response.json(
+          { configured: false, error: "Request body must be a JSON object." },
+          { status: 400 }
+        ),
+      };
+    }
+
+    return body as StrategyBody;
   } catch {
     return {
       response: Response.json(
