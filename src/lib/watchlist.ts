@@ -284,6 +284,10 @@ function readIsoDate(value: unknown) {
     const date = new Date(value);
 
     if (!Number.isNaN(date.getTime())) {
+      if (date.getTime() > Date.now() + 5 * 60 * 1000) {
+        throw new WatchlistHttpError(400, "Added at cannot be in the future.");
+      }
+
       return date.toISOString();
     }
   }

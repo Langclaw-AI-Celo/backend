@@ -236,6 +236,38 @@ test("watchlist upserts reject invalid evidence counts", async () => {
   }
 });
 
+test("watchlist upserts reject future added timestamps", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+
+  await assert.rejects(
+    upsertAlphaWatchlistItem(account, {
+      addedAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      caveat: "Verify the source.",
+      id: "proof:future-time",
+      intent: "track activity",
+      recommendation: "Review the evidence.",
+      signalType: "smart-money",
+      subject: "CELO",
+      summary: "The watchlist timestamp must remain trustworthy.",
+      title: "CELO evidence",
+    }),
+    (error: unknown) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "Added at cannot be in the future.",
+  );
+});
+
 test("clearing a watchlist deletes only the authenticated wallet rows", async () => {
   const filters: Array<[string, string]> = [];
   const supabase = {
