@@ -662,6 +662,10 @@ function normalizeMessage(value: unknown): StoredChatMessage | null {
       message.mode !== "chat" &&
       message.mode !== "onchain" &&
       message.mode !== "research") ||
+    (message.error !== undefined && typeof message.error !== "string") ||
+    (message.model !== undefined && typeof message.model !== "string") ||
+    (message.progressEvents !== undefined &&
+      !Array.isArray(message.progressEvents)) ||
     (message.stopped !== undefined && typeof message.stopped !== "boolean")
   ) {
     return null;

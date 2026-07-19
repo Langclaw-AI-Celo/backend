@@ -126,6 +126,34 @@ test("chat session normalization rejects non-boolean stopped state", () => {
   assert.equal(session, null);
 });
 
+test("chat session normalization rejects malformed optional metadata", () => {
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-metadata",
+    title: "Message metadata",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+  const baseMessage = {
+    content: "Hello",
+    id: "message-metadata",
+    role: "assistant",
+  };
+
+  for (const metadata of [
+    { error: false },
+    { model: 42 },
+    { progressEvents: {} },
+  ]) {
+    assert.equal(
+      normalizeSession({
+        ...baseSession,
+        messages: [{ ...baseMessage, ...metadata }],
+      }),
+      null,
+    );
+  }
+});
+
 test("chat session metadata accepts omitted titles and rejects invalid values", () => {
   assert.deepEqual(readOptionalTitle(undefined), {});
   assert.deepEqual(readOptionalTitle(42), { error: "title must be a string." });
