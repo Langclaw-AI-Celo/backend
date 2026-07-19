@@ -192,13 +192,13 @@ function normalizeAlphaWatchlistInput(
     decisionId: readOptionalText(input.decisionId, "decisionId", 80),
     evidenceUri: readOptionalText(input.evidenceUri, "evidenceUri", 1_000),
     explorerUrl: readOptionalText(input.explorerUrl, "explorerUrl", 1_000),
-    gapCount: readCount(input.gapCount),
+    gapCount: readCount(input.gapCount, "gapCount"),
     id: readRequiredText(input.id, "Watchlist item id", 240),
     intent: readRequiredText(input.intent, "Intent", 500),
     proofTx: readOptionalText(input.proofTx, "proofTx", 160),
     recommendation: readRequiredText(input.recommendation, "Recommendation", 4_000),
     signalType: readRequiredText(input.signalType, "Signal type", 120),
-    sourceCount: readCount(input.sourceCount),
+    sourceCount: readCount(input.sourceCount, "sourceCount"),
     subject: readRequiredText(input.subject, "Subject", 1_000),
     summary: readRequiredText(input.summary, "Summary", 4_000),
     title: readRequiredText(input.title, "Title", 500),
@@ -260,15 +260,19 @@ function readOptionalText(value: unknown, field: string, maxLength = 500) {
   return optionalText(value, maxLength);
 }
 
-function readCount(value: unknown) {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string" && /^\d+$/.test(value.trim())
-        ? Number(value.trim())
-        : Number.NaN;
+function readCount(value: unknown, field: string) {
+  if (value === undefined) {
+    return 0;
+  }
 
-  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be a non-negative integer.`,
+    );
+  }
+
+  return value;
 }
 
 function readIsoDate(value: unknown) {
