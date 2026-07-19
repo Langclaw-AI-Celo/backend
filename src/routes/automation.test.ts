@@ -80,6 +80,25 @@ test("automation routes reject malformed nested input objects", async () => {
   }
 });
 
+test("automation runs reject unsupported trigger sources", async () => {
+  const response = await handleAutomationRuns(
+    new Request("http://localhost/api/automation/runs", {
+      body: JSON.stringify({
+        action: "run",
+        taskId: "task-1",
+        triggeredBy: "operator",
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    }),
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "A valid automation trigger source is required.",
+  });
+});
+
 test("automation routes keep every supported action behind account authentication", async () => {
   const cases = [
     {

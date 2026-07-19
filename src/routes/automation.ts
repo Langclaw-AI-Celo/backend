@@ -1,5 +1,6 @@
 import type { WalletAuthInput } from "../lib/server/wallet-auth";
 import {
+  AutomationHttpError,
   automationErrorResponse,
   createAutomationTask,
   createTelegramLinkCode,
@@ -522,6 +523,10 @@ function readWebhookClientId(request: Request) {
 }
 
 function readTriggeredBy(value: unknown): AutomationTriggeredBy {
+  if (value === undefined) {
+    return "manual";
+  }
+
   if (
     value === "schedule" ||
     value === "event" ||
@@ -532,5 +537,8 @@ function readTriggeredBy(value: unknown): AutomationTriggeredBy {
     return value;
   }
 
-  return "manual";
+  throw new AutomationHttpError(
+    400,
+    "A valid automation trigger source is required."
+  );
 }
