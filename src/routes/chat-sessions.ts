@@ -662,10 +662,15 @@ function normalizeMessage(value: unknown): StoredChatMessage | null {
       message.mode !== "chat" &&
       message.mode !== "onchain" &&
       message.mode !== "research") ||
+    (message.directAnswer !== undefined &&
+      !isNonArrayObject(message.directAnswer)) ||
     (message.error !== undefined && typeof message.error !== "string") ||
     (message.model !== undefined && typeof message.model !== "string") ||
+    (message.onChain !== undefined && !isNonArrayObject(message.onChain)) ||
     (message.progressEvents !== undefined &&
-      !Array.isArray(message.progressEvents)) ||
+      (!Array.isArray(message.progressEvents) ||
+        message.progressEvents.some((event) => !isNonArrayObject(event)))) ||
+    (message.result !== undefined && !isNonArrayObject(message.result)) ||
     (message.stopped !== undefined && typeof message.stopped !== "boolean")
   ) {
     return null;
@@ -695,4 +700,8 @@ function normalizeMessage(value: unknown): StoredChatMessage | null {
     role: message.role,
     stopped: message.stopped ?? false,
   };
+}
+
+function isNonArrayObject(value: unknown) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
