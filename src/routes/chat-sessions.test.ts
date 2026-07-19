@@ -30,6 +30,21 @@ test("chat session normalization preserves message chains", () => {
   assert.equal(session?.messages[0]?.chain, "celo");
 });
 
+test("chat session normalization rejects partial message payloads", () => {
+  const session = normalizeSession({
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-partial",
+    messages: [
+      { content: "Keep me", id: "message-valid", role: "user" },
+      { content: "Do not drop me silently", id: "message-invalid", role: "system" },
+    ],
+    title: "Partial session",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  });
+
+  assert.equal(session, null);
+});
+
 test("chat session metadata accepts omitted titles and rejects invalid values", () => {
   assert.deepEqual(readOptionalTitle(undefined), {});
   assert.deepEqual(readOptionalTitle(42), { error: "title must be a string." });

@@ -596,14 +596,16 @@ export function normalizeSession(value: unknown): ChatSession | null {
     return null;
   }
 
-  const messages = session.messages
-    .map(normalizeMessage)
-    .filter((message): message is StoredChatMessage => Boolean(message));
+  const messages = session.messages.map(normalizeMessage);
+
+  if (messages.some((message) => message === null)) {
+    return null;
+  }
 
   return {
     createdAt: session.createdAt,
     id: session.id,
-    messages,
+    messages: messages as StoredChatMessage[],
     pinned: Boolean(session.pinned),
     title: session.title,
     updatedAt: session.updatedAt,
