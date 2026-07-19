@@ -44,10 +44,15 @@ export class WatchlistHttpError extends Error {
 
 export function watchlistErrorResponse(error: unknown) {
   if (error instanceof WatchlistHttpError || error instanceof AccountAuthError) {
+    const message =
+      error.status < 500 || error.status === 503
+        ? error.message
+        : "Watchlist request failed.";
+
     return Response.json(
       {
         configured: error.status !== 503,
-        error: error.message,
+        error: message,
       },
       { status: error.status }
     );
@@ -56,8 +61,7 @@ export function watchlistErrorResponse(error: unknown) {
   return Response.json(
     {
       configured: true,
-      error:
-        error instanceof Error ? error.message : "Watchlist request failed.",
+      error: "Watchlist request failed.",
     },
     { status: 500 }
   );
