@@ -320,6 +320,31 @@ test("paper trades reject inconsistent backtest chain metadata", async () => {
   }
 });
 
+test("paper trades reject inconsistent market and strategy identities", async () => {
+  const valid = paperBacktestInput();
+  const invalidBacktests = [
+    { ...valid, market: `mantle:${valid.pairAddress}` },
+    { ...valid, market: "celo:another-pair" },
+    { ...valid, strategyId: "mantle-liquidity-momentum-v1" },
+  ];
+
+  for (const backtest of invalidBacktests) {
+    const response = await handleStrategyPaperTrade(
+      new Request("http://localhost/api/strategy/paper-trade", {
+        body: JSON.stringify({ backtest }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      configured: false,
+      error: "backtest market and strategy identity must match its chain and pair.",
+    });
+  }
+});
+
 test("strategy routes redact unexpected provider failures", async (t) => {
   const originalFetch = globalThis.fetch;
   const originalApiKey = process.env.DUNE_API_KEY;

@@ -297,6 +297,19 @@ async function readStrategyBody(
       };
     }
 
+    if (!hasConsistentBacktestIdentity(strategyBody.backtest)) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "backtest market and strategy identity must match its chain and pair.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
     return strategyBody;
   } catch {
     return {
@@ -416,6 +429,27 @@ function hasConsistentBacktestChain(
     backtest.chain === config.id &&
     backtest.chainId === config.chainId &&
     backtest.chainName === config.name
+  );
+}
+
+function hasConsistentBacktestIdentity(backtestValue: unknown) {
+  if (backtestValue === undefined) {
+    return true;
+  }
+
+  const backtest = readRecord(backtestValue);
+
+  if (
+    !backtest ||
+    typeof backtest.chain !== "string" ||
+    typeof backtest.pairAddress !== "string"
+  ) {
+    return false;
+  }
+
+  return (
+    backtest.market === `${backtest.chain}:${backtest.pairAddress}` &&
+    backtest.strategyId === `${backtest.chain}-liquidity-momentum-v1`
   );
 }
 
