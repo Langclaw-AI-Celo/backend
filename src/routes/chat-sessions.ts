@@ -592,7 +592,9 @@ export function normalizeSession(value: unknown): ChatSession | null {
     typeof session.title !== "string" ||
     !session.title.trim() ||
     typeof session.createdAt !== "string" ||
+    !Number.isFinite(Date.parse(session.createdAt)) ||
     typeof session.updatedAt !== "string" ||
+    !Number.isFinite(Date.parse(session.updatedAt)) ||
     (session.pinned !== undefined && typeof session.pinned !== "boolean") ||
     !Array.isArray(session.messages)
   ) {
