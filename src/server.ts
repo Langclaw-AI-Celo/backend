@@ -5,10 +5,10 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { Readable } from "node:stream";
 import { once } from "node:events";
 
-import { createInternalErrorResponse } from "./lib/server/http-errors";
+import { createRequestErrorResponse } from "./lib/server/http-errors";
+import { readLimitedRequestBody } from "./lib/server/request-body";
 import { resolveRequestProtocol } from "./lib/server/request-url";
 import { handleChatSessions } from "./routes/chat-sessions";
 import { handleChatStream } from "./routes/chat-stream";
@@ -115,7 +115,7 @@ async function handleRequest(
       const slug = decodeURIComponent(
         url.pathname.slice("/api/automation/webhooks/".length)
       );
-      const webRequest = createWebRequest(request, url);
+      const webRequest = await createWebRequest(request, url);
       const webResponse = await handleAutomationWebhook(webRequest, slug);
       await writeWebResponse(response, webResponse);
       return;
@@ -132,7 +132,7 @@ async function handleRequest(
       return;
     }
 
-    const webRequest = createWebRequest(request, url);
+    const webRequest = await createWebRequest(request, url);
     const webResponse = await handler(webRequest);
     await writeWebResponse(response, webResponse);
   } catch (error) {
@@ -144,12 +144,12 @@ async function handleRequest(
     setCorsHeaders(request, response);
     await writeWebResponse(
       response,
-      createInternalErrorResponse(),
+      createRequestErrorResponse(error),
     );
   }
 }
 
-function createWebRequest(request: IncomingMessage, url: URL) {
+async function createWebRequest(request: IncomingMessage, url: URL) {
   const headers = new Headers();
 
   for (const [name, value] of Object.entries(request.headers)) {
@@ -170,7 +170,10 @@ function createWebRequest(request: IncomingMessage, url: URL) {
   };
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = Readable.toWeb(request) as ReadableStream<Uint8Array>;
+    init.body = await readLimitedRequestBody(
+      request,
+      request.headers["content-length"],
+    );
     init.duplex = "half";
   }
 
