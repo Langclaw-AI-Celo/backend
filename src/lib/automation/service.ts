@@ -217,13 +217,13 @@ export async function updateAutomationTask(
   const shouldRecomputeNextRun =
     status === "active" &&
     triggerType === "schedule" &&
-    ("status" in patch ||
-      "triggerType" in patch ||
-      "scheduleFrequency" in patch ||
-      "scheduleTime" in patch ||
-      "scheduleWeekday" in patch ||
-      "scheduleMonthDay" in patch ||
-      "timezone" in patch);
+    ("status" in input ||
+      "triggerType" in input ||
+      "scheduleFrequency" in input ||
+      "scheduleTime" in input ||
+      "scheduleWeekday" in input ||
+      "scheduleMonthDay" in input ||
+      "timezone" in input);
 
   const nextRunAt = shouldRecomputeNextRun
     ? computeNextRunAt({
@@ -244,14 +244,15 @@ export async function updateAutomationTask(
   const { data, error } = await context.supabase
     .from("langclaw_automation_tasks")
     .update({
-      event_name: patch.eventName ?? existing.event_name,
+      event_name:
+        triggerType === "event" ? patch.eventName ?? existing.event_name : null,
       failure_threshold: patch.failureThreshold ?? existing.failure_threshold,
       max_retries: patch.maxRetries ?? existing.max_retries,
-      model: patch.model ?? existing.model,
+      model: input.model === undefined ? existing.model : patch.model ?? null,
       name: patch.name ?? existing.name,
       next_run_at: nextRunAt,
       project: patch.project ?? existing.project,
-      prompt: patch.prompt ?? existing.prompt,
+      prompt: input.prompt === undefined ? existing.prompt : patch.prompt ?? null,
       schedule_frequency:
         triggerType === "schedule" ? scheduleFrequency : null,
       schedule_month_day:
@@ -285,14 +286,20 @@ export async function deleteAutomationTask(
 ) {
   const context = await requireAutomationContext(authInput);
   const id = readTaskId(taskId);
-  const { error } = await context.supabase
+  const { data, error } = await context.supabase
     .from("langclaw_automation_tasks")
     .update({ status: "archived", next_run_at: null })
     .eq("id", id)
-    .eq("wallet_user_id", context.walletUser.id);
+    .eq("wallet_user_id", context.walletUser.id)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     throw new AutomationHttpError(500, error.message);
+  }
+
+  if (!data) {
+    throw new AutomationHttpError(404, "Automation task was not found.");
   }
 
   return { deleted: true };
@@ -336,7 +343,8 @@ export async function updateAutomationSettings(
   input: AutomationSettingsInput
 ) {
   const context = await requireAutomationContext(authInput);
-  const settings = normalizeSettingsInput(input);
+  const existing = await readAutomationSettingsRow(context);
+  const settings = normalizeSettingsInput(input, existing);
   const { data, error } = await context.supabase
     .from("langclaw_automation_settings")
     .upsert(
@@ -1781,9 +1789,9 @@ function normalizeTaskInput(
     settings: AutomationSettings;
   }
 ) {
-  const name = readOptionalString(input.name, 120);
+  const name = readOptionalInputString(input.name, 120, "name");
 
-  if (requireName && !name) {
+  if ((requireName || input.name !== undefined) && !name) {
     throw new AutomationHttpError(400, "Task name is required.");
   }
 
@@ -1814,23 +1822,25 @@ function normalizeTaskInput(
   const eventName =
     triggerType === "event"
       ? readEventName(input.eventName ?? existing?.event_name)
-      : readOptionalString(input.eventName, 160);
+      : readOptionalInputString(input.eventName, 160, "eventName");
 
   return {
     eventName,
-    failureThreshold: 5,
-    maxRetries: settings.retryPolicy === "5-attempts"
-      ? 5
-      : settings.retryPolicy === "none"
-        ? 0
-        : 3,
-    model: readOptionalString(input.model, 120),
+    failureThreshold: existing?.failure_threshold ?? 5,
+    maxRetries:
+      existing?.max_retries ??
+      (settings.retryPolicy === "5-attempts"
+        ? 5
+        : settings.retryPolicy === "none"
+          ? 0
+          : 3),
+    model: readOptionalInputString(input.model, 120, "model"),
     name,
     project:
-      readOptionalString(input.project, 120) ||
+      readOptionalInputString(input.project, 120, "project") ||
       existing?.project ||
       "Langclaw Website",
-    prompt: readOptionalString(input.prompt, 2000),
+    prompt: readOptionalInputString(input.prompt, 2000, "prompt"),
     scheduleFrequency,
     scheduleMonthDay:
       triggerType === "schedule"
@@ -1867,52 +1877,74 @@ function normalizeTaskInput(
   };
 }
 
-function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSettings {
+function normalizeSettingsInput(
+  input: AutomationSettingsInput,
+  existing?: AutomationSettingsRow
+): AutomationSettings {
+  const current = existing ? rowToSettings(existing) : undefined;
+
   return {
     autoPauseRepeatedFailures: readSettingsBoolean(
       input.autoPauseRepeatedFailures,
-      true,
+      current?.autoPauseRepeatedFailures ?? true,
       "autoPauseRepeatedFailures"
     ),
-    dailyLimit0G: read0GAmount(input.dailyLimit0G, "25", "dailyLimit0G"),
+    dailyLimit0G: read0GAmount(
+      input.dailyLimit0G,
+      current?.dailyLimit0G ?? "25",
+      "dailyLimit0G"
+    ),
     failureNotification: readInputEnum(
       input.failureNotification,
       ["email", "in-app", "none"],
-      "email",
+      current?.failureNotification ?? "email",
       "failureNotification"
     ),
     limitBehavior: readInputEnum(
       input.limitBehavior,
       ["pause", "alert", "allow"],
-      "pause",
+      current?.limitBehavior ?? "pause",
       "limitBehavior"
     ),
     lowBalanceThreshold0G: read0GAmount(
       input.lowBalanceThreshold0G,
-      "10",
+      current?.lowBalanceThreshold0G ?? "10",
       "lowBalanceThreshold0G"
     ),
-    monthlyCap0G: read0GAmount(input.monthlyCap0G, "500", "monthlyCap0G"),
-    notificationChannels: readNotificationChannels(input.notificationChannels),
-    notificationEmail: readOptionalString(input.notificationEmail, 320),
-    notificationEmailVerified: false,
+    monthlyCap0G: read0GAmount(
+      input.monthlyCap0G,
+      current?.monthlyCap0G ?? "500",
+      "monthlyCap0G"
+    ),
+    notificationChannels: readNotificationChannels(
+      input.notificationChannels,
+      current?.notificationChannels
+    ),
+    notificationEmail:
+      input.notificationEmail === undefined
+        ? current?.notificationEmail
+        : readOptionalString(input.notificationEmail, 320),
+    notificationEmailVerified: current?.notificationEmailVerified ?? false,
     retryPolicy: readInputEnum(
       input.retryPolicy,
       ["none", "3-attempts", "5-attempts"],
-      "3-attempts",
+      current?.retryPolicy ?? "3-attempts",
       "retryPolicy"
     ),
-    telegramChatId: readOptionalString(input.telegramChatId, 120),
-    telegramVerified: false,
+    telegramChatId:
+      input.telegramChatId === undefined
+        ? current?.telegramChatId
+        : readOptionalString(input.telegramChatId, 120),
+    telegramVerified: current?.telegramVerified ?? false,
     thresholdAction: readInputEnum(
       input.thresholdAction,
       ["notify", "pause", "continue"],
-      "notify",
+      current?.thresholdAction ?? "notify",
       "thresholdAction"
     ),
     writeRunLogsToMemory: readSettingsBoolean(
       input.writeRunLogsToMemory,
-      false,
+      current?.writeRunLogsToMemory ?? false,
       "writeRunLogsToMemory"
     ),
   };
@@ -1979,6 +2011,22 @@ function readOptionalString(value: unknown, maxLength: number) {
   }
 
   return trimmed.slice(0, maxLength);
+}
+
+function readOptionalInputString(
+  value: unknown,
+  maxLength: number,
+  field: string
+) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new AutomationHttpError(400, `${field} must be a string.`);
+  }
+
+  return readOptionalString(value, maxLength);
 }
 
 function readScheduleTime(value: unknown, fallback: string) {
@@ -2101,10 +2149,11 @@ function readSettingsBoolean(
 }
 
 function readNotificationChannels(
-  value: unknown
+  value: unknown,
+  fallback: Array<"email" | "telegram" | "in-app"> = ["email"]
 ): Array<"email" | "telegram" | "in-app"> {
   if (value === undefined) {
-    return ["email"];
+    return fallback;
   }
 
   if (

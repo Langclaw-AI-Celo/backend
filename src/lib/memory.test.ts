@@ -398,6 +398,25 @@ test("memory creation rejects an invalid last-used timestamp", async () => {
   );
 });
 
+test("memory creation rejects future last-used timestamps", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+
+  await assert.rejects(
+    createMemory(account, {
+      lastUsed: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      memory: "Keep proof records",
+    }),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 400 &&
+      error.message === "lastUsed cannot be in the future."
+  );
+});
+
 test("memory creation rejects invalid confidence values", async () => {
   const account = buildMemoryAccount({
     from() {

@@ -137,17 +137,23 @@ export async function deleteAlphaWatchlistItem(
 ) {
   const context = await requireWatchlistContext(authInput);
   const id = readRequiredText(itemId, "Watchlist item id", 240);
-  const { error } = await context.supabase
+  const { data, error } = await context.supabase
     .from("langclaw_alpha_watchlist")
     .delete()
     .eq("wallet_user_id", context.walletUser.id)
-    .eq("id", id);
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     throw new WatchlistHttpError(
       500,
       error.message || "Unable to delete alpha watchlist item."
     );
+  }
+
+  if (!data) {
+    throw new WatchlistHttpError(404, "Watchlist item was not found.");
   }
 
   return { deleted: true, itemId: id };

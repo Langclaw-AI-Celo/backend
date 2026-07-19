@@ -73,6 +73,63 @@ test("automation task status transitions update schedule state", async () => {
   assert.match(String(active.updated?.next_run_at), /^\d{4}-\d{2}-\d{2}T/);
 });
 
+test("automation metadata updates preserve the scheduled next run", async () => {
+  const nextRunAt = "2026-08-01T02:00:00.000Z";
+  const storage = buildAutomationStorage("active", {
+    next_run_at: nextRunAt,
+  });
+
+  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    name: "Renamed Celo scan",
+  });
+
+  assert.equal(storage.updated?.name, "Renamed Celo scan");
+  assert.equal(storage.updated?.next_run_at, nextRunAt);
+});
+
+test("automation metadata updates preserve task retry guardrails", async () => {
+  const storage = buildAutomationStorage("active", {
+    failure_threshold: 7,
+    max_retries: 5,
+  });
+
+  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    name: "Renamed Celo scan",
+  });
+
+  assert.equal(storage.updated?.failure_threshold, 7);
+  assert.equal(storage.updated?.max_retries, 5);
+});
+
+test("automation task updates can clear optional text fields", async () => {
+  const storage = buildAutomationStorage("active", {
+    model: "gpt-5-mini",
+    prompt: "Review Celo activity",
+  });
+
+  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    model: " ",
+    prompt: "",
+  });
+
+  assert.equal(storage.updated?.model, null);
+  assert.equal(storage.updated?.prompt, null);
+});
+
+test("automation trigger changes clear stale event metadata", async () => {
+  const storage = buildAutomationStorage("active", {
+    event_name: "price.changed",
+    trigger_type: "event",
+  });
+
+  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    triggerType: "schedule",
+  });
+
+  assert.equal(storage.updated?.event_name, null);
+  assert.equal(storage.updated?.trigger_type, "schedule");
+});
+
 test("automation error responses preserve safe HTTP status and messages", async () => {
   const invalid = automationErrorResponse(
     new AutomationHttpError(400, "Invalid automation input.")
@@ -139,6 +196,41 @@ test("automation tasks reject unsupported trigger types", async () => {
       error instanceof AutomationHttpError &&
       error.status === 400 &&
       error.message === "triggerType must be one of: schedule, event, webhook.",
+  );
+});
+
+test("automation task text fields reject non-string values", async () => {
+  for (const [field, value] of [
+    ["name", 42],
+    ["project", {}],
+    ["prompt", []],
+    ["model", true],
+  ] as const) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+        [field]: value,
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a string.`
+    );
+  }
+});
+
+test("automation task updates reject blank names", async () => {
+  const storage = buildAutomationStorage("active");
+
+  await assert.rejects(
+    updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+      name: "   ",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      error.message === "Task name is required."
   );
 });
 
@@ -294,6 +386,35 @@ test("creates and archives an automation webhook task", async () => {
   });
   assert.equal(storage.updated?.status, "archived");
   assert.equal(storage.updated?.next_run_at, null);
+});
+
+test("archiving a missing automation task returns not found", async () => {
+  const supabase = {
+    from() {
+      const query = {
+        eq() {
+          return query;
+        },
+        select() {
+          return {
+            maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          };
+        },
+      };
+
+      return {
+        update: () => query,
+      };
+    },
+  };
+
+  await assert.rejects(
+    deleteAutomationTask(buildAccount(supabase as never), "missing-task"),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 404 &&
+      error.message === "Automation task was not found."
+  );
 });
 
 test("bulk status changes update every non-archived task", async () => {
@@ -481,7 +602,7 @@ test("automation list limits reject non-integer values", async () => {
   }
 });
 
-test("updates automation settings with explicit and default guardrails", async () => {
+test("updates automation settings with explicit and stored guardrails", async () => {
   const explicitStorage = buildAutomationStorage("active");
   const explicit = await updateAutomationSettings(
     buildAccount(explicitStorage.supabase),
@@ -516,9 +637,23 @@ test("updates automation settings with explicit and default guardrails", async (
 
   assert.equal(defaults.autoPauseRepeatedFailures, true);
   assert.equal(defaults.dailyLimit0G, "25");
-  assert.deepEqual(defaults.notificationChannels, ["email"]);
+  assert.deepEqual(defaults.notificationChannels, ["telegram"]);
   assert.equal(defaults.retryPolicy, "3-attempts");
   assert.equal(defaults.thresholdAction, "notify");
+});
+
+test("partial automation settings updates preserve stored values", async () => {
+  const storage = buildAutomationStorage("active");
+
+  const updated = await updateAutomationSettings(
+    buildAccount(storage.supabase),
+    { writeRunLogsToMemory: true }
+  );
+
+  assert.deepEqual(updated.notificationChannels, ["telegram"]);
+  assert.equal(updated.telegramChatId, "123");
+  assert.equal(updated.telegramVerified, true);
+  assert.equal(updated.writeRunLogsToMemory, true);
 });
 
 test("automation settings reject unsupported option values", async () => {
@@ -1073,6 +1208,11 @@ function buildAutomationStorage(
             },
             select() {
               return {
+                maybeSingle: () =>
+                  Promise.resolve({
+                    data: { ...task, ...payload },
+                    error: null,
+                  }),
                 single: () =>
                   Promise.resolve({
                     data: { ...task, ...payload },
