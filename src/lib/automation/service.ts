@@ -286,14 +286,20 @@ export async function deleteAutomationTask(
 ) {
   const context = await requireAutomationContext(authInput);
   const id = readTaskId(taskId);
-  const { error } = await context.supabase
+  const { data, error } = await context.supabase
     .from("langclaw_automation_tasks")
     .update({ status: "archived", next_run_at: null })
     .eq("id", id)
-    .eq("wallet_user_id", context.walletUser.id);
+    .eq("wallet_user_id", context.walletUser.id)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     throw new AutomationHttpError(500, error.message);
+  }
+
+  if (!data) {
+    throw new AutomationHttpError(404, "Automation task was not found.");
   }
 
   return { deleted: true };

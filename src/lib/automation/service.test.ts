@@ -338,6 +338,35 @@ test("creates and archives an automation webhook task", async () => {
   assert.equal(storage.updated?.next_run_at, null);
 });
 
+test("archiving a missing automation task returns not found", async () => {
+  const supabase = {
+    from() {
+      const query = {
+        eq() {
+          return query;
+        },
+        select() {
+          return {
+            maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          };
+        },
+      };
+
+      return {
+        update: () => query,
+      };
+    },
+  };
+
+  await assert.rejects(
+    deleteAutomationTask(buildAccount(supabase as never), "missing-task"),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 404 &&
+      error.message === "Automation task was not found."
+  );
+});
+
 test("bulk status changes update every non-archived task", async () => {
   const active = buildAutomationStorage("active");
   const pausedTasks = await setAllAutomationStatus(
@@ -1129,6 +1158,11 @@ function buildAutomationStorage(
             },
             select() {
               return {
+                maybeSingle: () =>
+                  Promise.resolve({
+                    data: { ...task, ...payload },
+                    error: null,
+                  }),
                 single: () =>
                   Promise.resolve({
                     data: { ...task, ...payload },
