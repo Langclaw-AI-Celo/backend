@@ -4,6 +4,7 @@ import test from "node:test";
 import { withEnv } from "../../test/helpers";
 import {
   AccountAuthError,
+  accountAuthErrorResponse,
   requireAccountAuth,
 } from "./account-auth";
 
@@ -13,6 +14,26 @@ function isAuthError(status: number, message: string) {
     error.status === status &&
     error.message === message;
 }
+
+test("account auth responses redact internal failures", async () => {
+  const denied = accountAuthErrorResponse(
+    new AccountAuthError(401, "Valid API key is required."),
+  );
+  const storage = accountAuthErrorResponse(
+    new AccountAuthError(500, "wallet_users relation is missing"),
+  );
+  const unexpected = accountAuthErrorResponse(new Error("connection refused"));
+
+  assert.deepEqual(await denied.json(), {
+    error: "Valid API key is required.",
+  });
+  assert.deepEqual(await storage.json(), {
+    error: "Account authentication failed.",
+  });
+  assert.deepEqual(await unexpected.json(), {
+    error: "Account authentication failed.",
+  });
+});
 
 test("account auth rejects missing and unrelated bearer credentials", async () => {
   await assert.rejects(
