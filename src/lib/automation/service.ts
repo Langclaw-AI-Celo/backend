@@ -217,13 +217,13 @@ export async function updateAutomationTask(
   const shouldRecomputeNextRun =
     status === "active" &&
     triggerType === "schedule" &&
-    ("status" in patch ||
-      "triggerType" in patch ||
-      "scheduleFrequency" in patch ||
-      "scheduleTime" in patch ||
-      "scheduleWeekday" in patch ||
-      "scheduleMonthDay" in patch ||
-      "timezone" in patch);
+    ("status" in input ||
+      "triggerType" in input ||
+      "scheduleFrequency" in input ||
+      "scheduleTime" in input ||
+      "scheduleWeekday" in input ||
+      "scheduleMonthDay" in input ||
+      "timezone" in input);
 
   const nextRunAt = shouldRecomputeNextRun
     ? computeNextRunAt({

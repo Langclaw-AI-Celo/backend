@@ -73,6 +73,20 @@ test("automation task status transitions update schedule state", async () => {
   assert.match(String(active.updated?.next_run_at), /^\d{4}-\d{2}-\d{2}T/);
 });
 
+test("automation metadata updates preserve the scheduled next run", async () => {
+  const nextRunAt = "2026-08-01T02:00:00.000Z";
+  const storage = buildAutomationStorage("active", {
+    next_run_at: nextRunAt,
+  });
+
+  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    name: "Renamed Celo scan",
+  });
+
+  assert.equal(storage.updated?.name, "Renamed Celo scan");
+  assert.equal(storage.updated?.next_run_at, nextRunAt);
+});
+
 test("automation error responses preserve safe HTTP status and messages", async () => {
   const invalid = automationErrorResponse(
     new AutomationHttpError(400, "Invalid automation input.")
