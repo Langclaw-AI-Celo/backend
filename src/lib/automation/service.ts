@@ -1795,6 +1795,12 @@ function normalizeTaskInput(
     throw new AutomationHttpError(400, "Task name is required.");
   }
 
+  const project = readOptionalInputString(input.project, 120, "project");
+
+  if (input.project !== undefined && !project) {
+    throw new AutomationHttpError(400, "Project is required.");
+  }
+
   const triggerType = readInputEnum<AutomationTriggerType>(
     input.triggerType,
     ["schedule", "event", "webhook"],
@@ -1836,10 +1842,7 @@ function normalizeTaskInput(
           : 3),
     model: readOptionalInputString(input.model, 120, "model"),
     name,
-    project:
-      readOptionalInputString(input.project, 120, "project") ||
-      existing?.project ||
-      "Langclaw Website",
+    project: project ?? existing?.project ?? "Langclaw Website",
     prompt: readOptionalInputString(input.prompt, 2000, "prompt"),
     scheduleFrequency,
     scheduleMonthDay:

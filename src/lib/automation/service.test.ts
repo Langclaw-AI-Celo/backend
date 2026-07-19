@@ -234,6 +234,31 @@ test("automation task updates reject blank names", async () => {
   );
 });
 
+test("automation tasks reject blank provided projects", async () => {
+  const createStorage = buildAutomationStorage("active");
+  const updateStorage = buildAutomationStorage("active");
+
+  for (const operation of [
+    () =>
+      createAutomationTask(buildAccount(createStorage.supabase), {
+        name: "Celo scan",
+        project: "   ",
+      }),
+    () =>
+      updateAutomationTask(buildAccount(updateStorage.supabase), "task-1", {
+        project: "\n\t",
+      }),
+  ]) {
+    await assert.rejects(
+      operation(),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === "Project is required.",
+    );
+  }
+});
+
 test("scheduled tasks reject unsupported frequencies", async () => {
   const storage = buildAutomationStorage("active");
 
