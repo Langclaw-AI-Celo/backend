@@ -57,6 +57,31 @@ test("usage routes reject non-object JSON before service calls", async () => {
   }
 });
 
+test("usage routes reject unsupported product chains before service calls", async () => {
+  for (const handler of [
+    handleUsageBalance,
+    handleUsageDepositVerify,
+    handleUsageQuote,
+    handleUsageVaultInfo,
+    handleUsageWithdrawRequest,
+  ]) {
+    for (const chain of ["base", "", 42220]) {
+      const response = await handler(
+        new Request("http://localhost/api/usage", {
+          body: JSON.stringify({ chain }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        }),
+      );
+
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), {
+        error: "chain must be celo or mantle.",
+      });
+    }
+  }
+});
+
 test("usage balance and withdrawal routes require authentication", async () => {
   const balance = await handleUsageBalance(emptyJsonRequest("balance"));
   const withdrawal = await handleUsageWithdrawRequest(
