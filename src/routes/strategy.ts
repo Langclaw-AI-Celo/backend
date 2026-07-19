@@ -227,12 +227,12 @@ function readOptionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function readPositiveNumber(value: unknown, fallback: number) {
+export function readPositiveNumber(value: unknown, fallback: number) {
   const parsed =
     typeof value === "number"
       ? value
       : typeof value === "string"
-        ? Number.parseFloat(value)
+        ? Number(value)
         : Number.NaN;
 
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
