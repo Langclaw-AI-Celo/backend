@@ -66,7 +66,13 @@ async function readWatchlistBody(
   request: Request
 ): Promise<WatchlistBody | { response: Response }> {
   try {
-    return (await request.json()) as WatchlistBody;
+    const body = await request.json();
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new TypeError("Watchlist request body must be an object.");
+    }
+
+    return body as WatchlistBody;
   } catch {
     return {
       response: Response.json(
