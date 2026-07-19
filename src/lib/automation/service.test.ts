@@ -495,7 +495,7 @@ test("automation list limits reject non-integer values", async () => {
   }
 });
 
-test("updates automation settings with explicit and default guardrails", async () => {
+test("updates automation settings with explicit and stored guardrails", async () => {
   const explicitStorage = buildAutomationStorage("active");
   const explicit = await updateAutomationSettings(
     buildAccount(explicitStorage.supabase),
@@ -530,9 +530,23 @@ test("updates automation settings with explicit and default guardrails", async (
 
   assert.equal(defaults.autoPauseRepeatedFailures, true);
   assert.equal(defaults.dailyLimit0G, "25");
-  assert.deepEqual(defaults.notificationChannels, ["email"]);
+  assert.deepEqual(defaults.notificationChannels, ["telegram"]);
   assert.equal(defaults.retryPolicy, "3-attempts");
   assert.equal(defaults.thresholdAction, "notify");
+});
+
+test("partial automation settings updates preserve stored values", async () => {
+  const storage = buildAutomationStorage("active");
+
+  const updated = await updateAutomationSettings(
+    buildAccount(storage.supabase),
+    { writeRunLogsToMemory: true }
+  );
+
+  assert.deepEqual(updated.notificationChannels, ["telegram"]);
+  assert.equal(updated.telegramChatId, "123");
+  assert.equal(updated.telegramVerified, true);
+  assert.equal(updated.writeRunLogsToMemory, true);
 });
 
 test("automation settings reject unsupported option values", async () => {

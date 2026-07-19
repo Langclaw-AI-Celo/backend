@@ -336,7 +336,8 @@ export async function updateAutomationSettings(
   input: AutomationSettingsInput
 ) {
   const context = await requireAutomationContext(authInput);
-  const settings = normalizeSettingsInput(input);
+  const existing = await readAutomationSettingsRow(context);
+  const settings = normalizeSettingsInput(input, existing);
   const { data, error } = await context.supabase
     .from("langclaw_automation_settings")
     .upsert(
@@ -1867,52 +1868,74 @@ function normalizeTaskInput(
   };
 }
 
-function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSettings {
+function normalizeSettingsInput(
+  input: AutomationSettingsInput,
+  existing?: AutomationSettingsRow
+): AutomationSettings {
+  const current = existing ? rowToSettings(existing) : undefined;
+
   return {
     autoPauseRepeatedFailures: readSettingsBoolean(
       input.autoPauseRepeatedFailures,
-      true,
+      current?.autoPauseRepeatedFailures ?? true,
       "autoPauseRepeatedFailures"
     ),
-    dailyLimit0G: read0GAmount(input.dailyLimit0G, "25", "dailyLimit0G"),
+    dailyLimit0G: read0GAmount(
+      input.dailyLimit0G,
+      current?.dailyLimit0G ?? "25",
+      "dailyLimit0G"
+    ),
     failureNotification: readInputEnum(
       input.failureNotification,
       ["email", "in-app", "none"],
-      "email",
+      current?.failureNotification ?? "email",
       "failureNotification"
     ),
     limitBehavior: readInputEnum(
       input.limitBehavior,
       ["pause", "alert", "allow"],
-      "pause",
+      current?.limitBehavior ?? "pause",
       "limitBehavior"
     ),
     lowBalanceThreshold0G: read0GAmount(
       input.lowBalanceThreshold0G,
-      "10",
+      current?.lowBalanceThreshold0G ?? "10",
       "lowBalanceThreshold0G"
     ),
-    monthlyCap0G: read0GAmount(input.monthlyCap0G, "500", "monthlyCap0G"),
-    notificationChannels: readNotificationChannels(input.notificationChannels),
-    notificationEmail: readOptionalString(input.notificationEmail, 320),
-    notificationEmailVerified: false,
+    monthlyCap0G: read0GAmount(
+      input.monthlyCap0G,
+      current?.monthlyCap0G ?? "500",
+      "monthlyCap0G"
+    ),
+    notificationChannels: readNotificationChannels(
+      input.notificationChannels,
+      current?.notificationChannels
+    ),
+    notificationEmail:
+      input.notificationEmail === undefined
+        ? current?.notificationEmail
+        : readOptionalString(input.notificationEmail, 320),
+    notificationEmailVerified: current?.notificationEmailVerified ?? false,
     retryPolicy: readInputEnum(
       input.retryPolicy,
       ["none", "3-attempts", "5-attempts"],
-      "3-attempts",
+      current?.retryPolicy ?? "3-attempts",
       "retryPolicy"
     ),
-    telegramChatId: readOptionalString(input.telegramChatId, 120),
-    telegramVerified: false,
+    telegramChatId:
+      input.telegramChatId === undefined
+        ? current?.telegramChatId
+        : readOptionalString(input.telegramChatId, 120),
+    telegramVerified: current?.telegramVerified ?? false,
     thresholdAction: readInputEnum(
       input.thresholdAction,
       ["notify", "pause", "continue"],
-      "notify",
+      current?.thresholdAction ?? "notify",
       "thresholdAction"
     ),
     writeRunLogsToMemory: readSettingsBoolean(
       input.writeRunLogsToMemory,
-      false,
+      current?.writeRunLogsToMemory ?? false,
       "writeRunLogsToMemory"
     ),
   };
@@ -2101,10 +2124,11 @@ function readSettingsBoolean(
 }
 
 function readNotificationChannels(
-  value: unknown
+  value: unknown,
+  fallback: Array<"email" | "telegram" | "in-app"> = ["email"]
 ): Array<"email" | "telegram" | "in-app"> {
   if (value === undefined) {
-    return ["email"];
+    return fallback;
   }
 
   if (
