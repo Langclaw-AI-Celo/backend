@@ -67,7 +67,15 @@ export async function handleProofDecisions(request: Request) {
   let chain = getProductChain("mantle");
 
   try {
-    const body = await request.json().catch(() => ({}));
+    const body = await request.json();
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Response.json(
+        { error: "Request body must be a JSON object." },
+        { status: 400 }
+      );
+    }
+
     chain = getProductChain(readProductChainId((body as { chain?: unknown }).chain));
     const requestedLimit =
       body && typeof body === "object" && "limit" in body
@@ -155,7 +163,16 @@ export async function handleProofReadiness(request: Request) {
   let body: { chain?: unknown } = {};
 
   try {
-    body = await request.json().catch(() => ({}));
+    const value = await request.json();
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return Response.json(
+        { error: "Request body must be a JSON object." },
+        { status: 400 }
+      );
+    }
+
+    body = value as { chain?: unknown };
   } catch {
     return Response.json(
       { error: "Request body must be valid JSON." },

@@ -184,9 +184,18 @@ async function readStrategyBody(
   request: Request
 ): Promise<StrategyBody | { response: Response }> {
   try {
-    const body = (await request.json().catch(() => ({}))) as StrategyBody;
+    const body = await request.json();
 
-    return body && typeof body === "object" ? body : {};
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return {
+        response: Response.json(
+          { configured: false, error: "Request body must be a JSON object." },
+          { status: 400 }
+        ),
+      };
+    }
+
+    return body as StrategyBody;
   } catch {
     return {
       response: Response.json(
@@ -218,12 +227,12 @@ function readOptionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function readPositiveNumber(value: unknown, fallback: number) {
+export function readPositiveNumber(value: unknown, fallback: number) {
   const parsed =
     typeof value === "number"
       ? value
       : typeof value === "string"
-        ? Number.parseFloat(value)
+        ? Number(value)
         : Number.NaN;
 
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;

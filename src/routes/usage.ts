@@ -17,15 +17,10 @@ type UsageRequestBody = {
 };
 
 export async function handleUsageBalance(request: Request) {
-  let body: UsageRequestBody;
+  const body = await readUsageBody(request);
 
-  try {
-    body = (await request.json()) as UsageRequestBody;
-  } catch {
-    return Response.json(
-      { error: "Request body must be valid JSON." },
-      { status: 400 }
-    );
+  if (body instanceof Response) {
+    return body;
   }
 
   try {
@@ -41,10 +36,15 @@ export async function handleUsageBalance(request: Request) {
 }
 
 export async function handleUsageQuote(request?: Request) {
+  const body = await readUsageBody(request);
+
+  if (body instanceof Response) {
+    return body;
+  }
+
   try {
-    const body = request ? await request.json().catch(() => ({})) : {};
     const quote = await buildUsageQuote({
-      chain: readProductChainId((body as UsageRequestBody).chain),
+      chain: readProductChainId(body.chain),
     });
 
     return Response.json({
@@ -57,9 +57,14 @@ export async function handleUsageQuote(request?: Request) {
 }
 
 export async function handleUsageVaultInfo(request?: Request) {
+  const body = await readUsageBody(request);
+
+  if (body instanceof Response) {
+    return body;
+  }
+
   try {
-    const body = request ? await request.json().catch(() => ({})) : {};
-    const vault = buildUsageVaultInfo(readProductChainId((body as UsageRequestBody).chain));
+    const vault = buildUsageVaultInfo(readProductChainId(body.chain));
 
     return Response.json(vault);
   } catch (error) {
@@ -68,15 +73,10 @@ export async function handleUsageVaultInfo(request?: Request) {
 }
 
 export async function handleUsageDepositVerify(request: Request) {
-  let body: UsageRequestBody;
+  const body = await readUsageBody(request);
 
-  try {
-    body = (await request.json()) as UsageRequestBody;
-  } catch {
-    return Response.json(
-      { error: "Request body must be valid JSON." },
-      { status: 400 }
-    );
+  if (body instanceof Response) {
+    return body;
   }
 
   try {
@@ -94,15 +94,10 @@ export async function handleUsageDepositVerify(request: Request) {
 }
 
 export async function handleUsageWithdrawRequest(request: Request) {
-  let body: UsageRequestBody;
+  const body = await readUsageBody(request);
 
-  try {
-    body = (await request.json()) as UsageRequestBody;
-  } catch {
-    return Response.json(
-      { error: "Request body must be valid JSON." },
-      { status: 400 }
-    );
+  if (body instanceof Response) {
+    return body;
   }
 
   try {
@@ -114,5 +109,29 @@ export async function handleUsageWithdrawRequest(request: Request) {
     return Response.json(payload);
   } catch (error) {
     return usageErrorResponse(error);
+  }
+}
+
+async function readUsageBody(request?: Request) {
+  if (!request) {
+    return {} as UsageRequestBody;
+  }
+
+  try {
+    const body = await request.json();
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Response.json(
+        { error: "Request body must be a JSON object." },
+        { status: 400 }
+      );
+    }
+
+    return body as UsageRequestBody;
+  } catch {
+    return Response.json(
+      { error: "Request body must be valid JSON." },
+      { status: 400 }
+    );
   }
 }

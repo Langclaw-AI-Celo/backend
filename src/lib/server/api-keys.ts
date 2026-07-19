@@ -38,6 +38,8 @@ export class ApiKeyHttpError extends Error {
 const keyPrefix = "lck_live_";
 const displayPrefixLength = 12;
 const displaySuffixLength = 6;
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function generateApiKeySecret(bytes: Buffer = randomBytes(32)) {
   return `${keyPrefix}${bytes.toString("base64url")}`;
@@ -245,6 +247,10 @@ function readApiKeyId(value: unknown) {
 
   if (!id) {
     throw new ApiKeyHttpError(400, "keyId is required.");
+  }
+
+  if (!uuidPattern.test(id)) {
+    throw new ApiKeyHttpError(400, "keyId must be a valid UUID.");
   }
 
   return id;

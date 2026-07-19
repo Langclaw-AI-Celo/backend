@@ -47,6 +47,24 @@ test("API key routes reject malformed JSON", async () => {
   });
 });
 
+test("API key routes reject non-object JSON before authentication", async () => {
+  for (const body of [null, [], "invalid"]) {
+    const response = await handleApiKeys(
+      new Request("http://localhost/api/keys", {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      configured: true,
+      error: "Request body must be valid JSON.",
+    });
+  }
+});
+
 test("API key routes keep supported actions behind wallet authentication", async () => {
   for (const action of [undefined, "list", "create", "revoke"]) {
     const response = await handleApiKeys(

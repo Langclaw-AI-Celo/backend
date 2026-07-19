@@ -19,7 +19,13 @@ export async function handleWalletChallenge(request: Request) {
   let body: WalletChallengeBody;
 
   try {
-    body = (await request.json()) as WalletChallengeBody;
+    const value = await request.json();
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new TypeError("Wallet challenge body must be an object.");
+    }
+
+    body = value as WalletChallengeBody;
   } catch {
     return Response.json(
       { configured: true, error: "Request body must be valid JSON." },
@@ -46,7 +52,13 @@ export async function handleWalletSession(request: Request) {
   let body: WalletSessionBody;
 
   try {
-    body = (await request.json()) as WalletSessionBody;
+    const value = await request.json();
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new TypeError("Wallet session body must be an object.");
+    }
+
+    body = value as WalletSessionBody;
   } catch {
     return Response.json(
       { configured: true, error: "Request body must be valid JSON." },

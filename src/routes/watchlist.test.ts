@@ -19,6 +19,24 @@ test("watchlist routes reject malformed JSON before authentication", async () =>
   });
 });
 
+test("watchlist routes reject non-object JSON before authentication", async () => {
+  for (const body of [null, [], "invalid"]) {
+    const response = await handleWatchlist(
+      new Request("http://localhost/api/watchlist", {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      configured: true,
+      error: "Request body must be valid JSON.",
+    });
+  }
+});
+
 test("watchlist routes require account authentication", async () => {
   const response = await handleWatchlist(
     new Request("http://localhost/api/watchlist", {

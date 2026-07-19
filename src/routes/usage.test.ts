@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   handleUsageBalance,
   handleUsageDepositVerify,
+  handleUsageQuote,
+  handleUsageVaultInfo,
   handleUsageWithdrawRequest,
 } from "./usage";
 
@@ -11,6 +13,8 @@ test("usage routes reject malformed JSON before service calls", async () => {
   for (const handler of [
     handleUsageBalance,
     handleUsageDepositVerify,
+    handleUsageQuote,
+    handleUsageVaultInfo,
     handleUsageWithdrawRequest,
   ]) {
     const response = await handler(
@@ -25,6 +29,31 @@ test("usage routes reject malformed JSON before service calls", async () => {
     assert.deepEqual(await response.json(), {
       error: "Request body must be valid JSON.",
     });
+  }
+});
+
+test("usage routes reject non-object JSON before service calls", async () => {
+  for (const handler of [
+    handleUsageBalance,
+    handleUsageDepositVerify,
+    handleUsageQuote,
+    handleUsageVaultInfo,
+    handleUsageWithdrawRequest,
+  ]) {
+    for (const body of [null, [], "invalid"]) {
+      const response = await handler(
+        new Request("http://localhost/api/usage", {
+          body: JSON.stringify(body),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        }),
+      );
+
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), {
+        error: "Request body must be a JSON object.",
+      });
+    }
   }
 });
 

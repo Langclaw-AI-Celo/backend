@@ -122,7 +122,13 @@ async function readMemoryBody(
   request: Request
 ): Promise<MemoryBody | { response: Response }> {
   try {
-    return (await request.json()) as MemoryBody;
+    const body = await request.json();
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new TypeError("Memory request body must be an object.");
+    }
+
+    return body as MemoryBody;
   } catch {
     return {
       response: Response.json(

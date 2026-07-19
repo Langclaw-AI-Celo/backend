@@ -82,6 +82,23 @@ function supabaseAccountResponse(url: string, telegramLinked = true) {
   return supabaseWalletResponse();
 }
 
+test("chat stream rejects non-object JSON bodies", async () => {
+  for (const body of [null, [], "invalid"]) {
+    const response = await handleChatStream(
+      new Request("http://localhost/api/chat/stream", {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "Request body must be valid JSON.",
+    });
+  }
+});
+
 test("direct chat rejects attachments until multimodal contract exists", async () => {
   const response = await handleChatStream(
     new Request("http://localhost/api/chat/stream", {
@@ -452,6 +469,58 @@ test("direct chat streams safe reasoning progress while OpenAI answer streams", 
         assert.match(openAiInstructions, /Write all user-visible prose in Indonesian/);
         assert.equal(payload.source, "openai");
       }
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("direct chat redacts provider failures from fallback events", async () => {
+  const internalMessage =
+    "OpenAI project prj_internal rejected secret deployment deploy_private.";
+  const restore = mockFetch((url) => {
+    const parsed = new URL(url);
+
+    if (isSupabaseRequest(url)) {
+      return supabaseAccountResponse(url);
+    }
+
+    if (parsed.hostname === "api.openai.test") {
+      return jsonResponse(
+        { error: { message: internalMessage } },
+        { status: 500 },
+      );
+    }
+
+    return jsonResponse({ ok: true });
+  });
+
+  try {
+    await withEnv(
+      {
+        ...authEnv,
+        OPENAI_API_KEY: "test-key",
+        OPENAI_BASE_URL: "https://api.openai.test/v1",
+      },
+      async () => {
+        const response = await handleChatStream(
+          new Request("http://localhost/api/chat/stream", {
+            body: JSON.stringify({
+              message: "halo",
+              wallet: await buildTestWallet(),
+            }),
+            method: "POST",
+          }),
+        );
+        const events = await readNdjson(response);
+        const direct = events.find((event) => event.type === "direct");
+        const payload = direct?.payload as Record<string, unknown>;
+        const serializedEvents = JSON.stringify(events);
+
+        assert.equal(payload.source, "fallback");
+        assert.equal(payload.error, "Chat model is unavailable.");
+        assert.doesNotMatch(serializedEvents, /prj_internal|deploy_private/);
+      },
     );
   } finally {
     restore();
