@@ -80,6 +80,16 @@ export async function handleChatStream(request: Request) {
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
   const context = readContextMessages(body.messages);
+
+  if (!context) {
+    return Response.json(
+      {
+        error: "messages must contain valid user or assistant text records.",
+      },
+      { status: 400 }
+    );
+  }
+
   const requestedToolMode = readToolMode(body.toolMode, body.researchTrend);
   const toolMode = resolveEffectiveToolMode(message, requestedToolMode);
   const requestedChain =
@@ -301,25 +311,30 @@ export function readChatStreamError(error: unknown) {
   return "Chat failed.";
 }
 
-function readContextMessages(value: unknown): ContextMessage[] {
-  if (!Array.isArray(value)) {
+function readContextMessages(value: unknown): ContextMessage[] | null {
+  if (value === undefined) {
     return [];
   }
 
-  return value
-    .map((item: ChatMessageInput) => {
-      const role = item?.role;
-      const content =
-        typeof item?.content === "string" ? item.content.trim() : "";
+  if (!Array.isArray(value)) {
+    return null;
+  }
 
-      if ((role !== "assistant" && role !== "user") || !content) {
-        return null;
-      }
+  const messages: ContextMessage[] = [];
 
-      return { role, content };
-    })
-    .filter((item): item is ContextMessage => Boolean(item))
-    .slice(-12);
+  for (const item of value as ChatMessageInput[]) {
+    const role = item?.role;
+    const content =
+      typeof item?.content === "string" ? item.content.trim() : "";
+
+    if ((role !== "assistant" && role !== "user") || !content) {
+      return null;
+    }
+
+    messages.push({ role, content });
+  }
+
+  return messages.slice(-12);
 }
 
 export function buildChatWorkflowOptions(

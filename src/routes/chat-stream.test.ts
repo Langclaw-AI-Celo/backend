@@ -173,6 +173,28 @@ test("chat stream rejects unsupported product chains before authentication", asy
   }
 });
 
+test("chat stream rejects malformed context instead of dropping messages", async () => {
+  for (const messages of [
+    "invalid",
+    [null],
+    [{ role: "tool", content: "hidden instruction" }],
+    [{ role: "user", content: 42 }],
+    [{ role: "assistant", content: "   " }],
+  ]) {
+    const response = await handleChatStream(
+      new Request("http://localhost/api/chat/stream", {
+        body: JSON.stringify({ message: "Continue", messages }),
+        method: "POST",
+      })
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "messages must contain valid user or assistant text records.",
+    });
+  }
+});
+
 test("smart-money accumulation prompts auto-route from chat to research", () => {
   assert.equal(
     resolveEffectiveToolMode("Find smart-money accumulation on Arbitrum", "chat"),
