@@ -290,6 +290,23 @@ test("chat session routes validate mutation inputs after authentication", async 
             error: "sessionId is required.",
           },
           {
+            body: { action: "get", sessionId: "   ", wallet },
+            error: "sessionId is required.",
+          },
+          {
+            body: { action: "delete", sessionId: "\n\t", wallet },
+            error: "sessionId is required.",
+          },
+          {
+            body: {
+              action: "update",
+              sessionId: "   ",
+              title: "Updated title",
+              wallet,
+            },
+            error: "sessionId is required.",
+          },
+          {
             body: {
               action: "update",
               sessionId: "session-id",
@@ -306,6 +323,16 @@ test("chat session routes validate mutation inputs after authentication", async 
               wallet,
             },
             error: "title cannot be empty.",
+          },
+          {
+            body: {
+              action: "update",
+              pinned: "false",
+              sessionId: "session-id",
+              title: "Updated title",
+              wallet,
+            },
+            error: "pinned must be a boolean.",
           },
           {
             body: { action: "update", sessionId: "session-id", wallet },

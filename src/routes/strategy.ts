@@ -1,3 +1,5 @@
+import { isAddress } from "viem";
+
 import {
   buildBacktestJournalHashes,
   buildPaperJournalHashes,
@@ -10,8 +12,9 @@ import {
   persistTradingJournalRecord,
   readTradingJournalRuns,
 } from "../lib/strategy/journal";
-import { readProductChainId } from "../lib/chain-config";
+import { productChains, readProductChainId } from "../lib/chain-config";
 import type {
+  StrategyAction,
   StrategyBacktestParams,
   StrategyBacktestPayload,
 } from "../lib/strategy/types";
@@ -25,6 +28,22 @@ type StrategyBody = {
   params?: Partial<StrategyBacktestParams>;
   queryId?: unknown;
 };
+
+const strategyParamNames = new Set<keyof StrategyBacktestParams>([
+  "initialCapitalUsd",
+  "maxHoldHours",
+  "minLiquidityUsd",
+  "minMomentumBps",
+  "minVolumeMultiple",
+  "stopLossBps",
+  "takeProfitBps",
+]);
+const strategyActions = new Set<StrategyAction>([
+  "buy",
+  "sell",
+  "hold",
+  "exit",
+]);
 
 export async function handleStrategyBacktest(request: Request) {
   const body = await readStrategyBody(request);
@@ -195,7 +214,121 @@ async function readStrategyBody(
       };
     }
 
-    return body as StrategyBody;
+    const strategyBody = body as StrategyBody;
+
+    if (
+      !isValidOptionalString(strategyBody.queryId) ||
+      !isValidOptionalString(strategyBody.pairAddress)
+    ) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "queryId and pairAddress must be non-empty strings when provided.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
+    if (
+      !isValidOptionalQueryId(strategyBody.queryId) ||
+      !isValidOptionalPairAddress(strategyBody.pairAddress)
+    ) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "queryId must be numeric and pairAddress must be an EVM address when provided.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
+    if (!isValidStrategyParams(strategyBody.params)) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "params must contain only supported positive finite numbers.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
+    if (!isValidOptionalChain(strategyBody.chain)) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "chain must identify a supported product chain when provided.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
+    if (
+      !isValidOptionalPositiveNumber(strategyBody.limit) ||
+      !isValidOptionalPositiveNumber(strategyBody.notionalUsd)
+    ) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "limit and notionalUsd must be positive finite numbers when provided.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
+    if (!isValidPaperBacktest(strategyBody.backtest)) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error: "backtest must contain valid paper-trade inputs.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
+    if (!hasConsistentBacktestChain(strategyBody.backtest, strategyBody.chain)) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "backtest chain metadata must match the requested product chain.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
+    if (!hasConsistentBacktestIdentity(strategyBody.backtest)) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "backtest market and strategy identity must match its chain and pair.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
+    return strategyBody;
   } catch {
     return {
       response: Response.json(
@@ -204,6 +337,167 @@ async function readStrategyBody(
       ),
     };
   }
+}
+
+function isValidOptionalString(value: unknown) {
+  return value === undefined || (typeof value === "string" && Boolean(value.trim()));
+}
+
+function isValidStrategyParams(value: unknown) {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return Object.entries(value).every(
+    ([name, parameter]) =>
+      strategyParamNames.has(name as keyof StrategyBacktestParams) &&
+      typeof parameter === "number" &&
+      Number.isFinite(parameter) &&
+      parameter > 0
+  );
+}
+
+function isValidOptionalChain(value: unknown) {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  return Object.values(productChains).some(
+    (chain) => chain.id === normalized || chain.aliases.includes(normalized)
+  );
+}
+
+function isValidOptionalPositiveNumber(value: unknown) {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (
+    typeof value !== "number" &&
+    (typeof value !== "string" || !value.trim())
+  ) {
+    return false;
+  }
+
+  const parsed = typeof value === "number" ? value : Number(value);
+
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+function isValidPaperBacktest(value: unknown) {
+  if (value === undefined) {
+    return true;
+  }
+
+  const backtest = readRecord(value);
+  const signal = readRecord(backtest?.latestSignal);
+
+  return Boolean(
+    backtest &&
+      signal &&
+      typeof backtest.chain === "string" &&
+      isValidOptionalChain(backtest.chain) &&
+      isPositiveFiniteNumber(backtest.chainId) &&
+      isNonEmptyString(backtest.chainName) &&
+      isNonEmptyString(backtest.market) &&
+      typeof backtest.pairAddress === "string" &&
+      isAddress(backtest.pairAddress) &&
+      isNonEmptyString(backtest.runId) &&
+      isNonEmptyString(backtest.strategyId) &&
+      typeof signal.action === "string" &&
+      strategyActions.has(signal.action as StrategyAction) &&
+      typeof signal.confidence === "number" &&
+      Number.isFinite(signal.confidence) &&
+      signal.confidence >= 0 &&
+      signal.confidence <= 100 &&
+      isPositiveFiniteNumber(signal.priceUsd) &&
+      isNonEmptyString(signal.rationale)
+  );
+}
+
+function hasConsistentBacktestChain(
+  backtestValue: unknown,
+  requestedChain: unknown
+) {
+  if (backtestValue === undefined) {
+    return true;
+  }
+
+  const backtest = readRecord(backtestValue);
+
+  if (!backtest || typeof backtest.chain !== "string") {
+    return false;
+  }
+
+  const backtestChain = readProductChainId(backtest.chain);
+  const requested = readProductChainId(requestedChain, backtestChain);
+  const config = productChains[backtestChain];
+
+  return (
+    requested === backtestChain &&
+    backtest.chain === config.id &&
+    backtest.chainId === config.chainId &&
+    backtest.chainName === config.name
+  );
+}
+
+function hasConsistentBacktestIdentity(backtestValue: unknown) {
+  if (backtestValue === undefined) {
+    return true;
+  }
+
+  const backtest = readRecord(backtestValue);
+
+  if (
+    !backtest ||
+    typeof backtest.chain !== "string" ||
+    typeof backtest.pairAddress !== "string"
+  ) {
+    return false;
+  }
+
+  return (
+    backtest.market === `${backtest.chain}:${backtest.pairAddress}` &&
+    backtest.strategyId === `${backtest.chain}-liquidity-momentum-v1`
+  );
+}
+
+function readRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function isPositiveFiniteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function isNonEmptyString(value: unknown) {
+  return typeof value === "string" && Boolean(value.trim());
+}
+
+function isValidOptionalQueryId(value: unknown) {
+  return (
+    value === undefined ||
+    (typeof value === "string" && /^\d+$/.test(value.trim()))
+  );
+}
+
+function isValidOptionalPairAddress(value: unknown) {
+  return (
+    value === undefined ||
+    (typeof value === "string" && isAddress(value.trim()))
+  );
 }
 
 function strategyErrorResponse(error: unknown) {
