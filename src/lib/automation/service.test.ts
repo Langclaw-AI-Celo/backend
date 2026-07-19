@@ -395,10 +395,7 @@ test("updates automation settings with explicit and default guardrails", async (
   const defaultsStorage = buildAutomationStorage("active");
   const defaults = await updateAutomationSettings(
     buildAccount(defaultsStorage.supabase),
-    {
-      notificationChannels: ["invalid" as "email"],
-      retryPolicy: "invalid" as "none",
-    }
+    {}
   );
 
   assert.equal(defaults.autoPauseRepeatedFailures, true);
@@ -406,6 +403,27 @@ test("updates automation settings with explicit and default guardrails", async (
   assert.deepEqual(defaults.notificationChannels, ["email"]);
   assert.equal(defaults.retryPolicy, "3-attempts");
   assert.equal(defaults.thresholdAction, "notify");
+});
+
+test("automation settings reject unsupported option values", async () => {
+  for (const field of [
+    "failureNotification",
+    "limitBehavior",
+    "retryPolicy",
+    "thresholdAction",
+  ] as const) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationSettings(buildAccount(storage.supabase), {
+        [field]: "invalid",
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message.startsWith(`${field} must be one of:`),
+    );
+  }
 });
 
 test("automation settings reject invalid 0G amounts", async () => {

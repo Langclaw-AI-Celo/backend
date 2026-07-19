@@ -1854,12 +1854,18 @@ function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSetti
         ? input.autoPauseRepeatedFailures
         : true,
     dailyLimit0G: read0GAmount(input.dailyLimit0G, "25", "dailyLimit0G"),
-    failureNotification: readEnum(
+    failureNotification: readSettingsEnum(
       input.failureNotification,
       ["email", "in-app", "none"],
-      "email"
-    ) ?? "email",
-    limitBehavior: readEnum(input.limitBehavior, ["pause", "alert", "allow"], "pause") ?? "pause",
+      "email",
+      "failureNotification"
+    ),
+    limitBehavior: readSettingsEnum(
+      input.limitBehavior,
+      ["pause", "alert", "allow"],
+      "pause",
+      "limitBehavior"
+    ),
     lowBalanceThreshold0G: read0GAmount(
       input.lowBalanceThreshold0G,
       "10",
@@ -1869,14 +1875,20 @@ function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSetti
     notificationChannels: readNotificationChannels(input.notificationChannels),
     notificationEmail: readOptionalString(input.notificationEmail, 320),
     notificationEmailVerified: false,
-    retryPolicy: readEnum(input.retryPolicy, ["none", "3-attempts", "5-attempts"], "3-attempts") ?? "3-attempts",
+    retryPolicy: readSettingsEnum(
+      input.retryPolicy,
+      ["none", "3-attempts", "5-attempts"],
+      "3-attempts",
+      "retryPolicy"
+    ),
     telegramChatId: readOptionalString(input.telegramChatId, 120),
     telegramVerified: false,
-    thresholdAction: readEnum(
+    thresholdAction: readSettingsEnum(
       input.thresholdAction,
       ["notify", "pause", "continue"],
-      "notify"
-    ) ?? "notify",
+      "notify",
+      "thresholdAction"
+    ),
     writeRunLogsToMemory:
       typeof input.writeRunLogsToMemory === "boolean"
         ? input.writeRunLogsToMemory
@@ -1980,6 +1992,28 @@ function readEnum<T extends string>(
   }
 
   return fallback;
+}
+
+function readSettingsEnum<T extends string>(
+  value: unknown,
+  allowed: readonly T[],
+  fallback: T,
+  field: string
+) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const result = readEnum(value, allowed);
+
+  if (!result) {
+    throw new AutomationHttpError(
+      400,
+      `${field} must be one of: ${allowed.join(", ")}.`
+    );
+  }
+
+  return result;
 }
 
 function readNotificationChannels(
