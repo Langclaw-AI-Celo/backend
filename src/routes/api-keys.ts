@@ -85,10 +85,15 @@ export async function handleApiKeys(request: Request) {
   }
 }
 
-function apiKeyErrorResponse(error: unknown) {
+export function apiKeyErrorResponse(error: unknown) {
   if (error instanceof ApiKeyHttpError) {
+    const message =
+      error.status < 500 || error.status === 503
+        ? error.message
+        : "API key request failed.";
+
     return Response.json(
-      { configured: true, error: error.message },
+      { configured: true, error: message },
       { status: error.status }
     );
   }
@@ -96,7 +101,7 @@ function apiKeyErrorResponse(error: unknown) {
   return Response.json(
     {
       configured: true,
-      error: error instanceof Error ? error.message : "API key request failed.",
+      error: "API key request failed.",
     },
     { status: 500 }
   );

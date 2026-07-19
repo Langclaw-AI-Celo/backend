@@ -1,11 +1,35 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { ApiKeyHttpError } from "../lib/server/api-keys";
 import { createWalletSessionForVerifiedAddress } from "../lib/server/wallet-auth";
 import { mockFetch, withEnv } from "../test/helpers";
-import { handleApiKeys } from "./api-keys";
+import { apiKeyErrorResponse, handleApiKeys } from "./api-keys";
 
 const walletAddress = "0x2222222222222222222222222222222222222222";
+
+test("API key responses redact internal failures", async () => {
+  const invalid = apiKeyErrorResponse(
+    new ApiKeyHttpError(400, "API key name is required."),
+  );
+  const storage = apiKeyErrorResponse(
+    new ApiKeyHttpError(500, "duplicate key exposes constraint name"),
+  );
+  const unexpected = apiKeyErrorResponse(new Error("storage connection failed"));
+
+  assert.deepEqual(await invalid.json(), {
+    configured: true,
+    error: "API key name is required.",
+  });
+  assert.deepEqual(await storage.json(), {
+    configured: true,
+    error: "API key request failed.",
+  });
+  assert.deepEqual(await unexpected.json(), {
+    configured: true,
+    error: "API key request failed.",
+  });
+});
 
 test("API key routes reject malformed JSON", async () => {
   const response = await handleApiKeys(
