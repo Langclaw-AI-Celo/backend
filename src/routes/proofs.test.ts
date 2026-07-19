@@ -88,3 +88,20 @@ test("proof routes reject unsupported product chains before RPC access", async (
     }
   }
 });
+
+test("proof decisions reject malformed limits before chain access", async () => {
+  for (const limit of ["10", 0, -1, 1.5]) {
+    const response = await handleProofDecisions(
+      new Request("http://localhost/api/proofs", {
+        body: JSON.stringify({ chain: "celo", limit }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      }),
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "limit must be a positive integer.",
+    });
+  }
+});

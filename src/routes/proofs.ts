@@ -87,13 +87,22 @@ export async function handleProofDecisions(request: Request) {
     }
 
     chain = getProductChain(readProductChainId(chainInput));
-    const requestedLimit =
-      body && typeof body === "object" && "limit" in body
-        ? Number((body as { limit?: unknown }).limit)
-        : limit;
+    if ("limit" in body) {
+      const requestedLimit = (body as { limit?: unknown }).limit;
 
-    if (Number.isFinite(requestedLimit) && requestedLimit > 0) {
-      limit = Math.min(Math.trunc(requestedLimit), 100);
+      if (
+        typeof requestedLimit !== "number" ||
+        !Number.isFinite(requestedLimit) ||
+        !Number.isInteger(requestedLimit) ||
+        requestedLimit <= 0
+      ) {
+        return Response.json(
+          { error: "limit must be a positive integer." },
+          { status: 400 }
+        );
+      }
+
+      limit = Math.min(requestedLimit, 100);
     }
   } catch {
     return Response.json(
