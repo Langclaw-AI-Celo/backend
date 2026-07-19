@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   clearAlphaWatchlist,
+  deleteAlphaWatchlistItem,
   upsertAlphaWatchlistItem,
   WatchlistHttpError,
   watchlistErrorResponse,
@@ -183,4 +184,42 @@ test("clearing a watchlist deletes only the authenticated wallet rows", async ()
 
   assert.deepEqual(result, { cleared: true });
   assert.deepEqual(filters, [["wallet_user_id", walletUser.id]]);
+});
+
+test("deleting a missing watchlist item returns not found", async () => {
+  const supabase = {
+    from() {
+      const query = {
+        eq() {
+          return query;
+        },
+        select() {
+          return {
+            maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          };
+        },
+      };
+
+      return {
+        delete: () => query,
+      };
+    },
+  };
+
+  await assert.rejects(
+    deleteAlphaWatchlistItem(
+      {
+        account: {
+          authMethod: "wallet",
+          supabase: supabase as never,
+          walletUser,
+        },
+      },
+      "missing-item"
+    ),
+    (error) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 404 &&
+      error.message === "Watchlist item was not found."
+  );
 });
