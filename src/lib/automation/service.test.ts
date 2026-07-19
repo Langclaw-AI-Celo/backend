@@ -184,6 +184,27 @@ test("automation tasks reject unsupported trigger types", async () => {
   );
 });
 
+test("automation task text fields reject non-string values", async () => {
+  for (const [field, value] of [
+    ["name", 42],
+    ["project", {}],
+    ["prompt", []],
+    ["model", true],
+  ] as const) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+        [field]: value,
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a string.`
+    );
+  }
+});
+
 test("scheduled tasks reject unsupported frequencies", async () => {
   const storage = buildAutomationStorage("active");
 

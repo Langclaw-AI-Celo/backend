@@ -1789,7 +1789,7 @@ function normalizeTaskInput(
     settings: AutomationSettings;
   }
 ) {
-  const name = readOptionalString(input.name, 120);
+  const name = readOptionalInputString(input.name, 120, "name");
 
   if (requireName && !name) {
     throw new AutomationHttpError(400, "Task name is required.");
@@ -1822,7 +1822,7 @@ function normalizeTaskInput(
   const eventName =
     triggerType === "event"
       ? readEventName(input.eventName ?? existing?.event_name)
-      : readOptionalString(input.eventName, 160);
+      : readOptionalInputString(input.eventName, 160, "eventName");
 
   return {
     eventName,
@@ -1834,13 +1834,13 @@ function normalizeTaskInput(
         : settings.retryPolicy === "none"
           ? 0
           : 3),
-    model: readOptionalString(input.model, 120),
+    model: readOptionalInputString(input.model, 120, "model"),
     name,
     project:
-      readOptionalString(input.project, 120) ||
+      readOptionalInputString(input.project, 120, "project") ||
       existing?.project ||
       "Langclaw Website",
-    prompt: readOptionalString(input.prompt, 2000),
+    prompt: readOptionalInputString(input.prompt, 2000, "prompt"),
     scheduleFrequency,
     scheduleMonthDay:
       triggerType === "schedule"
@@ -2011,6 +2011,22 @@ function readOptionalString(value: unknown, maxLength: number) {
   }
 
   return trimmed.slice(0, maxLength);
+}
+
+function readOptionalInputString(
+  value: unknown,
+  maxLength: number,
+  field: string
+) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new AutomationHttpError(400, `${field} must be a string.`);
+  }
+
+  return readOptionalString(value, maxLength);
 }
 
 function readScheduleTime(value: unknown, fallback: string) {
