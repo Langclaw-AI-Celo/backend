@@ -42,3 +42,44 @@ test("strategy routes reject non-object JSON before provider work", async () => 
     });
   }
 });
+
+test("strategy routes redact unexpected provider failures", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalApiKey = process.env.DUNE_API_KEY;
+  const originalQueryId = process.env.DUNE_STRATEGY_QUERY_ID;
+
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+
+    if (originalApiKey === undefined) {
+      delete process.env.DUNE_API_KEY;
+    } else {
+      process.env.DUNE_API_KEY = originalApiKey;
+    }
+
+    if (originalQueryId === undefined) {
+      delete process.env.DUNE_STRATEGY_QUERY_ID;
+    } else {
+      process.env.DUNE_STRATEGY_QUERY_ID = originalQueryId;
+    }
+  });
+
+  process.env.DUNE_API_KEY = "test-key";
+  process.env.DUNE_STRATEGY_QUERY_ID = "123";
+  globalThis.fetch = async () =>
+    new Response("provider returned private malformed data", { status: 200 });
+
+  const response = await handleStrategyBacktest(
+    new Request("http://localhost/api/strategy/backtest", {
+      body: "{}",
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    }),
+  );
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), {
+    configured: false,
+    error: "Strategy request failed.",
+  });
+});
