@@ -480,14 +480,14 @@ function readMemoryIds(value: unknown) {
     throw new MemoryHttpError(400, "memoryIds are required.");
   }
 
-  const ids = Array.from(
-    new Set(
-      value
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean)
-    )
-  );
+  if (value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new MemoryHttpError(
+      400,
+      "memoryIds must contain only non-empty strings."
+    );
+  }
+
+  const ids = Array.from(new Set((value as string[]).map((item) => item.trim())));
 
   if (!ids.length) {
     throw new MemoryHttpError(400, "At least one memory id is required.");

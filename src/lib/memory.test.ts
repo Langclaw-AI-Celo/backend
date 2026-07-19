@@ -138,6 +138,11 @@ test("bulk memory status validation rejects missing ids and unsupported states",
   for (const [memoryIds, status, message] of [
     [undefined, "active", "memoryIds are required."],
     [[], "active", "At least one memory id is required."],
+    [
+      ["memory-1", 42],
+      "active",
+      "memoryIds must contain only non-empty strings.",
+    ],
     [["memory-1"], "archived", "A valid memory status is required."],
   ] as const) {
     await assert.rejects(
@@ -188,7 +193,7 @@ test("bulk memory status updates trim and deduplicate ids", async () => {
         walletUser,
       },
     },
-    [" memory-1 ", "memory-1", "", 42, "memory-2"],
+    [" memory-1 ", "memory-1", "memory-2"],
     "disabled",
   );
 
