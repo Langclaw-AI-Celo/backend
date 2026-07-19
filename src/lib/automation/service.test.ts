@@ -446,6 +446,25 @@ test("automation settings reject malformed notification channels", async () => {
   }
 });
 
+test("automation settings reject non-boolean flags", async () => {
+  for (const field of [
+    "autoPauseRepeatedFailures",
+    "writeRunLogsToMemory",
+  ] as const) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationSettings(buildAccount(storage.supabase), {
+        [field]: "false",
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a boolean.`,
+    );
+  }
+});
+
 test("automation settings reject invalid 0G amounts", async () => {
   for (const field of [
     "dailyLimit0G",

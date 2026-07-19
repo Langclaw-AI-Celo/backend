@@ -1849,10 +1849,11 @@ function normalizeTaskInput(
 
 function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSettings {
   return {
-    autoPauseRepeatedFailures:
-      typeof input.autoPauseRepeatedFailures === "boolean"
-        ? input.autoPauseRepeatedFailures
-        : true,
+    autoPauseRepeatedFailures: readSettingsBoolean(
+      input.autoPauseRepeatedFailures,
+      true,
+      "autoPauseRepeatedFailures"
+    ),
     dailyLimit0G: read0GAmount(input.dailyLimit0G, "25", "dailyLimit0G"),
     failureNotification: readSettingsEnum(
       input.failureNotification,
@@ -1889,10 +1890,11 @@ function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSetti
       "notify",
       "thresholdAction"
     ),
-    writeRunLogsToMemory:
-      typeof input.writeRunLogsToMemory === "boolean"
-        ? input.writeRunLogsToMemory
-        : false,
+    writeRunLogsToMemory: readSettingsBoolean(
+      input.writeRunLogsToMemory,
+      false,
+      "writeRunLogsToMemory"
+    ),
   };
 }
 
@@ -2014,6 +2016,22 @@ function readSettingsEnum<T extends string>(
   }
 
   return result;
+}
+
+function readSettingsBoolean(
+  value: unknown,
+  fallback: boolean,
+  field: string
+) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value !== "boolean") {
+    throw new AutomationHttpError(400, `${field} must be a boolean.`);
+  }
+
+  return value;
 }
 
 function readNotificationChannels(
