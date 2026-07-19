@@ -127,6 +127,21 @@ test("automation task inputs reject missing identifiers and required fields", as
   );
 });
 
+test("automation tasks reject unsupported trigger types", async () => {
+  const storage = buildAutomationStorage("active");
+
+  await assert.rejects(
+    createAutomationTask(buildAccount(storage.supabase), {
+      name: "Invalid trigger",
+      triggerType: "interval",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 400 &&
+      error.message === "triggerType must be one of: schedule, event, webhook.",
+  );
+});
+
 test("automation link and trigger inputs reject malformed values", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);

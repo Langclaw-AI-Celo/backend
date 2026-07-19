@@ -1787,10 +1787,11 @@ function normalizeTaskInput(
     throw new AutomationHttpError(400, "Task name is required.");
   }
 
-  const triggerType = readEnum<AutomationTriggerType>(
+  const triggerType = readInputEnum<AutomationTriggerType>(
     input.triggerType,
     ["schedule", "event", "webhook"],
-    existing?.trigger_type ?? "schedule"
+    existing?.trigger_type ?? "schedule",
+    "triggerType"
   );
   const scheduleFrequency =
     triggerType === "schedule"
@@ -1855,13 +1856,13 @@ function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSetti
       "autoPauseRepeatedFailures"
     ),
     dailyLimit0G: read0GAmount(input.dailyLimit0G, "25", "dailyLimit0G"),
-    failureNotification: readSettingsEnum(
+    failureNotification: readInputEnum(
       input.failureNotification,
       ["email", "in-app", "none"],
       "email",
       "failureNotification"
     ),
-    limitBehavior: readSettingsEnum(
+    limitBehavior: readInputEnum(
       input.limitBehavior,
       ["pause", "alert", "allow"],
       "pause",
@@ -1876,7 +1877,7 @@ function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSetti
     notificationChannels: readNotificationChannels(input.notificationChannels),
     notificationEmail: readOptionalString(input.notificationEmail, 320),
     notificationEmailVerified: false,
-    retryPolicy: readSettingsEnum(
+    retryPolicy: readInputEnum(
       input.retryPolicy,
       ["none", "3-attempts", "5-attempts"],
       "3-attempts",
@@ -1884,7 +1885,7 @@ function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSetti
     ),
     telegramChatId: readOptionalString(input.telegramChatId, 120),
     telegramVerified: false,
-    thresholdAction: readSettingsEnum(
+    thresholdAction: readInputEnum(
       input.thresholdAction,
       ["notify", "pause", "continue"],
       "notify",
@@ -1996,7 +1997,7 @@ function readEnum<T extends string>(
   return fallback;
 }
 
-function readSettingsEnum<T extends string>(
+function readInputEnum<T extends string>(
   value: unknown,
   allowed: readonly T[],
   fallback: T,
