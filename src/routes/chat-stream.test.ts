@@ -458,6 +458,58 @@ test("direct chat streams safe reasoning progress while OpenAI answer streams", 
   }
 });
 
+test("direct chat redacts provider failures from fallback events", async () => {
+  const internalMessage =
+    "OpenAI project prj_internal rejected secret deployment deploy_private.";
+  const restore = mockFetch((url) => {
+    const parsed = new URL(url);
+
+    if (isSupabaseRequest(url)) {
+      return supabaseAccountResponse(url);
+    }
+
+    if (parsed.hostname === "api.openai.test") {
+      return jsonResponse(
+        { error: { message: internalMessage } },
+        { status: 500 },
+      );
+    }
+
+    return jsonResponse({ ok: true });
+  });
+
+  try {
+    await withEnv(
+      {
+        ...authEnv,
+        OPENAI_API_KEY: "test-key",
+        OPENAI_BASE_URL: "https://api.openai.test/v1",
+      },
+      async () => {
+        const response = await handleChatStream(
+          new Request("http://localhost/api/chat/stream", {
+            body: JSON.stringify({
+              message: "halo",
+              wallet: await buildTestWallet(),
+            }),
+            method: "POST",
+          }),
+        );
+        const events = await readNdjson(response);
+        const direct = events.find((event) => event.type === "direct");
+        const payload = direct?.payload as Record<string, unknown>;
+        const serializedEvents = JSON.stringify(events);
+
+        assert.equal(payload.source, "fallback");
+        assert.equal(payload.error, "Chat model is unavailable.");
+        assert.doesNotMatch(serializedEvents, /prj_internal|deploy_private/);
+      },
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("direct chat uses configured OpenAI default model when none is requested", async () => {
   const restore = mockFetch((url) =>
     isSupabaseRequest(url) ? supabaseAccountResponse(url) : jsonResponse({ data: [] })

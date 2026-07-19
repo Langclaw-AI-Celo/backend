@@ -27,6 +27,8 @@ export type OpenAIModelSelection = {
   usedModel: string;
 };
 
+const publicChatModelError = "Chat model is unavailable.";
+
 export async function streamDirectChatWithOpenAI({
   context,
   message,
@@ -43,7 +45,7 @@ export async function streamDirectChatWithOpenAI({
 
     return {
       answer,
-      error: "OPENAI_API_KEY is empty.",
+      error: publicChatModelError,
       fallbackFrom: selection.fallbackFrom,
       model,
       modelHonored: selection.modelHonored,
@@ -90,7 +92,7 @@ export async function streamDirectChatWithOpenAI({
 
     return {
       answer,
-      error: error instanceof Error ? error.message : "OpenAI chat failed.",
+      error: publicChatModelError,
       fallbackFrom: selection.fallbackFrom,
       model,
       modelHonored: selection.modelHonored,
