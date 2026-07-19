@@ -79,10 +79,15 @@ export async function handleWalletSession(request: Request) {
   }
 }
 
-function walletAuthErrorResponse(error: unknown) {
+export function walletAuthErrorResponse(error: unknown) {
   if (error instanceof WalletAuthError) {
+    const message =
+      error.status < 500 || error.status === 503
+        ? error.message
+        : "Wallet authentication failed.";
+
     return Response.json(
-      { configured: true, error: error.message },
+      { configured: true, error: message },
       { status: error.status }
     );
   }
@@ -90,10 +95,7 @@ function walletAuthErrorResponse(error: unknown) {
   return Response.json(
     {
       configured: true,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Wallet authentication failed.",
+      error: "Wallet authentication failed.",
     },
     { status: 500 }
   );
