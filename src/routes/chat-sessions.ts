@@ -111,7 +111,17 @@ export async function handleChatSessions(request: Request) {
       );
     }
 
-    const session = await readSession(walletUserId, sessionId);
+    const sessionLookup = await readSession(walletUserId, sessionId);
+
+    if (sessionLookup.status === "error") {
+      return Response.json(
+        { configured: true, error: "Unable to read chat session." },
+        { status: 500 },
+      );
+    }
+
+    const session =
+      sessionLookup.status === "found" ? sessionLookup.session : null;
 
     return Response.json({
       configured: true,
@@ -322,7 +332,7 @@ async function readSession(walletUserId: string, sessionId: string) {
   const supabase = getSupabaseAdmin();
 
   if (!supabase) {
-    return null;
+    return { status: "error" as const };
   }
 
   const { data: sessionRow, error: sessionError } = await supabase
@@ -332,8 +342,12 @@ async function readSession(walletUserId: string, sessionId: string) {
     .eq("id", sessionId)
     .maybeSingle();
 
-  if (sessionError || !sessionRow) {
-    return null;
+  if (sessionError) {
+    return { status: "error" as const };
+  }
+
+  if (!sessionRow) {
+    return { status: "not-found" as const };
   }
 
   const messages = supabase.from("langclaw_chat_messages") as ReturnType<
@@ -353,13 +367,16 @@ async function readSession(walletUserId: string, sessionId: string) {
     .order("created_at", { ascending: true });
 
   if (messagesError) {
-    return rowToSession(sessionRow as ChatSessionRow);
+    return { status: "error" as const };
   }
 
-  return rowToSession(
-    sessionRow as ChatSessionRow,
-    ((messageRows ?? []) as unknown as ChatMessageRow[]).map(rowToMessage)
-  );
+  return {
+    session: rowToSession(
+      sessionRow as ChatSessionRow,
+      ((messageRows ?? []) as unknown as ChatMessageRow[]).map(rowToMessage),
+    ),
+    status: "found" as const,
+  };
 }
 
 async function upsertSession(walletUserId: string, session: ChatSession) {
@@ -430,7 +447,9 @@ async function upsertSession(walletUserId: string, session: ChatSession) {
     }
   }
 
-  return readSession(walletUserId, session.id);
+  const sessionLookup = await readSession(walletUserId, session.id);
+
+  return sessionLookup.status === "found" ? sessionLookup.session : null;
 }
 
 async function deleteSession(walletUserId: string, sessionId: string) {
