@@ -382,7 +382,6 @@ test("updates automation settings with explicit and default guardrails", async (
   const defaults = await updateAutomationSettings(
     buildAccount(defaultsStorage.supabase),
     {
-      dailyLimit0G: "invalid",
       notificationChannels: ["invalid" as "email"],
       retryPolicy: "invalid" as "none",
     }
@@ -393,6 +392,27 @@ test("updates automation settings with explicit and default guardrails", async (
   assert.deepEqual(defaults.notificationChannels, ["email"]);
   assert.equal(defaults.retryPolicy, "3-attempts");
   assert.equal(defaults.thresholdAction, "notify");
+});
+
+test("automation settings reject invalid 0G amounts", async () => {
+  for (const field of [
+    "dailyLimit0G",
+    "lowBalanceThreshold0G",
+    "monthlyCap0G",
+  ] as const) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationSettings(buildAccount(storage.supabase), {
+        [field]: "invalid",
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message ===
+          `${field} must be a non-negative decimal with up to 18 fractional digits.`,
+    );
+  }
 });
 
 test("marks one or all in-app automation notifications as read", async () => {

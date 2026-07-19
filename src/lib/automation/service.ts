@@ -1855,15 +1855,19 @@ function normalizeSettingsInput(input: AutomationSettingsInput): AutomationSetti
       typeof input.autoPauseRepeatedFailures === "boolean"
         ? input.autoPauseRepeatedFailures
         : true,
-    dailyLimit0G: read0GAmount(input.dailyLimit0G, "25"),
+    dailyLimit0G: read0GAmount(input.dailyLimit0G, "25", "dailyLimit0G"),
     failureNotification: readEnum(
       input.failureNotification,
       ["email", "in-app", "none"],
       "email"
     ) ?? "email",
     limitBehavior: readEnum(input.limitBehavior, ["pause", "alert", "allow"], "pause") ?? "pause",
-    lowBalanceThreshold0G: read0GAmount(input.lowBalanceThreshold0G, "10"),
-    monthlyCap0G: read0GAmount(input.monthlyCap0G, "500"),
+    lowBalanceThreshold0G: read0GAmount(
+      input.lowBalanceThreshold0G,
+      "10",
+      "lowBalanceThreshold0G"
+    ),
+    monthlyCap0G: read0GAmount(input.monthlyCap0G, "500", "monthlyCap0G"),
     notificationChannels: readNotificationChannels(input.notificationChannels),
     notificationEmail: readOptionalString(input.notificationEmail, 320),
     notificationEmailVerified: false,
@@ -2254,15 +2258,21 @@ function withAutomationAttemptMetadata(
   };
 }
 
-function read0GAmount(value: unknown, fallback: string) {
-  if (typeof value !== "string" && typeof value !== "number") {
+function read0GAmount(value: unknown, fallback: string, field: string) {
+  if (value === undefined) {
     return fallback;
   }
 
-  const raw = String(value).trim();
+  const raw =
+    typeof value === "string" || typeof value === "number"
+      ? String(value).trim()
+      : "";
 
   if (!/^\d+(\.\d{1,18})?$/.test(raw)) {
-    return fallback;
+    throw new AutomationHttpError(
+      400,
+      `${field} must be a non-negative decimal with up to 18 fractional digits.`
+    );
   }
 
   return raw;
