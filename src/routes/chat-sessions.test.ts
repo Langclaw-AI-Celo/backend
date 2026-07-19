@@ -325,6 +325,16 @@ test("chat session routes validate mutation inputs after authentication", async 
             error: "title cannot be empty.",
           },
           {
+            body: {
+              action: "update",
+              pinned: "false",
+              sessionId: "session-id",
+              title: "Updated title",
+              wallet,
+            },
+            error: "pinned must be a boolean.",
+          },
+          {
             body: { action: "update", sessionId: "session-id", wallet },
             error: "title or pinned is required.",
           },

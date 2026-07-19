@@ -201,6 +201,13 @@ export async function handleChatSessions(request: Request) {
       );
     }
 
+    if (body.pinned !== undefined && !hasPinned) {
+      return Response.json(
+        { configured: true, error: "pinned must be a boolean." },
+        { status: 400 }
+      );
+    }
+
     if (titleResult.value === undefined && !hasPinned) {
       return Response.json(
         { configured: true, error: "title or pinned is required." },
