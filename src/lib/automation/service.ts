@@ -194,6 +194,11 @@ export async function updateAutomationTask(
 ) {
   const context = await requireAutomationContext(authInput);
   const existing = await readAutomationTaskRow(context, readTaskId(taskId));
+
+  if (existing.status === "archived") {
+    throw new AutomationHttpError(404, "Automation task was not found.");
+  }
+
   const settings = await readAutomationSettingsForContext(context);
   const patch = normalizeTaskInput(input, {
     existing,

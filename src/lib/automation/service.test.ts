@@ -73,6 +73,22 @@ test("automation task status transitions update schedule state", async () => {
   assert.match(String(active.updated?.next_run_at), /^\d{4}-\d{2}-\d{2}T/);
 });
 
+test("archived automation tasks cannot be restored by updates", async () => {
+  const storage = buildAutomationStorage("archived");
+
+  await assert.rejects(
+    updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+      status: "active",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 404 &&
+      error.message === "Automation task was not found.",
+  );
+
+  assert.equal(storage.updated, undefined);
+});
+
 test("automation metadata updates preserve the scheduled next run", async () => {
   const nextRunAt = "2026-08-01T02:00:00.000Z";
   const storage = buildAutomationStorage("active", {
