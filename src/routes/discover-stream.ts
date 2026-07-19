@@ -17,7 +17,16 @@ export async function handleDiscoverStream(request: Request) {
   let wallet: WalletAuthInput = {};
 
   try {
-    const body = (await request.json()) as {
+    const value = await request.json();
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return Response.json(
+        { error: "Request body must be a JSON object." },
+        { status: 400 }
+      );
+    }
+
+    const body = value as {
       topic?: unknown;
       wallet?: WalletAuthInput;
     };
