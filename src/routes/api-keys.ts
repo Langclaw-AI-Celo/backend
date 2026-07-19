@@ -21,7 +21,13 @@ export async function handleApiKeys(request: Request) {
   let body: ApiKeysBody;
 
   try {
-    body = (await request.json()) as ApiKeysBody;
+    const value = await request.json();
+
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      throw new TypeError("API key request body must be an object.");
+    }
+
+    body = value as ApiKeysBody;
   } catch {
     return Response.json(
       { configured: true, error: "Request body must be valid JSON." },
