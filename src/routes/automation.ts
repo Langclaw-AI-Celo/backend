@@ -354,7 +354,13 @@ async function readAutomationBody(
   request: Request
 ): Promise<AutomationBody | { response: Response }> {
   try {
-    return (await request.json()) as AutomationBody;
+    const body = await request.json();
+
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new TypeError("Automation request body must be an object.");
+    }
+
+    return body as AutomationBody;
   } catch {
     return {
       response: Response.json(

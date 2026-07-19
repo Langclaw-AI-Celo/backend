@@ -31,6 +31,30 @@ test("automation routes reject unsupported actions before service calls", async 
   }
 });
 
+test("automation routes reject non-object JSON bodies", async () => {
+  for (const handler of [
+    handleAutomationTasks,
+    handleAutomationRuns,
+    handleAutomationSettings,
+    handleAutomationNotifications,
+  ]) {
+    for (const body of [null, [], "invalid"]) {
+      const response = await handler(
+        new Request("http://localhost/api/automation", {
+          body: JSON.stringify(body),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        }),
+      );
+
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), {
+        error: "Request body must be valid JSON.",
+      });
+    }
+  }
+});
+
 test("automation routes keep every supported action behind account authentication", async () => {
   const cases = [
     {
