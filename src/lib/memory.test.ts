@@ -452,6 +452,45 @@ test("memory settings surface persistence failures after normalization", async (
   assert.equal(updatePayload?.cross_chat_recall, true);
 });
 
+test("memory settings reject malformed boolean fields", async () => {
+  for (const field of [
+    "autoDisableLowConfidence",
+    "captureEnabled",
+    "crossChatRecall",
+    "projectScopedRecall",
+  ] as const) {
+    const settingsRow = buildMemorySettingsRow();
+    const supabase = {
+      from(table: string) {
+        assert.equal(table, "langclaw_memory_settings");
+        return {
+          update() {
+            throw new Error("validation should finish before updating storage");
+          },
+          upsert() {
+            return {
+              select() {
+                return {
+                  single: () =>
+                    Promise.resolve({ data: settingsRow, error: null }),
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+
+    await assert.rejects(
+      updateMemorySettings(buildMemoryAccount(supabase), { [field]: "false" }),
+      (error: unknown) =>
+        error instanceof MemoryHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a boolean.`,
+    );
+  }
+});
+
 test("automation memory persistence honors capture and confidence settings", async () => {
   const persisted: Record<string, unknown>[] = [];
   const settingsRow = buildMemorySettingsRow();

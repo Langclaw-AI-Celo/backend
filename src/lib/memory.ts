@@ -454,13 +454,23 @@ function normalizeMemorySettingsInput(
   return {
     autoDisableLowConfidence: readBoolean(
       input.autoDisableLowConfidence,
-      fallback.autoDisableLowConfidence
+      fallback.autoDisableLowConfidence,
+      "autoDisableLowConfidence"
     ),
-    captureEnabled: readBoolean(input.captureEnabled, fallback.captureEnabled),
-    crossChatRecall: readBoolean(input.crossChatRecall, fallback.crossChatRecall),
+    captureEnabled: readBoolean(
+      input.captureEnabled,
+      fallback.captureEnabled,
+      "captureEnabled"
+    ),
+    crossChatRecall: readBoolean(
+      input.crossChatRecall,
+      fallback.crossChatRecall,
+      "crossChatRecall"
+    ),
     projectScopedRecall: readBoolean(
       input.projectScopedRecall,
-      fallback.projectScopedRecall
+      fallback.projectScopedRecall,
+      "projectScopedRecall"
     ),
     retentionDays: readInteger(input.retentionDays, fallback.retentionDays, 0, 3650),
     updatedAt: fallback.updatedAt,
@@ -520,8 +530,16 @@ function readMemoryStatus(value: unknown, fallback?: MemoryStatus) {
   throw new MemoryHttpError(400, "A valid memory status is required.");
 }
 
-function readBoolean(value: unknown, fallback: boolean) {
-  return typeof value === "boolean" ? value : fallback;
+function readBoolean(value: unknown, fallback: boolean, field: string) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  throw new MemoryHttpError(400, `${field} must be a boolean.`);
 }
 
 function readInteger(
