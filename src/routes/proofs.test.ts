@@ -69,3 +69,22 @@ test("proof routes reject non-object JSON before chain access", async () => {
     },
   );
 });
+
+test("proof routes reject unsupported product chains before RPC access", async () => {
+  for (const handler of [handleProofDecisions, handleProofReadiness]) {
+    for (const chain of ["base", "", 42220]) {
+      const response = await handler(
+        new Request("http://localhost/api/proofs", {
+          body: JSON.stringify({ chain }),
+          headers: { "content-type": "application/json" },
+          method: "POST",
+        }),
+      );
+
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), {
+        error: "chain must be celo or mantle.",
+      });
+    }
+  }
+});

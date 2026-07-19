@@ -9,8 +9,10 @@ import {
 } from "viem";
 import {
   getProductChain,
+  isProductChainId,
   readChainEnv,
   readProductChainId,
+  type ProductChainId,
 } from "../lib/chain-config";
 import { buildProofReadinessReport } from "../lib/proof-readiness";
 
@@ -76,7 +78,15 @@ export async function handleProofDecisions(request: Request) {
       );
     }
 
-    chain = getProductChain(readProductChainId((body as { chain?: unknown }).chain));
+    const chainInput = readProofChainInput(
+      (body as { chain?: unknown }).chain
+    );
+
+    if (chainInput === null) {
+      return invalidProofChainResponse();
+    }
+
+    chain = getProductChain(readProductChainId(chainInput));
     const requestedLimit =
       body && typeof body === "object" && "limit" in body
         ? Number((body as { limit?: unknown }).limit)
@@ -172,7 +182,15 @@ export async function handleProofReadiness(request: Request) {
       );
     }
 
-    body = value as { chain?: unknown };
+    const chainInput = readProofChainInput(
+      (value as { chain?: unknown }).chain
+    );
+
+    if (chainInput === null) {
+      return invalidProofChainResponse();
+    }
+
+    body = { chain: chainInput };
   } catch {
     return Response.json(
       { error: "Request body must be valid JSON." },
@@ -269,4 +287,22 @@ function readChainId(chain: ReturnType<typeof getProductChain>) {
 
 function trimSlash(value: string) {
   return value.replace(/\/+$/, "");
+}
+
+function readProofChainInput(value: unknown): ProductChainId | undefined | null {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized =
+    typeof value === "string" ? value.trim().toLowerCase() : value;
+
+  return isProductChainId(normalized) ? normalized : null;
+}
+
+function invalidProofChainResponse() {
+  return Response.json(
+    { error: "chain must be celo or mantle." },
+    { status: 400 }
+  );
 }
