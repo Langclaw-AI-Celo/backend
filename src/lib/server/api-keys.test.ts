@@ -7,6 +7,7 @@ import {
   generateApiKeySecret,
   hashApiKeySecret,
   maskApiKey,
+  revokeApiKey,
   verifyApiKeyHash,
 } from "./api-keys";
 import { withEnv } from "../../test/helpers";
@@ -31,6 +32,22 @@ test("hashes and verifies API keys with a pepper", () => {
 
 test("masks API keys without exposing the full secret", () => {
   assert.equal(maskApiKey("lck_live_ab1", "9xyz12"), "lck_live_ab1********9xyz12");
+});
+
+test("API key revocation rejects malformed identifiers before storage", async () => {
+  const supabase = {
+    from() {
+      throw new Error("storage must not be reached");
+    },
+  };
+
+  await assert.rejects(
+    revokeApiKey(supabase as never, "wallet-user-1", "not-a-uuid"),
+    (error: unknown) =>
+      error instanceof ApiKeyHttpError &&
+      error.status === 400 &&
+      error.message === "keyId must be a valid UUID.",
+  );
 });
 
 function createSupabaseMock(options?: {
