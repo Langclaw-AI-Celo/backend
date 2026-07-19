@@ -1964,13 +1964,22 @@ function readOptionalString(value: unknown, maxLength: number) {
 }
 
 function readScheduleTime(value: unknown, fallback: string) {
-  if (typeof value !== "string" || !/^[0-2][0-9]:[0-5][0-9]$/.test(value)) {
+  if (value === undefined) {
     return fallback;
   }
 
-  const [hour] = value.split(":").map(Number);
+  if (typeof value === "string" && /^[0-2][0-9]:[0-5][0-9]$/.test(value)) {
+    const [hour] = value.split(":").map(Number);
 
-  return hour > 23 ? fallback : value;
+    if (hour <= 23) {
+      return value;
+    }
+  }
+
+  throw new AutomationHttpError(
+    400,
+    "scheduleTime must use 24-hour HH:MM format."
+  );
 }
 
 function readInteger(

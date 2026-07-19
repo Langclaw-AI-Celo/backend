@@ -158,6 +158,24 @@ test("scheduled tasks reject unsupported frequencies", async () => {
   );
 });
 
+test("scheduled tasks reject invalid schedule times", async () => {
+  for (const scheduleTime of ["24:00", "8:30", 930]) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      createAutomationTask(buildAccount(storage.supabase), {
+        name: "Invalid time",
+        scheduleTime,
+        triggerType: "schedule",
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === "scheduleTime must use 24-hour HH:MM format.",
+    );
+  }
+});
+
 test("automation link and trigger inputs reject malformed values", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);
