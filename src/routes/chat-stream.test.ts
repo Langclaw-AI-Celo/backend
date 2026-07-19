@@ -5,6 +5,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import {
   buildChatWorkflowOptions,
   handleChatStream,
+  readChatStreamError,
   resolveEffectiveToolMode,
 } from "./chat-stream";
 import {
@@ -81,6 +82,14 @@ function supabaseAccountResponse(url: string, telegramLinked = true) {
 
   return supabaseWalletResponse();
 }
+
+test("chat streams hide internal workflow failures", () => {
+  assert.equal(
+    readChatStreamError(new Error("OPENAI_API_KEY=secret provider failure")),
+    "Chat failed.",
+  );
+  assert.equal(readChatStreamError("unknown failure"), "Chat failed.");
+});
 
 test("chat stream rejects non-object JSON bodies", async () => {
   for (const body of [null, [], "invalid"]) {
