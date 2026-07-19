@@ -2019,16 +2019,27 @@ function readSettingsEnum<T extends string>(
 function readNotificationChannels(
   value: unknown
 ): Array<"email" | "telegram" | "in-app"> {
-  if (!Array.isArray(value)) {
+  if (value === undefined) {
     return ["email"];
   }
 
-  const channels = value.filter(
-    (item): item is "email" | "telegram" | "in-app" =>
-      item === "email" || item === "telegram" || item === "in-app"
-  );
+  if (
+    !Array.isArray(value) ||
+    !value.every(
+      (item) => item === "email" || item === "telegram" || item === "in-app"
+    )
+  ) {
+    throw new AutomationHttpError(
+      400,
+      "notificationChannels must contain only email, telegram, or in-app."
+    );
+  }
 
-  return channels.length ? Array.from(new Set(channels)) : ["email"];
+  const channels = value as Array<"email" | "telegram" | "in-app">;
+
+  return channels.length
+    ? Array.from(new Set(channels))
+    : ["email"];
 }
 
 async function findTelegramUpdateByCodeHash(codeHash: string) {

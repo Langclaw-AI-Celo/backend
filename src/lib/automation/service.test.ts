@@ -426,6 +426,26 @@ test("automation settings reject unsupported option values", async () => {
   }
 });
 
+test("automation settings reject malformed notification channels", async () => {
+  for (const notificationChannels of [
+    "email",
+    ["email", "invalid"],
+  ]) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationSettings(buildAccount(storage.supabase), {
+        notificationChannels,
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message ===
+          "notificationChannels must contain only email, telegram, or in-app.",
+    );
+  }
+});
+
 test("automation settings reject invalid 0G amounts", async () => {
   for (const field of [
     "dailyLimit0G",
