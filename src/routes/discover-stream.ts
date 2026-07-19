@@ -113,7 +113,7 @@ export async function handleDiscoverStream(request: Request) {
 
         write({
           type: "error",
-          error: error instanceof Error ? error.message : "Discovery failed.",
+          error: readDiscoverStreamError(error),
         });
       } finally {
         controller.close();
@@ -129,4 +129,9 @@ export async function handleDiscoverStream(request: Request) {
       "X-Accel-Buffering": "no",
     },
   });
+}
+
+export function readDiscoverStreamError(error: unknown) {
+  void error;
+  return "Discovery failed.";
 }
