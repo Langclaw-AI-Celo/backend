@@ -101,6 +101,21 @@ test("automation metadata updates preserve task retry guardrails", async () => {
   assert.equal(storage.updated?.max_retries, 5);
 });
 
+test("automation task updates can clear optional text fields", async () => {
+  const storage = buildAutomationStorage("active", {
+    model: "gpt-5-mini",
+    prompt: "Review Celo activity",
+  });
+
+  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    model: " ",
+    prompt: "",
+  });
+
+  assert.equal(storage.updated?.model, null);
+  assert.equal(storage.updated?.prompt, null);
+});
+
 test("automation trigger changes clear stale event metadata", async () => {
   const storage = buildAutomationStorage("active", {
     event_name: "price.changed",

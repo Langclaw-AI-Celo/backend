@@ -248,11 +248,11 @@ export async function updateAutomationTask(
         triggerType === "event" ? patch.eventName ?? existing.event_name : null,
       failure_threshold: patch.failureThreshold ?? existing.failure_threshold,
       max_retries: patch.maxRetries ?? existing.max_retries,
-      model: patch.model ?? existing.model,
+      model: input.model === undefined ? existing.model : patch.model ?? null,
       name: patch.name ?? existing.name,
       next_run_at: nextRunAt,
       project: patch.project ?? existing.project,
-      prompt: patch.prompt ?? existing.prompt,
+      prompt: input.prompt === undefined ? existing.prompt : patch.prompt ?? null,
       schedule_frequency:
         triggerType === "schedule" ? scheduleFrequency : null,
       schedule_month_day:
