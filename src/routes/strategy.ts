@@ -10,7 +10,7 @@ import {
   persistTradingJournalRecord,
   readTradingJournalRuns,
 } from "../lib/strategy/journal";
-import { readProductChainId } from "../lib/chain-config";
+import { productChains, readProductChainId } from "../lib/chain-config";
 import type {
   StrategyBacktestParams,
   StrategyBacktestPayload,
@@ -236,6 +236,19 @@ async function readStrategyBody(
       };
     }
 
+    if (!isValidOptionalChain(strategyBody.chain)) {
+      return {
+        response: Response.json(
+          {
+            configured: false,
+            error:
+              "chain must identify a supported product chain when provided.",
+          },
+          { status: 400 }
+        ),
+      };
+    }
+
     return strategyBody;
   } catch {
     return {
@@ -266,6 +279,22 @@ function isValidStrategyParams(value: unknown) {
       typeof parameter === "number" &&
       Number.isFinite(parameter) &&
       parameter > 0
+  );
+}
+
+function isValidOptionalChain(value: unknown) {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  return Object.values(productChains).some(
+    (chain) => chain.id === normalized || chain.aliases.includes(normalized)
   );
 }
 
