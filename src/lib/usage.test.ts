@@ -95,13 +95,18 @@ test("withdrawal requests require a verified wallet session", async () => {
 
 test("usage error responses preserve safe status and messages", async () => {
   const known = usageErrorResponse(new UsageHttpError(402, "Balance required."));
+  const storage = usageErrorResponse(
+    new UsageHttpError(500, "relation langclaw_usage does not exist"),
+  );
   const unexpected = usageErrorResponse(new Error("Storage failed."));
   const unknown = usageErrorResponse({ reason: "unknown" });
 
   assert.equal(known.status, 402);
   assert.deepEqual(await known.json(), { error: "Balance required." });
+  assert.equal(storage.status, 500);
+  assert.deepEqual(await storage.json(), { error: "Usage billing failed." });
   assert.equal(unexpected.status, 500);
-  assert.deepEqual(await unexpected.json(), { error: "Storage failed." });
+  assert.deepEqual(await unexpected.json(), { error: "Usage billing failed." });
   assert.equal(unknown.status, 500);
   assert.deepEqual(await unknown.json(), { error: "Usage billing failed." });
 });

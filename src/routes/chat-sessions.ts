@@ -88,7 +88,7 @@ export async function handleChatSessions(request: Request) {
 
     if (error) {
       return Response.json(
-        { configured: true, error: error.message },
+        { configured: true, error: "Unable to list chat sessions." },
         { status: 500 }
       );
     }
@@ -111,7 +111,17 @@ export async function handleChatSessions(request: Request) {
       );
     }
 
-    const session = await readSession(walletUserId, sessionId);
+    const sessionLookup = await readSession(walletUserId, sessionId);
+
+    if (sessionLookup.status === "error") {
+      return Response.json(
+        { configured: true, error: "Unable to read chat session." },
+        { status: 500 },
+      );
+    }
+
+    const session =
+      sessionLookup.status === "found" ? sessionLookup.session : null;
 
     return Response.json({
       configured: true,
@@ -129,7 +139,14 @@ export async function handleChatSessions(request: Request) {
       );
     }
 
-    const existing = await readSessionOwner(sessionId);
+    const ownerLookup = await readSessionOwner(sessionId);
+
+    if (ownerLookup.status === "error") {
+      return sessionOwnerLookupErrorResponse();
+    }
+
+    const existing =
+      ownerLookup.status === "found" ? ownerLookup.owner : null;
 
     if (existing && existing.wallet_user_id !== walletUserId) {
       return Response.json(
@@ -182,7 +199,14 @@ export async function handleChatSessions(request: Request) {
       );
     }
 
-    const existing = await readSessionOwner(sessionId);
+    const ownerLookup = await readSessionOwner(sessionId);
+
+    if (ownerLookup.status === "error") {
+      return sessionOwnerLookupErrorResponse();
+    }
+
+    const existing =
+      ownerLookup.status === "found" ? ownerLookup.owner : null;
 
     if (!existing) {
       return Response.json(
@@ -226,7 +250,14 @@ export async function handleChatSessions(request: Request) {
       );
     }
 
-    const existing = await readSessionOwner(session.id);
+    const ownerLookup = await readSessionOwner(session.id);
+
+    if (ownerLookup.status === "error") {
+      return sessionOwnerLookupErrorResponse();
+    }
+
+    const existing =
+      ownerLookup.status === "found" ? ownerLookup.owner : null;
 
     if (existing && existing.wallet_user_id !== walletUserId) {
       return Response.json(
@@ -264,7 +295,7 @@ async function readSessionOwner(sessionId: string) {
   const supabase = getSupabaseAdmin();
 
   if (!supabase) {
-    return null;
+    return { status: "error" as const };
   }
 
   const { data, error } = await supabase
@@ -273,18 +304,35 @@ async function readSessionOwner(sessionId: string) {
     .eq("id", sessionId)
     .maybeSingle();
 
-  if (error || !data) {
-    return null;
+  if (error) {
+    return { status: "error" as const };
   }
 
-  return data as { wallet_user_id: string };
+  if (!data) {
+    return { status: "not-found" as const };
+  }
+
+  return {
+    owner: data as { wallet_user_id: string },
+    status: "found" as const,
+  };
+}
+
+function sessionOwnerLookupErrorResponse() {
+  return Response.json(
+    {
+      configured: true,
+      error: "Unable to read chat session ownership.",
+    },
+    { status: 500 },
+  );
 }
 
 async function readSession(walletUserId: string, sessionId: string) {
   const supabase = getSupabaseAdmin();
 
   if (!supabase) {
-    return null;
+    return { status: "error" as const };
   }
 
   const { data: sessionRow, error: sessionError } = await supabase
@@ -294,8 +342,12 @@ async function readSession(walletUserId: string, sessionId: string) {
     .eq("id", sessionId)
     .maybeSingle();
 
-  if (sessionError || !sessionRow) {
-    return null;
+  if (sessionError) {
+    return { status: "error" as const };
+  }
+
+  if (!sessionRow) {
+    return { status: "not-found" as const };
   }
 
   const messages = supabase.from("langclaw_chat_messages") as ReturnType<
@@ -315,13 +367,16 @@ async function readSession(walletUserId: string, sessionId: string) {
     .order("created_at", { ascending: true });
 
   if (messagesError) {
-    return rowToSession(sessionRow as ChatSessionRow);
+    return { status: "error" as const };
   }
 
-  return rowToSession(
-    sessionRow as ChatSessionRow,
-    ((messageRows ?? []) as unknown as ChatMessageRow[]).map(rowToMessage)
-  );
+  return {
+    session: rowToSession(
+      sessionRow as ChatSessionRow,
+      ((messageRows ?? []) as unknown as ChatMessageRow[]).map(rowToMessage),
+    ),
+    status: "found" as const,
+  };
 }
 
 async function upsertSession(walletUserId: string, session: ChatSession) {
@@ -392,7 +447,9 @@ async function upsertSession(walletUserId: string, session: ChatSession) {
     }
   }
 
-  return readSession(walletUserId, session.id);
+  const sessionLookup = await readSession(walletUserId, session.id);
+
+  return sessionLookup.status === "found" ? sessionLookup.session : null;
 }
 
 async function deleteSession(walletUserId: string, sessionId: string) {

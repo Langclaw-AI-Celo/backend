@@ -452,12 +452,24 @@ test("memory error responses distinguish configuration and generic failures", as
   const unavailable = memoryErrorResponse(
     new MemoryHttpError(503, "Memory storage is not configured.")
   );
+  const storage = memoryErrorResponse(
+    new MemoryHttpError(500, "column langclaw_memories.secret does not exist"),
+  );
+  const exception = memoryErrorResponse(new Error("database connection failed"));
   const generic = memoryErrorResponse("unexpected");
 
   assert.equal(unavailable.status, 503);
   assert.deepEqual(await unavailable.json(), {
     configured: false,
     error: "Memory storage is not configured.",
+  });
+  assert.deepEqual(await storage.json(), {
+    configured: true,
+    error: "Memory request failed.",
+  });
+  assert.deepEqual(await exception.json(), {
+    configured: true,
+    error: "Memory request failed.",
   });
   assert.deepEqual(await generic.json(), {
     configured: true,

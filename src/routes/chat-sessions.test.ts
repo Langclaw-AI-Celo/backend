@@ -204,6 +204,154 @@ test("chat session routes list owned data and report missing sessions", async ()
   }
 });
 
+test("chat session listing does not expose storage details", async () => {
+  const restoreFetch = mockFetch((url) => {
+    const parsed = new URL(url);
+
+    if (parsed.pathname.endsWith("/langclaw_wallet_users")) {
+      return Response.json({
+        id: "wallet-user-owner",
+        wallet_address: sessionOwner,
+      });
+    }
+
+    return Response.json(
+      { message: "relation langclaw_chat_sessions is missing" },
+      { status: 500 },
+    );
+  });
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_WALLET_SESSION_SECRET: "chat-route-test-secret",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+        SUPABASE_URL: "https://supabase.test",
+      },
+      async () => {
+        const wallet = createWalletSessionForVerifiedAddress(sessionOwner);
+        const response = await handleChatSessions(
+          chatSessionRequest({ action: "list", wallet }),
+        );
+
+        assert.equal(response.status, 500);
+        assert.deepEqual(await response.json(), {
+          configured: true,
+          error: "Unable to list chat sessions.",
+        });
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("chat session deletion fails closed when owner lookup fails", async () => {
+  let chatSessionRequests = 0;
+  const restoreFetch = mockFetch((url) => {
+    const parsed = new URL(url);
+
+    if (parsed.pathname.endsWith("/langclaw_wallet_users")) {
+      return Response.json({
+        id: "wallet-user-owner",
+        wallet_address: sessionOwner,
+      });
+    }
+
+    chatSessionRequests += 1;
+    return Response.json(
+      { message: "database connection failed" },
+      { status: 500 },
+    );
+  });
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_WALLET_SESSION_SECRET: "chat-route-test-secret",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+        SUPABASE_URL: "https://supabase.test",
+      },
+      async () => {
+        const wallet = createWalletSessionForVerifiedAddress(sessionOwner);
+        const response = await handleChatSessions(
+          chatSessionRequest({
+            action: "delete",
+            sessionId: "session-id",
+            wallet,
+          }),
+        );
+
+        assert.equal(response.status, 500);
+        assert.deepEqual(await response.json(), {
+          configured: true,
+          error: "Unable to read chat session ownership.",
+        });
+        assert.equal(chatSessionRequests, 1);
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("chat session reads fail instead of returning an empty partial session", async () => {
+  const restoreFetch = mockFetch((url) => {
+    const parsed = new URL(url);
+
+    if (parsed.pathname.endsWith("/langclaw_wallet_users")) {
+      return Response.json({
+        id: "wallet-user-owner",
+        wallet_address: sessionOwner,
+      });
+    }
+
+    if (parsed.pathname.endsWith("/langclaw_chat_sessions")) {
+      return Response.json({
+        created_at: "2026-07-19T01:00:00.000Z",
+        id: "session-id",
+        pinned: false,
+        title: "Stored session",
+        updated_at: "2026-07-19T01:05:00.000Z",
+      });
+    }
+
+    assert.match(parsed.pathname, /\/langclaw_chat_messages$/);
+    return Response.json(
+      { message: "message storage read failed" },
+      { status: 500 },
+    );
+  });
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_WALLET_SESSION_SECRET: "chat-route-test-secret",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+        SUPABASE_URL: "https://supabase.test",
+      },
+      async () => {
+        const wallet = createWalletSessionForVerifiedAddress(sessionOwner);
+        const response = await handleChatSessions(
+          chatSessionRequest({
+            action: "get",
+            sessionId: "session-id",
+            wallet,
+          }),
+        );
+
+        assert.equal(response.status, 500);
+        assert.deepEqual(await response.json(), {
+          configured: true,
+          error: "Unable to read chat session.",
+        });
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("chat session mutations reject sessions owned by another wallet", async () => {
   let ownerReads = 0;
   const restoreFetch = mockFetch((url) => {

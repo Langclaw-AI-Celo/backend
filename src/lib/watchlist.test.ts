@@ -4,12 +4,37 @@ import test from "node:test";
 import {
   clearAlphaWatchlist,
   upsertAlphaWatchlistItem,
+  WatchlistHttpError,
+  watchlistErrorResponse,
 } from "./watchlist";
 
 const walletUser = {
   id: "wallet-user-1",
   walletAddress: "0x1111111111111111111111111111111111111111",
 };
+
+test("watchlist errors expose only actionable client messages", async () => {
+  const invalid = watchlistErrorResponse(
+    new WatchlistHttpError(400, "Watchlist item id is required."),
+  );
+  const storage = watchlistErrorResponse(
+    new WatchlistHttpError(500, "relation langclaw_alpha_watchlist is missing"),
+  );
+  const unexpected = watchlistErrorResponse(new Error("connection refused"));
+
+  assert.deepEqual(await invalid.json(), {
+    configured: true,
+    error: "Watchlist item id is required.",
+  });
+  assert.deepEqual(await storage.json(), {
+    configured: true,
+    error: "Watchlist request failed.",
+  });
+  assert.deepEqual(await unexpected.json(), {
+    configured: true,
+    error: "Watchlist request failed.",
+  });
+});
 
 test("watchlist upserts normalize input and bind the authenticated wallet", async () => {
   let saved: Record<string, unknown> | undefined;

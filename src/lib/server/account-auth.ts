@@ -208,8 +208,13 @@ export function accountAuthErrorResponse(
   payload: Record<string, unknown> = {}
 ) {
   if (error instanceof AccountAuthError) {
+    const message =
+      error.status < 500 || error.status === 503
+        ? error.message
+        : "Account authentication failed.";
+
     return Response.json(
-      { ...payload, ...(error.code ? { code: error.code } : {}), error: error.message },
+      { ...payload, ...(error.code ? { code: error.code } : {}), error: message },
       { status: error.status }
     );
   }
@@ -217,8 +222,7 @@ export function accountAuthErrorResponse(
   return Response.json(
     {
       ...payload,
-      error:
-        error instanceof Error ? error.message : "Account authentication failed.",
+      error: "Account authentication failed.",
     },
     { status: 500 }
   );

@@ -88,14 +88,16 @@ export class AutomationHttpError extends Error {
 
 export function automationErrorResponse(error: unknown) {
   if (error instanceof AutomationHttpError) {
-    return Response.json({ error: error.message }, { status: error.status });
+    const message =
+      error.status < 500 || error.status === 503
+        ? error.message
+        : "Automation request failed.";
+
+    return Response.json({ error: message }, { status: error.status });
   }
 
   return Response.json(
-    {
-      error:
-        error instanceof Error ? error.message : "Automation request failed.",
-    },
+    { error: "Automation request failed." },
     { status: 500 }
   );
 }
