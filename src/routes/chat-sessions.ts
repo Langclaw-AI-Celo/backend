@@ -591,6 +591,7 @@ export function normalizeSession(value: unknown): ChatSession | null {
     typeof session.title !== "string" ||
     typeof session.createdAt !== "string" ||
     typeof session.updatedAt !== "string" ||
+    (session.pinned !== undefined && typeof session.pinned !== "boolean") ||
     !Array.isArray(session.messages)
   ) {
     return null;
@@ -606,7 +607,7 @@ export function normalizeSession(value: unknown): ChatSession | null {
     createdAt: session.createdAt,
     id: session.id,
     messages: messages as StoredChatMessage[],
-    pinned: Boolean(session.pinned),
+    pinned: session.pinned ?? false,
     title: session.title,
     updatedAt: session.updatedAt,
   };
