@@ -209,6 +209,26 @@ test("chat stream rejects malformed context instead of dropping messages", async
   }
 });
 
+test("chat stream rejects oversized context before authentication", async () => {
+  const response = await handleChatStream(
+    new Request("http://localhost/api/chat/stream", {
+      body: JSON.stringify({
+        message: "Continue",
+        messages: Array.from({ length: 12 }, (_, index) => ({
+          content: "x".repeat(3_000),
+          role: index % 2 === 0 ? "user" : "assistant",
+        })),
+      }),
+      method: "POST",
+    })
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "messages must contain valid user or assistant text records.",
+  });
+});
+
 test("chat stream rejects malformed routing controls", async () => {
   for (const body of [
     { message: "Check liquidity", toolMode: "tools" },

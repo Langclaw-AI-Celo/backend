@@ -51,6 +51,7 @@ type ContextMessage = {
 };
 
 const MAX_CHAT_MESSAGE_CHARACTERS = 16_000;
+const MAX_CHAT_CONTEXT_CHARACTERS = 32_000;
 
 export async function handleChatStream(request: Request) {
   let body: ChatRequestBody;
@@ -338,6 +339,7 @@ function readContextMessages(value: unknown): ContextMessage[] | null {
   }
 
   const messages: ContextMessage[] = [];
+  let totalCharacters = 0;
 
   for (const item of value as ChatMessageInput[]) {
     const role = item?.role;
@@ -345,6 +347,12 @@ function readContextMessages(value: unknown): ContextMessage[] | null {
       typeof item?.content === "string" ? item.content.trim() : "";
 
     if ((role !== "assistant" && role !== "user") || !content) {
+      return null;
+    }
+
+    totalCharacters += content.length;
+
+    if (totalCharacters > MAX_CHAT_CONTEXT_CHARACTERS) {
       return null;
     }
 
