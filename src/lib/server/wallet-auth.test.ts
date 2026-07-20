@@ -161,3 +161,33 @@ test("failed challenge verification does not consume a valid nonce", async () =>
     assert.equal(verified?.address, testAccount.address.toLowerCase());
   });
 });
+
+test("malformed wallet signatures fail safely without consuming the nonce", async () => {
+  const challenge = createWalletChallenge({
+    address: testAccount.address,
+    request: new Request("https://api.langclaw.test/api/wallet/challenge"),
+  });
+
+  const malformed = await verifyWalletSession(
+    {
+      address: testAccount.address,
+      message: challenge.message,
+      signature: "0x1234",
+    },
+    { requiredPurpose: "session" }
+  );
+
+  assert.equal(malformed, null);
+
+  const signature = await testAccount.signMessage({ message: challenge.message });
+  const verified = await verifyWalletSession(
+    {
+      address: testAccount.address,
+      message: challenge.message,
+      signature,
+    },
+    { requiredPurpose: "session" }
+  );
+
+  assert.equal(verified?.authMethod, "challenge");
+});

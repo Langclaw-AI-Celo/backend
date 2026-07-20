@@ -169,11 +169,17 @@ export async function verifyWalletSession(
     return null;
   }
 
-  const valid = await verifyMessage({
-    address: checksumAddress,
-    message: wallet.message,
-    signature: wallet.signature as `0x${string}`,
-  });
+  let valid = false;
+
+  try {
+    valid = await verifyMessage({
+      address: checksumAddress,
+      message: wallet.message,
+      signature: wallet.signature as `0x${string}`,
+    });
+  } catch {
+    return null;
+  }
 
   if (!valid) {
     return null;
