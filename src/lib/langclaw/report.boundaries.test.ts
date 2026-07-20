@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const reportDirectory = new URL("./report/", import.meta.url);
+const reportFacade = new URL("./report.ts", import.meta.url);
 
 const expectedModules = [
   "types.ts",
@@ -38,4 +39,11 @@ test("keeps report features independent from the facade", async () => {
       `${moduleName} may only import report types and core`
     );
   }
+});
+
+test("keeps the public report facade focused on delegation", async () => {
+  const source = await readFile(reportFacade, "utf8");
+
+  assert.ok(source.split("\n").length <= 100, "report facade must stay compact");
+  assert.doesNotMatch(source, /function (?:infer|normalize|collect|format|derive)/);
 });
