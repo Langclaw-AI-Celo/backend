@@ -239,7 +239,14 @@ function readRequiredText(value: unknown, label: string, maxLength: number) {
     throw new WatchlistHttpError(400, `${label} is required.`);
   }
 
-  return text.slice(0, maxLength);
+  if (text.length > maxLength) {
+    throw new WatchlistHttpError(
+      400,
+      `${label} must be at most ${maxLength} characters.`,
+    );
+  }
+
+  return text;
 }
 
 function optionalText(value: unknown, maxLength = 500) {

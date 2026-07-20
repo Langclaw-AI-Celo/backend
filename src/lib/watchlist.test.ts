@@ -195,6 +195,37 @@ test("watchlist upserts reject malformed optional text fields", async () => {
   }
 });
 
+test("watchlist upserts reject overlong required text", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+
+  await assert.rejects(
+    upsertAlphaWatchlistItem(account, {
+      caveat: "Verify the source.",
+      id: "proof:overlong-title",
+      intent: "track activity",
+      recommendation: "Review the evidence.",
+      signalType: "smart-money",
+      subject: "CELO",
+      summary: "Required metadata must not be silently truncated.",
+      title: "x".repeat(501),
+    }),
+    (error: unknown) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "Title must be at most 500 characters.",
+  );
+});
+
 test("watchlist upserts reject invalid evidence counts", async () => {
   const account = {
     account: {
