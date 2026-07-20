@@ -506,7 +506,7 @@ function isNonEmptyString(value: unknown) {
 function isValidOptionalQueryId(value: unknown) {
   return (
     value === undefined ||
-    (typeof value === "string" && /^\d+$/.test(value.trim()))
+    (typeof value === "string" && /^\d{1,32}$/.test(value.trim()))
   );
 }
 

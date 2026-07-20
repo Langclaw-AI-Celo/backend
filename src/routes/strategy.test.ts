@@ -132,6 +132,7 @@ test("strategy routes reject invalid identifier syntax before provider work", as
 
   for (const body of [
     { queryId: "12/path" },
+    { queryId: "1".repeat(33) },
     { pairAddress: "not-an-address" },
   ]) {
     const response = await handleStrategyBacktest(
