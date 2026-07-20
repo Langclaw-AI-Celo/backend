@@ -24,6 +24,12 @@ import {
   sendAlphaSignalNotification,
   sendAutomationRunNotification,
 } from "../notifications";
+import type {
+  AccountAuthInput,
+  AutomationContext,
+  AutomationSettings,
+  AutomationSettingsRow,
+} from "./types";
 
 export {
   AccountAuthError,
@@ -124,4 +130,93 @@ export function parse0GToNeuron(value: string) {
   const fraction = BigInt(fractionPart.padEnd(18, "0").slice(0, 18) || "0");
 
   return (whole + fraction).toString();
+}
+
+export function readOptionalString(value: unknown, maxLength: number) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.slice(0, maxLength);
+}
+
+export function rowToSettings(row: AutomationSettingsRow): AutomationSettings {
+  return {
+    autoPauseRepeatedFailures: row.auto_pause_repeated_failures,
+    dailyLimit0G: formatNeuronAs0G(BigInt(readDecimalString(row.daily_limit_neuron))),
+    failureNotification: row.failure_notification,
+    limitBehavior: row.limit_behavior,
+    lowBalanceThreshold0G: formatNeuronAs0G(
+      BigInt(readDecimalString(row.low_balance_threshold_neuron))
+    ),
+    monthlyCap0G: formatNeuronAs0G(BigInt(readDecimalString(row.monthly_cap_neuron))),
+    notificationChannels: row.notification_channels,
+    notificationEmail: row.notification_email ?? undefined,
+    notificationEmailLinkedAt: row.notification_email_linked_at ?? undefined,
+    notificationEmailPending: row.notification_email_pending
+      ? maskEmail(row.notification_email_pending)
+      : undefined,
+    notificationEmailVerified: row.notification_email_verified,
+    retryPolicy: row.retry_policy,
+    telegramChatId: row.telegram_chat_id ?? undefined,
+    telegramLinkedAt: row.telegram_linked_at ?? undefined,
+    telegramUsername: row.telegram_username ?? undefined,
+    telegramVerified: row.telegram_verified,
+    thresholdAction: row.threshold_action,
+    writeRunLogsToMemory: row.write_run_logs_to_memory,
+  };
+}
+
+export async function readAutomationSettingsRow(context: AutomationContext) {
+  const { data, error } = await context.supabase
+    .from("langclaw_automation_settings")
+    .upsert(
+      {
+        wallet_user_id: context.walletUser.id,
+      },
+      { onConflict: "wallet_user_id" }
+    )
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new AutomationHttpError(
+      500,
+      error?.message || "Unable to read automation settings."
+    );
+  }
+
+  return data as AutomationSettingsRow;
+}
+
+export async function requireAutomationContext(
+  authInput: AccountAuthInput
+): Promise<AutomationContext> {
+  try {
+    return await requireAccountAuth(authInput);
+  } catch (error) {
+    if (error instanceof AccountAuthError) {
+      throw new AutomationHttpError(error.status, error.message);
+    }
+
+    throw error;
+  }
+}
+
+export function requireAutomationSupabaseAdmin() {
+  try {
+    return requireSupabaseAdmin();
+  } catch (error) {
+    if (error instanceof AccountAuthError) {
+      throw new AutomationHttpError(error.status, error.message);
+    }
+
+    throw error;
+  }
 }

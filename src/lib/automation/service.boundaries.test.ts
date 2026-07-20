@@ -10,6 +10,7 @@ const expectedModules = [
   "input.ts",
   "mappers.ts",
   "math.ts",
+  "linking.ts",
 ];
 const featureModules = expectedModules.filter(
   (moduleName) => !["types.ts", "core.ts"].includes(moduleName)

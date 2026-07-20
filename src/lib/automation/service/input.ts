@@ -4,6 +4,7 @@ import {
   getZonedParts,
   randomBytes,
   read0GAmount,
+  readOptionalString,
 } from "./core";
 import type {
   AutomationFrequency,
@@ -239,19 +240,6 @@ export function readLimit(value: unknown, fallback: number, max = 10) {
   return Math.min(Math.max(value, 1), max);
 }
 
-export function readOptionalString(value: unknown, maxLength: number) {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return undefined;
-  }
-
-  return trimmed.slice(0, maxLength);
-}
 
 export function readOptionalInputString(
   value: unknown,
