@@ -80,6 +80,7 @@ test("watchlist upserts normalize input and bind the authenticated wallet", asyn
       addedAt: "2026-07-17T12:00:00+07:00",
       caveat: "  Confirm   liquidity first. ",
       chain: "",
+      evidenceUri: "e".repeat(750),
       gapCount: 0,
       id: "  proof:0xabc  ",
       intent: "  track   accumulation ",
@@ -99,6 +100,7 @@ test("watchlist upserts normalize input and bind the authenticated wallet", asyn
   assert.equal(saved?.chain, "celo");
   assert.equal(saved?.source_count, 3);
   assert.equal(saved?.gap_count, 0);
+  assert.equal(saved?.evidence_uri, "e".repeat(750));
   assert.equal(saved?.title, "CELO signal");
   assert.equal(saved?.intent, "track accumulation");
   assert.equal(item.summary, "Wallets accumulated CELO.");
@@ -223,6 +225,38 @@ test("watchlist upserts reject overlong required text", async () => {
       error instanceof WatchlistHttpError &&
       error.status === 400 &&
       error.message === "Title must be at most 500 characters.",
+  );
+});
+
+test("watchlist upserts reject overlong optional text", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+
+  await assert.rejects(
+    upsertAlphaWatchlistItem(account, {
+      caveat: "Verify the source.",
+      evidenceUri: "e".repeat(1_001),
+      id: "proof:overlong-evidence-uri",
+      intent: "track activity",
+      recommendation: "Review the evidence.",
+      signalType: "smart-money",
+      subject: "CELO",
+      summary: "Optional metadata must not be silently truncated.",
+      title: "CELO evidence",
+    }),
+    (error: unknown) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "evidenceUri must be at most 1000 characters.",
   );
 });
 

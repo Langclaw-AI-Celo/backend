@@ -249,14 +249,14 @@ function readRequiredText(value: unknown, label: string, maxLength: number) {
   return text;
 }
 
-function optionalText(value: unknown, maxLength = 500) {
+function optionalText(value: unknown) {
   if (typeof value !== "string") {
     return undefined;
   }
 
   const text = value.trim();
 
-  return text ? text.slice(0, maxLength) : undefined;
+  return text || undefined;
 }
 
 function readOptionalText(value: unknown, field: string, maxLength = 500) {
@@ -264,7 +264,16 @@ function readOptionalText(value: unknown, field: string, maxLength = 500) {
     throw new WatchlistHttpError(400, `${field} must be a string.`);
   }
 
-  return optionalText(value, maxLength);
+  const text = optionalText(value);
+
+  if (text && text.length > maxLength) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be at most ${maxLength} characters.`,
+    );
+  }
+
+  return text;
 }
 
 function readCount(value: unknown, field: string) {
