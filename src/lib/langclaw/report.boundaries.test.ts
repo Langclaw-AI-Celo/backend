@@ -4,7 +4,7 @@ import test from "node:test";
 
 const reportDirectory = new URL("./report/", import.meta.url);
 
-const expectedModules = ["types.ts"];
+const expectedModules = ["types.ts", "markdown.ts"];
 
 test("keeps report decomposition modules present", async () => {
   for (const moduleName of expectedModules) {
