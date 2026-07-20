@@ -90,3 +90,38 @@ export function readDecimalString(value: string | number | null | undefined) {
 
   return /^\d+$/.test(value) ? value : "0";
 }
+
+export function read0GAmount(value: unknown, fallback: string, field: string) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  const raw =
+    typeof value === "string" || typeof value === "number"
+      ? String(value).trim()
+      : "";
+
+  if (!/^\d+(\.\d{1,18})?$/.test(raw)) {
+    throw new AutomationHttpError(
+      400,
+      `${field} must be a non-negative decimal with up to 18 fractional digits.`
+    );
+  }
+
+  if (BigInt(parse0GToNeuron(raw)) > maxStoredNeuron) {
+    throw new AutomationHttpError(
+      400,
+      `${field} exceeds the supported 0G amount.`,
+    );
+  }
+
+  return raw;
+}
+
+export function parse0GToNeuron(value: string) {
+  const [wholePart, fractionPart = ""] = value.split(".");
+  const whole = BigInt(wholePart || "0") * neuronPer0G;
+  const fraction = BigInt(fractionPart.padEnd(18, "0").slice(0, 18) || "0");
+
+  return (whole + fraction).toString();
+}

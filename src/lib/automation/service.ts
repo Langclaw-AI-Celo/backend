@@ -7,14 +7,10 @@ import {
   computeNextRunAt,
   createHash,
   defaultTelegramBotUsername,
-  formatNeuronAs0G,
-  getZonedParts,
   maskEmail,
-  neuronPer0G,
   randomBytes,
   randomInt,
   readAlphaSignalFromPayload,
-  readDecimalString,
   refundResearchUsage,
   requireAccountAuth,
   requireSupabaseAdmin,
@@ -31,7 +27,6 @@ import {
   createWebhookSlug,
   normalizeSettingsInput,
   normalizeTaskInput,
-  parse0GToNeuron,
   readEventName,
   readLimit,
   readNotificationId,
@@ -39,6 +34,13 @@ import {
   readTaskId,
   readWebhookSlug,
 } from "./service/input";
+import {
+  parse0GToNeuron,
+  readDecimalString,
+  readMaxAttempts,
+  startOfLocalDay,
+  startOfLocalMonth,
+} from "./service/math";
 import {
   rowToInAppNotification,
   rowToRun,
@@ -1888,13 +1890,6 @@ function removeChannel(
 }
 
 
-function readMaxAttempts(maxRetries: number) {
-  if (!Number.isFinite(maxRetries) || maxRetries <= 0) {
-    return 1;
-  }
-
-  return Math.min(Math.trunc(maxRetries), 5);
-}
 
 function buildTaskPrompt(task: AutomationTaskRow, triggerPayload?: unknown) {
   const basePrompt = task.prompt || task.name;
@@ -1937,60 +1932,4 @@ function withAutomationAttemptMetadata(
     automation,
     result,
   };
-}
-
-
-
-
-
-
-function startOfLocalDay(date: Date, timezone: string) {
-  const parts = getZonedParts(date, timezone);
-
-  return localPartsToUtc({
-    day: parts.day,
-    hour: 0,
-    minute: 0,
-    month: parts.month,
-    year: parts.year,
-  }, timezone);
-}
-
-function startOfLocalMonth(date: Date, timezone: string) {
-  const parts = getZonedParts(date, timezone);
-
-  return localPartsToUtc({
-    day: 1,
-    hour: 0,
-    minute: 0,
-    month: parts.month,
-    year: parts.year,
-  }, timezone);
-}
-
-function localPartsToUtc(
-  parts: {
-    day: number;
-    hour: number;
-    minute: number;
-    month: number;
-    year: number;
-  },
-  timezone: string
-) {
-  const utcGuess = new Date(
-    Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute)
-  );
-  const zoned = getZonedParts(utcGuess, timezone);
-  const offset =
-    Date.UTC(
-      zoned.year,
-      zoned.month - 1,
-      zoned.day,
-      zoned.hour,
-      zoned.minute,
-      zoned.second
-    ) - utcGuess.getTime();
-
-  return new Date(utcGuess.getTime() - offset);
 }

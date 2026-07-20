@@ -4,7 +4,13 @@ import test from "node:test";
 
 const serviceDirectory = new URL("./service/", import.meta.url);
 
-const expectedModules = ["types.ts", "core.ts", "input.ts", "mappers.ts"];
+const expectedModules = [
+  "types.ts",
+  "core.ts",
+  "input.ts",
+  "mappers.ts",
+  "math.ts",
+];
 const featureModules = expectedModules.filter(
   (moduleName) => !["types.ts", "core.ts"].includes(moduleName)
 );

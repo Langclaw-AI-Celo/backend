@@ -2,9 +2,8 @@ import {
   AutomationHttpError,
   defaultTimezone,
   getZonedParts,
-  maxStoredNeuron,
-  neuronPer0G,
   randomBytes,
+  read0GAmount,
 } from "./core";
 import type {
   AutomationFrequency,
@@ -416,40 +415,7 @@ export function readNotificationChannels(
     : ["email"];
 }
 
-export function read0GAmount(value: unknown, fallback: string, field: string) {
-  if (value === undefined) {
-    return fallback;
-  }
 
-  const raw =
-    typeof value === "string" || typeof value === "number"
-      ? String(value).trim()
-      : "";
-
-  if (!/^\d+(\.\d{1,18})?$/.test(raw)) {
-    throw new AutomationHttpError(
-      400,
-      `${field} must be a non-negative decimal with up to 18 fractional digits.`
-    );
-  }
-
-  if (BigInt(parse0GToNeuron(raw)) > maxStoredNeuron) {
-    throw new AutomationHttpError(
-      400,
-      `${field} exceeds the supported 0G amount.`,
-    );
-  }
-
-  return raw;
-}
-
-export function parse0GToNeuron(value: string) {
-  const [wholePart, fractionPart = ""] = value.split(".");
-  const whole = BigInt(wholePart || "0") * neuronPer0G;
-  const fraction = BigInt(fractionPart.padEnd(18, "0").slice(0, 18) || "0");
-
-  return (whole + fraction).toString();
-}
 
 export function createWebhookSlug(name: string) {
   const slug = name
@@ -460,4 +426,3 @@ export function createWebhookSlug(name: string) {
 
   return `${slug || "task"}-${randomBytes(16).toString("hex")}`;
 }
-
