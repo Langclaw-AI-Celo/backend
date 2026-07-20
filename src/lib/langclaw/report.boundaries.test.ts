@@ -4,7 +4,13 @@ import test from "node:test";
 
 const reportDirectory = new URL("./report/", import.meta.url);
 
-const expectedModules = ["types.ts", "core.ts", "markdown.ts", "smart-money.ts"];
+const expectedModules = [
+  "types.ts",
+  "core.ts",
+  "markdown.ts",
+  "smart-money.ts",
+  "liquidity.ts",
+];
 const featureModules = expectedModules.filter(
   (moduleName) => !["types.ts", "core.ts"].includes(moduleName)
 );

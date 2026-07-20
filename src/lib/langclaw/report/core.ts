@@ -2,6 +2,7 @@ import {
   isDirectProviderIssue,
   isUsableDirectProviderResult,
 } from "../../onchain-tools/evidence";
+import { getDexScreenerChainId } from "../../onchain-tools/chains";
 import type {
   BuildOnChainResearchReportInput,
   NormalizedRow,
@@ -9,7 +10,11 @@ import type {
   ResearchReportConfidence,
 } from "./types";
 
-export { isDirectProviderIssue, isUsableDirectProviderResult };
+export {
+  getDexScreenerChainId,
+  isDirectProviderIssue,
+  isUsableDirectProviderResult,
+};
 
 export function deriveOnChainConfidence(
   tools: OnChainToolResult[]
