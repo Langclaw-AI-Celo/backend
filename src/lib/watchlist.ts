@@ -32,6 +32,7 @@ export type AlphaWatchlistInput = Partial<AlphaWatchlistItem>;
 type AlphaWatchlistRow =
   Database["public"]["Tables"]["langclaw_alpha_watchlist"]["Row"];
 type AlphaWatchlistContext = AuthenticatedAccount;
+const POSTGRES_INTEGER_MAX = 2_147_483_647;
 const UINT256_MAX = (1n << 256n) - 1n;
 
 export class WatchlistHttpError extends Error {
@@ -347,6 +348,13 @@ function readCount(value: unknown, field: string) {
     throw new WatchlistHttpError(
       400,
       `${field} must be a non-negative integer.`,
+    );
+  }
+
+  if (value > POSTGRES_INTEGER_MAX) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be at most ${POSTGRES_INTEGER_MAX}.`,
     );
   }
 

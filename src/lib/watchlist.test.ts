@@ -418,6 +418,43 @@ test("watchlist upserts reject invalid evidence counts", async () => {
   }
 });
 
+test("watchlist upserts reject evidence counts outside the database range", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:oversized-count",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Evidence counts must fit the Postgres integer columns.",
+    title: "CELO evidence",
+  };
+
+  for (const field of ["gapCount", "sourceCount"] as const) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, {
+        ...baseInput,
+        [field]: 2_147_483_648,
+      }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be at most 2147483647.`,
+    );
+  }
+});
+
 test("watchlist upserts reject future added timestamps", async () => {
   const account = {
     account: {
