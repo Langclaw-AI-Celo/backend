@@ -106,6 +106,33 @@ test("chat session normalization rejects invalid timestamps", () => {
   assert.equal(normalizeSession({ ...baseSession, updatedAt: "invalid" }), null);
 });
 
+test("chat session normalization rejects reversed timestamps", () => {
+  assert.equal(
+    normalizeSession({
+      createdAt: "2026-07-19T01:02:00.000Z",
+      id: "session-reversed-time",
+      messages: [],
+      title: "Reversed session time",
+      updatedAt: "2026-07-19T01:01:00.000Z",
+    }),
+    null,
+  );
+});
+
+test("chat session normalization rejects future timestamps", () => {
+  const future = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-future-time",
+    messages: [],
+    title: "Future session time",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+
+  assert.equal(normalizeSession({ ...baseSession, createdAt: future }), null);
+  assert.equal(normalizeSession({ ...baseSession, updatedAt: future }), null);
+});
+
 test("chat session normalization rejects unsupported message context", () => {
   const baseSession = {
     createdAt: "2026-07-19T01:00:00.000Z",
@@ -427,6 +454,13 @@ test("chat session routes list owned data and report missing sessions", async ()
             wallet,
           })
         );
+        const deleted = await handleChatSessions(
+          chatSessionRequest({
+            action: "delete",
+            sessionId: "missing-session",
+            wallet,
+          }),
+        );
 
         assert.deepEqual(await listed.json(), {
           configured: true,
@@ -438,6 +472,11 @@ test("chat session routes list owned data and report missing sessions", async ()
         });
         assert.equal(updated.status, 404);
         assert.deepEqual(await updated.json(), {
+          configured: true,
+          error: "Chat session was not found.",
+        });
+        assert.equal(deleted.status, 404);
+        assert.deepEqual(await deleted.json(), {
           configured: true,
           error: "Chat session was not found.",
         });

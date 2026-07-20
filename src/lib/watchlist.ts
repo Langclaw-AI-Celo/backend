@@ -185,20 +185,20 @@ function normalizeAlphaWatchlistInput(
 ): AlphaWatchlistItem {
   return {
     addedAt: readIsoDate(input.addedAt),
-    agentId: optionalText(input.agentId),
+    agentId: readOptionalText(input.agentId, "agentId"),
     caveat: readRequiredText(input.caveat, "Caveat", 4_000),
     chain: readRequiredText(input.chain || "celo", "Chain", 64),
-    decisionHash: optionalText(input.decisionHash, 160),
-    decisionId: optionalText(input.decisionId, 80),
-    evidenceUri: optionalText(input.evidenceUri, 1_000),
-    explorerUrl: optionalText(input.explorerUrl, 1_000),
-    gapCount: readCount(input.gapCount),
+    decisionHash: readOptionalText(input.decisionHash, "decisionHash", 160),
+    decisionId: readOptionalText(input.decisionId, "decisionId", 80),
+    evidenceUri: readOptionalText(input.evidenceUri, "evidenceUri", 1_000),
+    explorerUrl: readOptionalText(input.explorerUrl, "explorerUrl", 1_000),
+    gapCount: readCount(input.gapCount, "gapCount"),
     id: readRequiredText(input.id, "Watchlist item id", 240),
     intent: readRequiredText(input.intent, "Intent", 500),
-    proofTx: optionalText(input.proofTx, 160),
+    proofTx: readOptionalText(input.proofTx, "proofTx", 160),
     recommendation: readRequiredText(input.recommendation, "Recommendation", 4_000),
     signalType: readRequiredText(input.signalType, "Signal type", 120),
-    sourceCount: readCount(input.sourceCount),
+    sourceCount: readCount(input.sourceCount, "sourceCount"),
     subject: readRequiredText(input.subject, "Subject", 1_000),
     summary: readRequiredText(input.summary, "Summary", 4_000),
     title: readRequiredText(input.title, "Title", 500),
@@ -252,15 +252,27 @@ function optionalText(value: unknown, maxLength = 500) {
   return text ? text.slice(0, maxLength) : undefined;
 }
 
-function readCount(value: unknown) {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string" && /^\d+$/.test(value.trim())
-        ? Number(value.trim())
-        : Number.NaN;
+function readOptionalText(value: unknown, field: string, maxLength = 500) {
+  if (value !== undefined && typeof value !== "string") {
+    throw new WatchlistHttpError(400, `${field} must be a string.`);
+  }
 
-  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
+  return optionalText(value, maxLength);
+}
+
+function readCount(value: unknown, field: string) {
+  if (value === undefined) {
+    return 0;
+  }
+
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be a non-negative integer.`,
+    );
+  }
+
+  return value;
 }
 
 function readIsoDate(value: unknown) {
@@ -272,6 +284,10 @@ function readIsoDate(value: unknown) {
     const date = new Date(value);
 
     if (!Number.isNaN(date.getTime())) {
+      if (date.getTime() > Date.now() + 5 * 60 * 1000) {
+        throw new WatchlistHttpError(400, "Added at cannot be in the future.");
+      }
+
       return date.toISOString();
     }
   }

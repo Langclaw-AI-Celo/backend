@@ -80,12 +80,12 @@ test("watchlist upserts normalize input and bind the authenticated wallet", asyn
       addedAt: "2026-07-17T12:00:00+07:00",
       caveat: "  Confirm   liquidity first. ",
       chain: "",
-      gapCount: -3,
+      gapCount: 0,
       id: "  proof:0xabc  ",
       intent: "  track   accumulation ",
       recommendation: "  Monitor the next block. ",
       signalType: " smart-money ",
-      sourceCount: "3" as never,
+      sourceCount: 3,
       subject: " CELO ",
       summary: "  Wallets   accumulated CELO. ",
       title: "  CELO   signal ",
@@ -113,14 +113,12 @@ test("watchlist upserts normalize input and bind the authenticated wallet", asyn
     },
     {
       caveat: "Verify the source.",
-      gapCount: "2.5" as never,
-      id: "proof:malformed-counts",
+      id: "proof:omitted-counts",
       intent: "track activity",
       recommendation: "Review the evidence.",
       signalType: "smart-money",
-      sourceCount: "3sources" as never,
       subject: "CELO",
-      summary: "Malformed counts must not inflate evidence.",
+      summary: "Omitted counts default to zero.",
       title: "CELO evidence",
     },
   );
@@ -153,6 +151,120 @@ test("watchlist upserts normalize input and bind the authenticated wallet", asyn
       error instanceof WatchlistHttpError &&
       error.status === 400 &&
       error.message === "Added at must be a valid date.",
+  );
+});
+
+test("watchlist upserts reject malformed optional text fields", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:optional-text",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Optional metadata must keep its declared shape.",
+    title: "CELO evidence",
+  };
+
+  for (const [field, value] of [
+    ["agentId", 42],
+    ["decisionHash", {}],
+    ["decisionId", []],
+    ["evidenceUri", false],
+    ["explorerUrl", 7],
+    ["proofTx", null],
+  ] as const) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, [field]: value }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a string.`,
+    );
+  }
+});
+
+test("watchlist upserts reject invalid evidence counts", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:invalid-count",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Evidence counts must be non-negative integers.",
+    title: "CELO evidence",
+  };
+
+  for (const [field, value] of [
+    ["gapCount", -1],
+    ["gapCount", 1.5],
+    ["gapCount", "2"],
+    ["sourceCount", -1],
+    ["sourceCount", 1.5],
+    ["sourceCount", "3"],
+  ] as const) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, [field]: value }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a non-negative integer.`,
+    );
+  }
+});
+
+test("watchlist upserts reject future added timestamps", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+
+  await assert.rejects(
+    upsertAlphaWatchlistItem(account, {
+      addedAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      caveat: "Verify the source.",
+      id: "proof:future-time",
+      intent: "track activity",
+      recommendation: "Review the evidence.",
+      signalType: "smart-money",
+      subject: "CELO",
+      summary: "The watchlist timestamp must remain trustworthy.",
+      title: "CELO evidence",
+    }),
+    (error: unknown) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "Added at cannot be in the future.",
   );
 });
 

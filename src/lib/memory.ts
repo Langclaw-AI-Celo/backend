@@ -441,8 +441,8 @@ function normalizeMemoryInput(input: MemoryInput) {
     confidence: readConfidence(input.confidence),
     lastUsed: readOptionalDate(input.lastUsed),
     memory,
-    scope: readOptionalString(input.scope, 120) ?? "Global",
-    source: readOptionalString(input.source, 160) ?? "Manual",
+    scope: readOptionalInputString(input.scope, 120, "scope") ?? "Global",
+    source: readOptionalInputString(input.source, 160, "source") ?? "Manual",
     status: readMemoryStatus(input.status, "active"),
   };
 }
@@ -594,6 +594,18 @@ function readOptionalString(value: unknown, maxLength: number) {
   }
 
   return trimmed.slice(0, maxLength);
+}
+
+function readOptionalInputString(
+  value: unknown,
+  maxLength: number,
+  field: string,
+) {
+  if (value !== undefined && typeof value !== "string") {
+    throw new MemoryHttpError(400, `${field} must be a string.`);
+  }
+
+  return readOptionalString(value, maxLength);
 }
 
 function readOptionalDate(value: unknown) {

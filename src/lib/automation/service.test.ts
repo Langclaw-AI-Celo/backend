@@ -73,6 +73,22 @@ test("automation task status transitions update schedule state", async () => {
   assert.match(String(active.updated?.next_run_at), /^\d{4}-\d{2}-\d{2}T/);
 });
 
+test("archived automation tasks cannot be restored by updates", async () => {
+  const storage = buildAutomationStorage("archived");
+
+  await assert.rejects(
+    updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+      status: "active",
+    }),
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 404 &&
+      error.message === "Automation task was not found.",
+  );
+
+  assert.equal(storage.updated, undefined);
+});
+
 test("automation metadata updates preserve the scheduled next run", async () => {
   const nextRunAt = "2026-08-01T02:00:00.000Z";
   const storage = buildAutomationStorage("active", {
@@ -232,6 +248,31 @@ test("automation task updates reject blank names", async () => {
       error.status === 400 &&
       error.message === "Task name is required."
   );
+});
+
+test("automation tasks reject blank provided projects", async () => {
+  const createStorage = buildAutomationStorage("active");
+  const updateStorage = buildAutomationStorage("active");
+
+  for (const operation of [
+    () =>
+      createAutomationTask(buildAccount(createStorage.supabase), {
+        name: "Celo scan",
+        project: "   ",
+      }),
+    () =>
+      updateAutomationTask(buildAccount(updateStorage.supabase), "task-1", {
+        project: "\n\t",
+      }),
+  ]) {
+    await assert.rejects(
+      operation(),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === "Project is required.",
+    );
+  }
 });
 
 test("scheduled tasks reject unsupported frequencies", async () => {
@@ -735,6 +776,35 @@ test("automation settings reject invalid 0G amounts", async () => {
           `${field} must be a non-negative decimal with up to 18 fractional digits.`,
     );
   }
+});
+
+test("automation settings enforce stored 0G amount precision", async () => {
+  const oversized = `1${"0".repeat(60)}`;
+
+  for (const field of [
+    "dailyLimit0G",
+    "lowBalanceThreshold0G",
+    "monthlyCap0G",
+  ] as const) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      updateAutomationSettings(buildAccount(storage.supabase), {
+        [field]: oversized,
+      }),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === `${field} exceeds the supported 0G amount.`,
+    );
+  }
+
+  const boundaryStorage = buildAutomationStorage("active");
+  await updateAutomationSettings(buildAccount(boundaryStorage.supabase), {
+    dailyLimit0G: `${"9".repeat(60)}.${"9".repeat(18)}`,
+  });
+
+  assert.equal(boundaryStorage.settings.daily_limit_neuron, "9".repeat(78));
 });
 
 test("marks one or all in-app automation notifications as read", async () => {

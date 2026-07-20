@@ -75,6 +75,7 @@ type TelegramLinkCandidate = {
 
 const defaultTimezone = "Asia/Jakarta";
 const neuronPer0G = 1_000_000_000_000_000_000n;
+const maxStoredNeuron = 10n ** 78n - 1n;
 const defaultTelegramBotUsername = "langclawaibot";
 
 export class AutomationHttpError extends Error {
@@ -193,6 +194,11 @@ export async function updateAutomationTask(
 ) {
   const context = await requireAutomationContext(authInput);
   const existing = await readAutomationTaskRow(context, readTaskId(taskId));
+
+  if (existing.status === "archived") {
+    throw new AutomationHttpError(404, "Automation task was not found.");
+  }
+
   const settings = await readAutomationSettingsForContext(context);
   const patch = normalizeTaskInput(input, {
     existing,
@@ -1795,6 +1801,12 @@ function normalizeTaskInput(
     throw new AutomationHttpError(400, "Task name is required.");
   }
 
+  const project = readOptionalInputString(input.project, 120, "project");
+
+  if (input.project !== undefined && !project) {
+    throw new AutomationHttpError(400, "Project is required.");
+  }
+
   const triggerType = readInputEnum<AutomationTriggerType>(
     input.triggerType,
     ["schedule", "event", "webhook"],
@@ -1836,10 +1848,7 @@ function normalizeTaskInput(
           : 3),
     model: readOptionalInputString(input.model, 120, "model"),
     name,
-    project:
-      readOptionalInputString(input.project, 120, "project") ||
-      existing?.project ||
-      "Langclaw Website",
+    project: project ?? existing?.project ?? "Langclaw Website",
     prompt: readOptionalInputString(input.prompt, 2000, "prompt"),
     scheduleFrequency,
     scheduleMonthDay:
@@ -2448,6 +2457,13 @@ function read0GAmount(value: unknown, fallback: string, field: string) {
     throw new AutomationHttpError(
       400,
       `${field} must be a non-negative decimal with up to 18 fractional digits.`
+    );
+  }
+
+  if (BigInt(parse0GToNeuron(raw)) > maxStoredNeuron) {
+    throw new AutomationHttpError(
+      400,
+      `${field} exceeds the supported 0G amount.`,
     );
   }
 
