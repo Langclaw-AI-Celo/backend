@@ -32,6 +32,8 @@ export type AlphaWatchlistInput = Partial<AlphaWatchlistItem>;
 type AlphaWatchlistRow =
   Database["public"]["Tables"]["langclaw_alpha_watchlist"]["Row"];
 type AlphaWatchlistContext = AuthenticatedAccount;
+const ISO_8601_DATE_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
 const UINT256_MAX = (1n << 256n) - 1n;
 
@@ -366,8 +368,8 @@ function readIsoDate(value: unknown) {
     return new Date().toISOString();
   }
 
-  if (typeof value === "string" && value.trim()) {
-    const date = new Date(value);
+  if (typeof value === "string" && hasValidIsoCalendarDate(value.trim())) {
+    const date = new Date(value.trim());
 
     if (!Number.isNaN(date.getTime())) {
       if (date.getTime() > Date.now() + 5 * 60 * 1000) {
@@ -379,4 +381,20 @@ function readIsoDate(value: unknown) {
   }
 
   throw new WatchlistHttpError(400, "Added at must be a valid date.");
+}
+
+function hasValidIsoCalendarDate(value: string) {
+  const match = value.match(ISO_8601_DATE_PATTERN);
+
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth[month - 1]!;
 }

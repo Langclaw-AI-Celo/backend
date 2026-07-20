@@ -487,6 +487,43 @@ test("watchlist upserts reject future added timestamps", async () => {
   );
 });
 
+test("watchlist upserts reject non-ISO and impossible timestamps", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:invalid-calendar-date",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "The watchlist timestamp must preserve its stated calendar date.",
+    title: "CELO evidence",
+  };
+
+  for (const addedAt of [
+    "July 20, 2026 12:00:00 UTC",
+    "2026-02-31T12:00:00.000Z",
+  ]) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, addedAt }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === "Added at must be a valid date.",
+    );
+  }
+});
+
 test("clearing a watchlist deletes only the authenticated wallet rows", async () => {
   const filters: Array<[string, string]> = [];
   const supabase = {
