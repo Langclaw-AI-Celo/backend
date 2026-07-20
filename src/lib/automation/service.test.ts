@@ -146,6 +146,21 @@ test("automation trigger changes clear stale event metadata", async () => {
   assert.equal(storage.updated?.trigger_type, "schedule");
 });
 
+test("automation trigger changes clear stale scheduled runs", async () => {
+  const storage = buildAutomationStorage("active", {
+    next_run_at: "2026-08-01T02:00:00.000Z",
+    trigger_type: "schedule",
+  });
+
+  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    eventName: "price.changed",
+    triggerType: "event",
+  });
+
+  assert.equal(storage.updated?.next_run_at, null);
+  assert.equal(storage.updated?.trigger_type, "event");
+});
+
 test("automation error responses preserve safe HTTP status and messages", async () => {
   const invalid = automationErrorResponse(
     new AutomationHttpError(400, "Invalid automation input.")
