@@ -277,6 +277,8 @@ function readRequiredText(value: unknown, label: string, maxLength: number) {
     throw new WatchlistHttpError(400, `${label} is required.`);
   }
 
+  rejectNullCharacters(text, label);
+
   if (text.length > maxLength) {
     throw new WatchlistHttpError(
       400,
@@ -316,6 +318,10 @@ function readOptionalText(value: unknown, field: string, maxLength = 500) {
 
   const text = optionalText(value);
 
+  if (text) {
+    rejectNullCharacters(text, field);
+  }
+
   if (text && text.length > maxLength) {
     throw new WatchlistHttpError(
       400,
@@ -324,6 +330,15 @@ function readOptionalText(value: unknown, field: string, maxLength = 500) {
   }
 
   return text;
+}
+
+function rejectNullCharacters(text: string, field: string) {
+  if (text.includes("\u0000")) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must not contain null characters.`,
+    );
+  }
 }
 
 function readOptionalUint256Text(value: unknown, field: string) {
