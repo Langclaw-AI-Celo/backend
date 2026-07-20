@@ -286,6 +286,36 @@ test("automation task text fields reject non-string values", async () => {
   }
 });
 
+test("automation task text fields reject overlong values", async () => {
+  const cases = [
+    [{ name: "n".repeat(121) }, "name", 120],
+    [{ name: "Valid task", project: "p".repeat(121) }, "project", 120],
+    [{ model: "m".repeat(121), name: "Valid task" }, "model", 120],
+    [{ name: "Valid task", prompt: "p".repeat(2_001) }, "prompt", 2_000],
+    [
+      {
+        eventName: "e".repeat(161),
+        name: "Valid task",
+        triggerType: "event",
+      },
+      "eventName",
+      160,
+    ],
+  ] as const;
+
+  for (const [input, field, maxLength] of cases) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      createAutomationTask(buildAccount(storage.supabase), input),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be at most ${maxLength} characters.`
+    );
+  }
+});
+
 test("automation task updates reject blank names", async () => {
   const storage = buildAutomationStorage("active");
 
