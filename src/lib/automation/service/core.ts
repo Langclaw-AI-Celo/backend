@@ -62,3 +62,31 @@ export class AutomationHttpError extends Error {
     this.status = status;
   }
 }
+
+export function maskEmail(email: string) {
+  const [name, domain] = email.split("@");
+  const maskedName =
+    name.length <= 2 ? `${name[0] ?? "*"}*` : `${name.slice(0, 2)}***`;
+
+  return `${maskedName}@${domain}`;
+}
+
+export function formatNeuronAs0G(value: bigint) {
+  const whole = value / neuronPer0G;
+  const fraction = (value % neuronPer0G).toString().padStart(18, "0");
+  const trimmed = fraction.replace(/0+$/, "");
+
+  return trimmed ? `${whole}.${trimmed}` : whole.toString();
+}
+
+export function readDecimalString(value: string | number | null | undefined) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(Math.trunc(value)) : "0";
+  }
+
+  if (typeof value !== "string") {
+    return "0";
+  }
+
+  return /^\d+$/.test(value) ? value : "0";
+}

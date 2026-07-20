@@ -7,11 +7,14 @@ import {
   computeNextRunAt,
   createHash,
   defaultTelegramBotUsername,
+  formatNeuronAs0G,
   getZonedParts,
+  maskEmail,
   neuronPer0G,
   randomBytes,
   randomInt,
   readAlphaSignalFromPayload,
+  readDecimalString,
   refundResearchUsage,
   requireAccountAuth,
   requireSupabaseAdmin,
@@ -36,6 +39,12 @@ import {
   readTaskId,
   readWebhookSlug,
 } from "./service/input";
+import {
+  rowToInAppNotification,
+  rowToRun,
+  rowToSettings,
+  rowToTask,
+} from "./service/mappers";
 import type {
   AccountAuthInput,
   AutomationDashboard,
@@ -1658,110 +1667,9 @@ async function createAutomationContextForWalletUser(
   };
 }
 
-function rowToTask(row: AutomationTaskRow, running = false): AutomationTask {
-  return {
-    consecutiveFailures: row.consecutive_failures,
-    createdAt: row.created_at,
-    displayStatus: running
-      ? "Running"
-      : row.status === "active"
-        ? "Active"
-        : row.status === "paused"
-          ? "Paused"
-          : "Draft",
-    eventName: row.event_name ?? undefined,
-    failureThreshold: row.failure_threshold,
-    id: row.id,
-    lastRunAt: row.last_run_at ?? undefined,
-    lastRunStatus: row.last_run_status ?? undefined,
-    maxRetries: row.max_retries,
-    metadata: row.metadata,
-    model: row.model ?? undefined,
-    name: row.name,
-    nextRunAt: row.next_run_at ?? undefined,
-    project: row.project,
-    prompt: row.prompt ?? undefined,
-    scheduleFrequency: row.schedule_frequency ?? undefined,
-    scheduleMonthDay: row.schedule_month_day ?? undefined,
-    scheduleTime: row.schedule_time,
-    scheduleWeekday: row.schedule_weekday ?? undefined,
-    status: row.status,
-    timezone: row.timezone,
-    triggerLabel: buildTriggerLabel({
-      eventName: row.event_name ?? undefined,
-      scheduleFrequency: row.schedule_frequency ?? undefined,
-      scheduleMonthDay: row.schedule_month_day ?? undefined,
-      scheduleTime: row.schedule_time,
-      scheduleWeekday: row.schedule_weekday ?? undefined,
-      triggerType: row.trigger_type,
-    }),
-    triggerType: row.trigger_type,
-    updatedAt: row.updated_at,
-    webhookSlug: row.webhook_slug ?? undefined,
-  };
-}
 
-function rowToRun(row: AutomationRunRow, taskName?: string): AutomationRun {
-  return {
-    attempt: row.attempt,
-    completedAt: row.completed_at ?? undefined,
-    createdAt: row.created_at,
-    durationMs: row.duration_ms ?? undefined,
-    error: row.error ?? undefined,
-    id: row.id,
-    result: row.result ?? undefined,
-    scheduledFor: row.scheduled_for ?? undefined,
-    startedAt: row.started_at ?? undefined,
-    status: row.status,
-    taskId: row.task_id,
-    taskName,
-    triggeredBy: row.triggered_by,
-    usage: row.usage ?? undefined,
-  };
-}
 
-function rowToInAppNotification(
-  row: AutomationNotificationRow
-): AutomationInAppNotification {
-  return {
-    body: row.body,
-    createdAt: row.created_at,
-    id: row.id,
-    metadata: row.metadata,
-    readAt: row.read_at ?? undefined,
-    runId: row.run_id ?? undefined,
-    status: row.status,
-    taskId: row.task_id ?? undefined,
-    title: row.title,
-  };
-}
 
-function rowToSettings(row: AutomationSettingsRow): AutomationSettings {
-  return {
-    autoPauseRepeatedFailures: row.auto_pause_repeated_failures,
-    dailyLimit0G: formatNeuronAs0G(BigInt(readDecimalString(row.daily_limit_neuron))),
-    failureNotification: row.failure_notification,
-    limitBehavior: row.limit_behavior,
-    lowBalanceThreshold0G: formatNeuronAs0G(
-      BigInt(readDecimalString(row.low_balance_threshold_neuron))
-    ),
-    monthlyCap0G: formatNeuronAs0G(BigInt(readDecimalString(row.monthly_cap_neuron))),
-    notificationChannels: row.notification_channels,
-    notificationEmail: row.notification_email ?? undefined,
-    notificationEmailLinkedAt: row.notification_email_linked_at ?? undefined,
-    notificationEmailPending: row.notification_email_pending
-      ? maskEmail(row.notification_email_pending)
-      : undefined,
-    notificationEmailVerified: row.notification_email_verified,
-    retryPolicy: row.retry_policy,
-    telegramChatId: row.telegram_chat_id ?? undefined,
-    telegramLinkedAt: row.telegram_linked_at ?? undefined,
-    telegramUsername: row.telegram_username ?? undefined,
-    telegramVerified: row.telegram_verified,
-    thresholdAction: row.threshold_action,
-    writeRunLogsToMemory: row.write_run_logs_to_memory,
-  };
-}
 
 
 
@@ -1979,13 +1887,6 @@ function removeChannel(
   return current.filter((item) => item !== channel);
 }
 
-function maskEmail(email: string) {
-  const [name, domain] = email.split("@");
-  const maskedName =
-    name.length <= 2 ? `${name[0] ?? "*"}*` : `${name.slice(0, 2)}***`;
-
-  return `${maskedName}@${domain}`;
-}
 
 function readMaxAttempts(maxRetries: number) {
   if (!Number.isFinite(maxRetries) || maxRetries <= 0) {
@@ -2040,25 +1941,7 @@ function withAutomationAttemptMetadata(
 
 
 
-function formatNeuronAs0G(value: bigint) {
-  const whole = value / neuronPer0G;
-  const fraction = (value % neuronPer0G).toString().padStart(18, "0");
-  const trimmed = fraction.replace(/0+$/, "");
 
-  return trimmed ? `${whole}.${trimmed}` : whole.toString();
-}
-
-function readDecimalString(value: string | number | null | undefined) {
-  if (typeof value === "number") {
-    return Number.isFinite(value) ? String(Math.trunc(value)) : "0";
-  }
-
-  if (typeof value !== "string") {
-    return "0";
-  }
-
-  return /^\d+$/.test(value) ? value : "0";
-}
 
 
 function startOfLocalDay(date: Date, timezone: string) {
