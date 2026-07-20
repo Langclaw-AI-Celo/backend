@@ -36,6 +36,26 @@ const ISO_8601_DATE_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
 const UINT256_MAX = (1n << 256n) - 1n;
+const alphaWatchlistInputFields = new Set([
+  "addedAt",
+  "agentId",
+  "caveat",
+  "chain",
+  "decisionHash",
+  "decisionId",
+  "evidenceUri",
+  "explorerUrl",
+  "gapCount",
+  "id",
+  "intent",
+  "proofTx",
+  "recommendation",
+  "signalType",
+  "sourceCount",
+  "subject",
+  "summary",
+  "title",
+]);
 
 export class WatchlistHttpError extends Error {
   status: number;
@@ -187,6 +207,20 @@ async function requireWatchlistContext(authInput: AccountAuthInput) {
 function normalizeAlphaWatchlistInput(
   input: AlphaWatchlistInput
 ): AlphaWatchlistItem {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new WatchlistHttpError(400, "Watchlist item must be a JSON object.");
+  }
+
+  const unsupportedField = Object.keys(input).find(
+    (field) => !alphaWatchlistInputFields.has(field),
+  );
+  if (unsupportedField) {
+    throw new WatchlistHttpError(
+      400,
+      `Watchlist item has unsupported field ${unsupportedField}.`,
+    );
+  }
+
   return {
     addedAt: readIsoDate(input.addedAt),
     agentId: readOptionalUint256Text(input.agentId, "agentId"),

@@ -197,6 +197,48 @@ test("watchlist upserts reject malformed optional text fields", async () => {
   }
 });
 
+test("watchlist upserts reject non-object items and unknown fields", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:unsupported-field",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Unknown fields should not disappear during persistence.",
+    title: "CELO evidence",
+  };
+
+  await assert.rejects(
+    upsertAlphaWatchlistItem(account, [] as never),
+    (error: unknown) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "Watchlist item must be a JSON object.",
+  );
+  await assert.rejects(
+    upsertAlphaWatchlistItem(account, {
+      ...baseInput,
+      decision_hash: `0x${"a".repeat(64)}`,
+    } as never),
+    (error: unknown) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "Watchlist item has unsupported field decision_hash.",
+  );
+});
+
 test("watchlist upserts reject overlong required text", async () => {
   const account = {
     account: {
