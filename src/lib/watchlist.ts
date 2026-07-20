@@ -189,14 +189,14 @@ function normalizeAlphaWatchlistInput(
     agentId: readOptionalUint256Text(input.agentId, "agentId"),
     caveat: readRequiredText(input.caveat, "Caveat", 4_000),
     chain: readRequiredText(input.chain || "celo", "Chain", 64),
-    decisionHash: readOptionalText(input.decisionHash, "decisionHash", 160),
+    decisionHash: readOptionalHash(input.decisionHash, "decisionHash"),
     decisionId: readOptionalUint256Text(input.decisionId, "decisionId"),
     evidenceUri: readOptionalText(input.evidenceUri, "evidenceUri", 1_000),
     explorerUrl: readOptionalText(input.explorerUrl, "explorerUrl", 1_000),
     gapCount: readCount(input.gapCount, "gapCount"),
     id: readRequiredText(input.id, "Watchlist item id", 240),
     intent: readRequiredText(input.intent, "Intent", 500),
-    proofTx: readOptionalText(input.proofTx, "proofTx", 160),
+    proofTx: readOptionalHash(input.proofTx, "proofTx"),
     recommendation: readRequiredText(input.recommendation, "Recommendation", 4_000),
     signalType: readRequiredText(input.signalType, "Signal type", 120),
     sourceCount: readCount(input.sourceCount, "sourceCount"),
@@ -287,6 +287,19 @@ function readOptionalUint256Text(value: unknown, field: string) {
     throw new WatchlistHttpError(
       400,
       `${field} must be a canonical unsigned 256-bit decimal integer.`,
+    );
+  }
+
+  return text;
+}
+
+function readOptionalHash(value: unknown, field: string) {
+  const text = readOptionalText(value, field, 66);
+
+  if (text && !/^0x[0-9a-fA-F]{64}$/.test(text)) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be a 32-byte hexadecimal hash.`,
     );
   }
 

@@ -300,6 +300,45 @@ test("watchlist upserts reject invalid on-chain identifiers", async () => {
   }
 });
 
+test("watchlist upserts reject invalid on-chain hashes", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    decisionHash: `0x${"a".repeat(64)}`,
+    id: "proof:invalid-hash",
+    intent: "track activity",
+    proofTx: `0x${"b".repeat(64)}`,
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "On-chain hashes must retain their bytes32 meaning.",
+    title: "CELO evidence",
+  };
+
+  for (const [field, value] of [
+    ["decisionHash", "0xabc"],
+    ["proofTx", `0x${"g".repeat(64)}`],
+  ] as const) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, [field]: value }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a 32-byte hexadecimal hash.`,
+    );
+  }
+});
+
 test("watchlist upserts reject invalid evidence counts", async () => {
   const account = {
     account: {
