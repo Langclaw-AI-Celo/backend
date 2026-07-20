@@ -6,6 +6,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { withEnv } from "../../test/helpers";
 import {
   createWalletChallenge,
+  MAX_PENDING_WALLET_CHALLENGES,
   verifyWalletSession,
 } from "./wallet-auth";
 
@@ -190,4 +191,30 @@ test("malformed wallet signatures fail safely without consuming the nonce", asyn
   );
 
   assert.equal(verified?.authMethod, "challenge");
+});
+
+test("wallet challenge storage evicts the oldest entry at capacity", async () => {
+  const request = new Request(
+    "https://api.langclaw.test/api/wallet/challenge"
+  );
+  const oldest = createWalletChallenge({
+    address: testAccount.address,
+    request,
+  });
+  const signature = await testAccount.signMessage({ message: oldest.message });
+
+  for (let index = 0; index < MAX_PENDING_WALLET_CHALLENGES; index += 1) {
+    createWalletChallenge({ address: testAccount.address, request });
+  }
+
+  const evicted = await verifyWalletSession(
+    {
+      address: testAccount.address,
+      message: oldest.message,
+      signature,
+    },
+    { requiredPurpose: "session" }
+  );
+
+  assert.equal(evicted, null);
 });

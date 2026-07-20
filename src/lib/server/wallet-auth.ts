@@ -65,6 +65,7 @@ const DEFAULT_CHAIN_ID = 42220;
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const SESSION_TOKEN_PREFIX = "lws_v1";
+export const MAX_PENDING_WALLET_CHALLENGES = 1_000;
 const allowedPurposes = new Set<WalletAuthPurpose>([
   "api-key:create",
   "session",
@@ -119,6 +120,7 @@ export function createWalletChallenge({
   };
 
   pruneExpiredChallenges(now);
+  evictOldestChallengesAtCapacity();
   challenges.set(nonce, challenge);
 
   return publicChallenge(challenge);
@@ -371,6 +373,18 @@ function pruneExpiredChallenges(now = Date.now()) {
     if (challenge.expiresAtMs <= now) {
       challenges.delete(nonce);
     }
+  }
+}
+
+function evictOldestChallengesAtCapacity() {
+  while (challenges.size >= MAX_PENDING_WALLET_CHALLENGES) {
+    const oldestNonce = challenges.keys().next().value;
+
+    if (!oldestNonce) {
+      return;
+    }
+
+    challenges.delete(oldestNonce);
   }
 }
 
