@@ -35,3 +35,20 @@ test("discovery routes reject non-object JSON before workflow access", async () 
     }
   }
 });
+
+test("discovery routes reject oversized topics before authentication", async () => {
+  for (const handler of [handleDiscover, handleDiscoverStream]) {
+    const response = await handler(
+      new Request("http://localhost/api/discover", {
+        body: JSON.stringify({ topic: "x".repeat(4_001) }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      })
+    );
+
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: "Topic must be at most 4000 characters.",
+    });
+  }
+});

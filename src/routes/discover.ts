@@ -13,6 +13,7 @@ import {
   usageErrorResponse,
   type UsageReservation,
 } from "../lib/usage";
+import { readDiscoveryTopicError } from "./discover-input";
 
 export async function handleDiscover(request: Request) {
   let topic = "";
@@ -42,9 +43,11 @@ export async function handleDiscover(request: Request) {
     );
   }
 
-  if (!topic) {
+  const topicError = readDiscoveryTopicError(topic);
+
+  if (topicError) {
     return Response.json(
-      { error: "Topic is required for Auto Discovery." },
+      { error: topicError },
       { status: 400 }
     );
   }
