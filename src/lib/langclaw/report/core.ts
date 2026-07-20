@@ -407,3 +407,66 @@ export function formatRatio(value?: number) {
 export function formatPercent(value?: number) {
   return value === undefined ? "unknown" : `${value >= 0 ? "+" : ""}${roundNumber(value)}%`;
 }
+
+export function percentileRank(values: number[], value: number) {
+  if (!values.length) {
+    return undefined;
+  }
+
+  if (values.length === 1) {
+    return 100;
+  }
+
+  const sorted = [...values].sort((left, right) => left - right);
+  const firstIndex = sorted.findIndex((item) => item === value);
+  const lastIndex = sorted.length - 1 - [...sorted].reverse().findIndex((item) => item === value);
+  const averageIndex = firstIndex >= 0 ? (firstIndex + lastIndex) / 2 : sorted.findIndex((item) => item > value);
+  const normalizedIndex =
+    averageIndex >= 0 ? averageIndex : sorted.length - 1;
+
+  return (normalizedIndex / (sorted.length - 1)) * 100;
+}
+
+export function weightedAverage(values: Array<{ value?: number; weight: number }>) {
+  const available = values.filter((item) => item.value !== undefined);
+
+  if (!available.length) {
+    return undefined;
+  }
+
+  const totalWeight = available.reduce((sum, item) => sum + item.weight, 0);
+  const weightedValue = available.reduce(
+    (sum, item) => sum + (item.value ?? 0) * item.weight,
+    0
+  );
+
+  return totalWeight > 0 ? weightedValue / totalWeight : undefined;
+}
+
+export function readNumberField(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = readNumberValue(record[key]);
+
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+export function readNumberValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+}

@@ -10,6 +10,7 @@ const expectedModules = [
   "markdown.ts",
   "smart-money.ts",
   "liquidity.ts",
+  "defi-yield.ts",
 ];
 const featureModules = expectedModules.filter(
   (moduleName) => !["types.ts", "core.ts"].includes(moduleName)
