@@ -1,6 +1,14 @@
-import { AutomationHttpError, readDecimalString } from "./core";
+import {
+  AutomationHttpError,
+  readDecimalString,
+  rowToInAppNotification,
+  rowToRun,
+  rowToTask,
+} from "./core";
 import type {
   AutomationContext,
+  AutomationInAppNotification,
+  AutomationNotificationRow,
   AutomationRunRow,
   AutomationStats,
   AutomationTaskRow,
@@ -101,4 +109,61 @@ export async function readRunningTaskIds(context: AutomationContext) {
   }
 
   return new Set((data ?? []).map((row) => row.task_id));
+}
+
+export async function readAutomationTasksForContext(context: AutomationContext) {
+  const rows = await readAutomationTaskRows(context);
+  const runningTaskIds = await readRunningTaskIds(context);
+
+  return rows.map((row) => rowToTask(row, runningTaskIds.has(row.id)));
+}
+
+export async function readAutomationRunsForContext(
+  context: AutomationContext,
+  taskId?: string
+) {
+  let query = context.supabase
+    .from("langclaw_automation_runs")
+    .select(
+      "*,langclaw_automation_tasks!inner(name)"
+    )
+    .eq("wallet_user_id", context.walletUser.id)
+    .order("created_at", { ascending: false })
+    .limit(30);
+
+  if (taskId) {
+    query = query.eq("task_id", taskId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new AutomationHttpError(500, error.message);
+  }
+
+  return ((data ?? []) as Array<AutomationRunRow & {
+    langclaw_automation_tasks?: { name?: string } | null;
+  }>).map((row) =>
+    rowToRun(row, row.langclaw_automation_tasks?.name)
+  );
+}
+
+export async function readInAppAutomationNotificationsForContext(
+  context: AutomationContext,
+  limit = 20
+): Promise<AutomationInAppNotification[]> {
+  const { data, error } = await context.supabase
+    .from("langclaw_automation_notifications")
+    .select("*")
+    .eq("wallet_user_id", context.walletUser.id)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw new AutomationHttpError(500, error.message);
+  }
+
+  return ((data ?? []) as AutomationNotificationRow[]).map(
+    rowToInAppNotification
+  );
 }

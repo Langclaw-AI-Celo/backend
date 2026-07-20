@@ -1,94 +1,43 @@
 import {
-  AccountAuthError,
   AutomationHttpError,
-  buildAlphaSignalNotificationMessage,
-  buildAutomationNotificationMessage,
-  buildTriggerLabel,
   computeNextRunAt,
-  createHash,
-  defaultTelegramBotUsername,
-  maskEmail,
-  randomBytes,
-  randomInt,
-  readAlphaSignalFromPayload,
-  readAutomationSettingsRow,
   readAutomationSettingsForContext,
-  refundResearchUsage,
-  readOptionalString,
-  requireAccountAuth,
+  readAutomationSettingsRow,
   requireAutomationContext,
-  requireAutomationSupabaseAdmin,
   requireTelegramLinkedSettings,
-  requireSupabaseAdmin,
-  reserveResearchUsage,
-  runLangclawWorkflow,
-  sendAlphaSignalNotification,
-  sendAutomationEmail,
-  sendAutomationRunNotification,
-  settleResearchUsage,
-  withAlphaSignalNotification,
-  writeAutomationRunMemory,
   updateTaskStatus,
 } from "./service/core";
 import {
   createWebhookSlug,
   normalizeSettingsInput,
   normalizeTaskInput,
-  readEventName,
   readLimit,
   readNotificationId,
   readTaskId,
-  readWebhookSlug,
 } from "./service/input";
-import {
-  parse0GToNeuron,
-  readDecimalString,
-  readMaxAttempts,
-  startOfLocalDay,
-  startOfLocalMonth,
-} from "./service/math";
+import { parse0GToNeuron } from "./service/math";
 import {
   rowToInAppNotification,
-  rowToRun,
   rowToSettings,
   rowToTask,
 } from "./service/mappers";
 import {
-  createAutomationContextForWalletUser,
+  readInAppAutomationNotificationsForContext,
+  readAutomationRunsForContext,
   readAutomationStats,
+  readAutomationTasksForContext,
   readAutomationTaskRow,
   readAutomationTaskRows,
-  readRunningTaskIds,
-  readUsageAccount,
-  readUsageTotalSince,
 } from "./service/storage";
 import type {
   AccountAuthInput,
   AutomationDashboard,
-  AutomationFrequency,
-  AutomationInAppNotification,
   AutomationNotificationRow,
-  AutomationContext,
-  AutomationRun,
-  AutomationRunRow,
-  AutomationRunStatus,
-  AutomationSettings,
   AutomationSettingsInput,
   AutomationSettingsRow,
-  AutomationStats,
-  AutomationTask,
   AutomationTaskInput,
   AutomationTaskRow,
   AutomationTaskStatus,
-  AutomationTriggeredBy,
-  AutomationTriggerType,
-  GuardrailDecision,
-  Json,
-  OnChainToolFinalPayload,
-  ResearchReport,
-  TelegramLinkCandidate,
-  UsageReservation,
-  ZeroGProof,
 } from "./service/types";
 
 export { AutomationHttpError, createWebhookSlug };
@@ -479,89 +428,4 @@ export async function markAllInAppAutomationNotificationsRead(
   }
 
   return { read: true };
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-async function readAutomationTasksForContext(context: AutomationContext) {
-  const rows = await readAutomationTaskRows(context);
-  const runningTaskIds = await readRunningTaskIds(context);
-
-  return rows.map((row) => rowToTask(row, runningTaskIds.has(row.id)));
-}
-
-
-
-
-async function readAutomationRunsForContext(
-  context: AutomationContext,
-  taskId?: string
-) {
-  let query = context.supabase
-    .from("langclaw_automation_runs")
-    .select(
-      "*,langclaw_automation_tasks!inner(name)"
-    )
-    .eq("wallet_user_id", context.walletUser.id)
-    .order("created_at", { ascending: false })
-    .limit(30);
-
-  if (taskId) {
-    query = query.eq("task_id", taskId);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new AutomationHttpError(500, error.message);
-  }
-
-  return ((data ?? []) as Array<AutomationRunRow & {
-    langclaw_automation_tasks?: { name?: string } | null;
-  }>).map((row) =>
-    rowToRun(row, row.langclaw_automation_tasks?.name)
-  );
-}
-
-async function readInAppAutomationNotificationsForContext(
-  context: AutomationContext,
-  limit = 20
-): Promise<AutomationInAppNotification[]> {
-  const { data, error } = await context.supabase
-    .from("langclaw_automation_notifications")
-    .select("*")
-    .eq("wallet_user_id", context.walletUser.id)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    throw new AutomationHttpError(500, error.message);
-  }
-
-  return ((data ?? []) as AutomationNotificationRow[]).map(
-    rowToInAppNotification
-  );
 }
