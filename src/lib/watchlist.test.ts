@@ -239,6 +239,40 @@ test("watchlist upserts reject non-object items and unknown fields", async () =>
   );
 });
 
+test("watchlist upserts reject non-string chain values", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:invalid-chain",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Malformed chain values must not fall back to Celo.",
+    title: "CELO evidence",
+  };
+
+  for (const chain of [false, 0, null]) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, chain } as never),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === "Chain must be a string when provided.",
+    );
+  }
+});
+
 test("watchlist upserts reject overlong required text", async () => {
   const account = {
     account: {

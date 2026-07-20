@@ -225,7 +225,7 @@ function normalizeAlphaWatchlistInput(
     addedAt: readIsoDate(input.addedAt),
     agentId: readOptionalUint256Text(input.agentId, "agentId"),
     caveat: readRequiredText(input.caveat, "Caveat", 4_000),
-    chain: readRequiredText(input.chain || "celo", "Chain", 64),
+    chain: readChain(input.chain),
     decisionHash: readOptionalHash(input.decisionHash, "decisionHash"),
     decisionId: readOptionalUint256Text(input.decisionId, "decisionId"),
     evidenceUri: readOptionalText(input.evidenceUri, "evidenceUri", 1_000),
@@ -285,6 +285,18 @@ function readRequiredText(value: unknown, label: string, maxLength: number) {
   }
 
   return text;
+}
+
+function readChain(value: unknown) {
+  if (value === undefined || value === "") {
+    return "celo";
+  }
+
+  if (typeof value !== "string") {
+    throw new WatchlistHttpError(400, "Chain must be a string when provided.");
+  }
+
+  return readRequiredText(value, "Chain", 64);
 }
 
 function optionalText(value: unknown) {
