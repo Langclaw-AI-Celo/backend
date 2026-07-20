@@ -19,6 +19,7 @@ import {
   readTelegramCodeFromText,
   requestNotificationEmailLink,
   runAutomationTask,
+  runDueAutomationTasks,
   runAutomationEvent,
   runAutomationWebhook,
   setAllAutomationStatus,
@@ -159,6 +160,40 @@ test("automation trigger changes clear stale scheduled runs", async () => {
 
   assert.equal(storage.updated?.next_run_at, null);
   assert.equal(storage.updated?.trigger_type, "event");
+});
+
+test("due automation queries exclude non-schedule tasks", async () => {
+  const equalityFilters: Array<[string, unknown]> = [];
+  const query = {
+    eq(column: string, value: unknown) {
+      equalityFilters.push([column, value]);
+      return query;
+    },
+    limit: () => Promise.resolve({ data: [], error: null }),
+    lte() {
+      return query;
+    },
+    not() {
+      return query;
+    },
+    order() {
+      return query;
+    },
+  };
+  const supabase = {
+    from(table: string) {
+      assert.equal(table, "langclaw_automation_tasks");
+      return { select: () => query };
+    },
+  };
+
+  await runDueAutomationTasks(buildAccount(supabase), 3);
+
+  assert.deepEqual(equalityFilters, [
+    ["wallet_user_id", walletUser.id],
+    ["status", "active"],
+    ["trigger_type", "schedule"],
+  ]);
 });
 
 test("automation error responses preserve safe HTTP status and messages", async () => {

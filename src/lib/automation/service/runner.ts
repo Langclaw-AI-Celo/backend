@@ -138,6 +138,7 @@ export async function runDueAutomationTasks(
     .select("*")
     .eq("wallet_user_id", context.walletUser.id)
     .eq("status", "active")
+    .eq("trigger_type", "schedule")
     .not("next_run_at", "is", null)
     .lte("next_run_at", now)
     .order("next_run_at", { ascending: true })
@@ -714,4 +715,3 @@ function withAutomationAttemptMetadata(
     result,
   };
 }
-
