@@ -32,6 +32,30 @@ export type AlphaWatchlistInput = Partial<AlphaWatchlistItem>;
 type AlphaWatchlistRow =
   Database["public"]["Tables"]["langclaw_alpha_watchlist"]["Row"];
 type AlphaWatchlistContext = AuthenticatedAccount;
+const ISO_8601_DATE_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const POSTGRES_INTEGER_MAX = 2_147_483_647;
+const UINT256_MAX = (1n << 256n) - 1n;
+const alphaWatchlistInputFields = new Set([
+  "addedAt",
+  "agentId",
+  "caveat",
+  "chain",
+  "decisionHash",
+  "decisionId",
+  "evidenceUri",
+  "explorerUrl",
+  "gapCount",
+  "id",
+  "intent",
+  "proofTx",
+  "recommendation",
+  "signalType",
+  "sourceCount",
+  "subject",
+  "summary",
+  "title",
+]);
 
 export class WatchlistHttpError extends Error {
   status: number;
@@ -183,19 +207,33 @@ async function requireWatchlistContext(authInput: AccountAuthInput) {
 function normalizeAlphaWatchlistInput(
   input: AlphaWatchlistInput
 ): AlphaWatchlistItem {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new WatchlistHttpError(400, "Watchlist item must be a JSON object.");
+  }
+
+  const unsupportedField = Object.keys(input).find(
+    (field) => !alphaWatchlistInputFields.has(field),
+  );
+  if (unsupportedField) {
+    throw new WatchlistHttpError(
+      400,
+      `Watchlist item has unsupported field ${unsupportedField}.`,
+    );
+  }
+
   return {
     addedAt: readIsoDate(input.addedAt),
-    agentId: readOptionalText(input.agentId, "agentId"),
+    agentId: readOptionalUint256Text(input.agentId, "agentId"),
     caveat: readRequiredText(input.caveat, "Caveat", 4_000),
-    chain: readRequiredText(input.chain || "celo", "Chain", 64),
-    decisionHash: readOptionalText(input.decisionHash, "decisionHash", 160),
-    decisionId: readOptionalText(input.decisionId, "decisionId", 80),
+    chain: readChain(input.chain),
+    decisionHash: readOptionalHash(input.decisionHash, "decisionHash"),
+    decisionId: readOptionalUint256Text(input.decisionId, "decisionId"),
     evidenceUri: readOptionalText(input.evidenceUri, "evidenceUri", 1_000),
-    explorerUrl: readOptionalText(input.explorerUrl, "explorerUrl", 1_000),
+    explorerUrl: readOptionalHttpsUrl(input.explorerUrl, "explorerUrl"),
     gapCount: readCount(input.gapCount, "gapCount"),
     id: readRequiredText(input.id, "Watchlist item id", 240),
     intent: readRequiredText(input.intent, "Intent", 500),
-    proofTx: readOptionalText(input.proofTx, "proofTx", 160),
+    proofTx: readOptionalHash(input.proofTx, "proofTx"),
     recommendation: readRequiredText(input.recommendation, "Recommendation", 4_000),
     signalType: readRequiredText(input.signalType, "Signal type", 120),
     sourceCount: readCount(input.sourceCount, "sourceCount"),
@@ -239,17 +277,38 @@ function readRequiredText(value: unknown, label: string, maxLength: number) {
     throw new WatchlistHttpError(400, `${label} is required.`);
   }
 
-  return text.slice(0, maxLength);
+  rejectNullCharacters(text, label);
+
+  if (text.length > maxLength) {
+    throw new WatchlistHttpError(
+      400,
+      `${label} must be at most ${maxLength} characters.`,
+    );
+  }
+
+  return text;
 }
 
-function optionalText(value: unknown, maxLength = 500) {
+function readChain(value: unknown) {
+  if (value === undefined || value === "") {
+    return "celo";
+  }
+
+  if (typeof value !== "string") {
+    throw new WatchlistHttpError(400, "Chain must be a string when provided.");
+  }
+
+  return readRequiredText(value, "Chain", 64);
+}
+
+function optionalText(value: unknown) {
   if (typeof value !== "string") {
     return undefined;
   }
 
   const text = value.trim();
 
-  return text ? text.slice(0, maxLength) : undefined;
+  return text || undefined;
 }
 
 function readOptionalText(value: unknown, field: string, maxLength = 500) {
@@ -257,7 +316,90 @@ function readOptionalText(value: unknown, field: string, maxLength = 500) {
     throw new WatchlistHttpError(400, `${field} must be a string.`);
   }
 
-  return optionalText(value, maxLength);
+  const text = optionalText(value);
+
+  if (text) {
+    rejectNullCharacters(text, field);
+  }
+
+  if (text && text.length > maxLength) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be at most ${maxLength} characters.`,
+    );
+  }
+
+  return text;
+}
+
+function rejectNullCharacters(text: string, field: string) {
+  if (text.includes("\u0000")) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must not contain null characters.`,
+    );
+  }
+}
+
+function readOptionalUint256Text(value: unknown, field: string) {
+  const text = readOptionalText(value, field, 78);
+
+  if (
+    text &&
+    (!/^(0|[1-9]\d*)$/.test(text) || BigInt(text) > UINT256_MAX)
+  ) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be a canonical unsigned 256-bit decimal integer.`,
+    );
+  }
+
+  return text;
+}
+
+function readOptionalHash(value: unknown, field: string) {
+  const text = readOptionalText(value, field, 66);
+
+  if (text && !/^0x[0-9a-fA-F]{64}$/.test(text)) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be a 32-byte hexadecimal hash.`,
+    );
+  }
+
+  return text;
+}
+
+function readOptionalHttpsUrl(value: unknown, field: string) {
+  const text = readOptionalText(value, field, 1_000);
+
+  if (!text) {
+    return undefined;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be an HTTPS URL without credentials.`,
+    );
+  }
+
+  if (
+    url.protocol !== "https:" ||
+    !url.hostname ||
+    url.username ||
+    url.password
+  ) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be an HTTPS URL without credentials.`,
+    );
+  }
+
+  return text;
 }
 
 function readCount(value: unknown, field: string) {
@@ -272,6 +414,13 @@ function readCount(value: unknown, field: string) {
     );
   }
 
+  if (value > POSTGRES_INTEGER_MAX) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be at most ${POSTGRES_INTEGER_MAX}.`,
+    );
+  }
+
   return value;
 }
 
@@ -280,8 +429,8 @@ function readIsoDate(value: unknown) {
     return new Date().toISOString();
   }
 
-  if (typeof value === "string" && value.trim()) {
-    const date = new Date(value);
+  if (typeof value === "string" && hasValidIsoCalendarDate(value.trim())) {
+    const date = new Date(value.trim());
 
     if (!Number.isNaN(date.getTime())) {
       if (date.getTime() > Date.now() + 5 * 60 * 1000) {
@@ -293,4 +442,20 @@ function readIsoDate(value: unknown) {
   }
 
   throw new WatchlistHttpError(400, "Added at must be a valid date.");
+}
+
+function hasValidIsoCalendarDate(value: string) {
+  const match = value.match(ISO_8601_DATE_PATTERN);
+
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  return month >= 1 && month <= 12 && day >= 1 && day <= daysInMonth[month - 1]!;
 }

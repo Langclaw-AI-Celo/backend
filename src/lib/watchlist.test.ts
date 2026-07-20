@@ -80,6 +80,7 @@ test("watchlist upserts normalize input and bind the authenticated wallet", asyn
       addedAt: "2026-07-17T12:00:00+07:00",
       caveat: "  Confirm   liquidity first. ",
       chain: "",
+      evidenceUri: "e".repeat(750),
       gapCount: 0,
       id: "  proof:0xabc  ",
       intent: "  track   accumulation ",
@@ -99,6 +100,7 @@ test("watchlist upserts normalize input and bind the authenticated wallet", asyn
   assert.equal(saved?.chain, "celo");
   assert.equal(saved?.source_count, 3);
   assert.equal(saved?.gap_count, 0);
+  assert.equal(saved?.evidence_uri, "e".repeat(750));
   assert.equal(saved?.title, "CELO signal");
   assert.equal(saved?.intent, "track accumulation");
   assert.equal(item.summary, "Wallets accumulated CELO.");
@@ -195,6 +197,299 @@ test("watchlist upserts reject malformed optional text fields", async () => {
   }
 });
 
+test("watchlist upserts reject non-object items and unknown fields", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:unsupported-field",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Unknown fields should not disappear during persistence.",
+    title: "CELO evidence",
+  };
+
+  await assert.rejects(
+    upsertAlphaWatchlistItem(account, [] as never),
+    (error: unknown) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "Watchlist item must be a JSON object.",
+  );
+  await assert.rejects(
+    upsertAlphaWatchlistItem(account, {
+      ...baseInput,
+      decision_hash: `0x${"a".repeat(64)}`,
+    } as never),
+    (error: unknown) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "Watchlist item has unsupported field decision_hash.",
+  );
+});
+
+test("watchlist upserts reject non-string chain values", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:invalid-chain",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Malformed chain values must not fall back to Celo.",
+    title: "CELO evidence",
+  };
+
+  for (const chain of [false, 0, null]) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, chain } as never),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === "Chain must be a string when provided.",
+    );
+  }
+});
+
+test("watchlist upserts reject null characters in text fields", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:null-character",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Postgres text values cannot contain null characters.",
+    title: "CELO evidence",
+  };
+
+  for (const [field, value, label] of [
+    ["title", "CELO\u0000 evidence", "Title"],
+    ["evidenceUri", "langclaw://evidence/\u0000", "evidenceUri"],
+  ] as const) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, [field]: value }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === `${label} must not contain null characters.`,
+    );
+  }
+});
+
+test("watchlist upserts reject overlong required text", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+
+  await assert.rejects(
+    upsertAlphaWatchlistItem(account, {
+      caveat: "Verify the source.",
+      id: "proof:overlong-title",
+      intent: "track activity",
+      recommendation: "Review the evidence.",
+      signalType: "smart-money",
+      subject: "CELO",
+      summary: "Required metadata must not be silently truncated.",
+      title: "x".repeat(501),
+    }),
+    (error: unknown) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "Title must be at most 500 characters.",
+  );
+});
+
+test("watchlist upserts reject overlong optional text", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+
+  await assert.rejects(
+    upsertAlphaWatchlistItem(account, {
+      caveat: "Verify the source.",
+      evidenceUri: "e".repeat(1_001),
+      id: "proof:overlong-evidence-uri",
+      intent: "track activity",
+      recommendation: "Review the evidence.",
+      signalType: "smart-money",
+      subject: "CELO",
+      summary: "Optional metadata must not be silently truncated.",
+      title: "CELO evidence",
+    }),
+    (error: unknown) =>
+      error instanceof WatchlistHttpError &&
+      error.status === 400 &&
+      error.message === "evidenceUri must be at most 1000 characters.",
+  );
+});
+
+test("watchlist upserts reject invalid on-chain identifiers", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:invalid-identifier",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "On-chain identifiers must retain their uint256 meaning.",
+    title: "CELO evidence",
+  };
+
+  for (const [field, value] of [
+    ["agentId", "-1"],
+    ["agentId", "01"],
+    ["decisionId", "0x2"],
+    ["decisionId", (1n << 256n).toString()],
+  ] as const) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, [field]: value }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message ===
+          `${field} must be a canonical unsigned 256-bit decimal integer.`,
+    );
+  }
+});
+
+test("watchlist upserts reject invalid on-chain hashes", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    decisionHash: `0x${"a".repeat(64)}`,
+    id: "proof:invalid-hash",
+    intent: "track activity",
+    proofTx: `0x${"b".repeat(64)}`,
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "On-chain hashes must retain their bytes32 meaning.",
+    title: "CELO evidence",
+  };
+
+  for (const [field, value] of [
+    ["decisionHash", "0xabc"],
+    ["proofTx", `0x${"g".repeat(64)}`],
+  ] as const) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, [field]: value }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a 32-byte hexadecimal hash.`,
+    );
+  }
+});
+
+test("watchlist upserts reject unsafe explorer URLs", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:unsafe-explorer-url",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Explorer links are opened in a new browser tab.",
+    title: "CELO evidence",
+  };
+
+  for (const explorerUrl of [
+    "javascript:alert(1)",
+    "https://user:secret@celoscan.io/tx/0xabc",
+  ]) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, explorerUrl }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message ===
+          "explorerUrl must be an HTTPS URL without credentials.",
+    );
+  }
+});
+
 test("watchlist upserts reject invalid evidence counts", async () => {
   const account = {
     account: {
@@ -236,6 +531,43 @@ test("watchlist upserts reject invalid evidence counts", async () => {
   }
 });
 
+test("watchlist upserts reject evidence counts outside the database range", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:oversized-count",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Evidence counts must fit the Postgres integer columns.",
+    title: "CELO evidence",
+  };
+
+  for (const field of ["gapCount", "sourceCount"] as const) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, {
+        ...baseInput,
+        [field]: 2_147_483_648,
+      }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be at most 2147483647.`,
+    );
+  }
+});
+
 test("watchlist upserts reject future added timestamps", async () => {
   const account = {
     account: {
@@ -266,6 +598,43 @@ test("watchlist upserts reject future added timestamps", async () => {
       error.status === 400 &&
       error.message === "Added at cannot be in the future.",
   );
+});
+
+test("watchlist upserts reject non-ISO and impossible timestamps", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:invalid-calendar-date",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "The watchlist timestamp must preserve its stated calendar date.",
+    title: "CELO evidence",
+  };
+
+  for (const addedAt of [
+    "July 20, 2026 12:00:00 UTC",
+    "2026-02-31T12:00:00.000Z",
+  ]) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, addedAt }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message === "Added at must be a valid date.",
+    );
+  }
 });
 
 test("clearing a watchlist deletes only the authenticated wallet rows", async () => {
