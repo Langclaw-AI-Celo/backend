@@ -192,7 +192,7 @@ function normalizeAlphaWatchlistInput(
     decisionHash: readOptionalHash(input.decisionHash, "decisionHash"),
     decisionId: readOptionalUint256Text(input.decisionId, "decisionId"),
     evidenceUri: readOptionalText(input.evidenceUri, "evidenceUri", 1_000),
-    explorerUrl: readOptionalText(input.explorerUrl, "explorerUrl", 1_000),
+    explorerUrl: readOptionalHttpsUrl(input.explorerUrl, "explorerUrl"),
     gapCount: readCount(input.gapCount, "gapCount"),
     id: readRequiredText(input.id, "Watchlist item id", 240),
     intent: readRequiredText(input.intent, "Intent", 500),
@@ -300,6 +300,38 @@ function readOptionalHash(value: unknown, field: string) {
     throw new WatchlistHttpError(
       400,
       `${field} must be a 32-byte hexadecimal hash.`,
+    );
+  }
+
+  return text;
+}
+
+function readOptionalHttpsUrl(value: unknown, field: string) {
+  const text = readOptionalText(value, field, 1_000);
+
+  if (!text) {
+    return undefined;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be an HTTPS URL without credentials.`,
+    );
+  }
+
+  if (
+    url.protocol !== "https:" ||
+    !url.hostname ||
+    url.username ||
+    url.password
+  ) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be an HTTPS URL without credentials.`,
     );
   }
 

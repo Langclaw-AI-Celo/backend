@@ -339,6 +339,44 @@ test("watchlist upserts reject invalid on-chain hashes", async () => {
   }
 });
 
+test("watchlist upserts reject unsafe explorer URLs", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:unsafe-explorer-url",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "Explorer links are opened in a new browser tab.",
+    title: "CELO evidence",
+  };
+
+  for (const explorerUrl of [
+    "javascript:alert(1)",
+    "https://user:secret@celoscan.io/tx/0xabc",
+  ]) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, explorerUrl }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message ===
+          "explorerUrl must be an HTTPS URL without credentials.",
+    );
+  }
+});
+
 test("watchlist upserts reject invalid evidence counts", async () => {
   const account = {
     account: {
