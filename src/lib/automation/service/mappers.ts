@@ -15,7 +15,7 @@ import type {
   AutomationTaskRow,
 } from "./types";
 
-export { rowToSettings } from "./core";
+export { rowToRun, rowToSettings } from "./core";
 
 export function rowToTask(row: AutomationTaskRow, running = false): AutomationTask {
   return {
@@ -60,24 +60,6 @@ export function rowToTask(row: AutomationTaskRow, running = false): AutomationTa
   };
 }
 
-export function rowToRun(row: AutomationRunRow, taskName?: string): AutomationRun {
-  return {
-    attempt: row.attempt,
-    completedAt: row.completed_at ?? undefined,
-    createdAt: row.created_at,
-    durationMs: row.duration_ms ?? undefined,
-    error: row.error ?? undefined,
-    id: row.id,
-    result: row.result ?? undefined,
-    scheduledFor: row.scheduled_for ?? undefined,
-    startedAt: row.started_at ?? undefined,
-    status: row.status,
-    taskId: row.task_id,
-    taskName,
-    triggeredBy: row.triggered_by,
-    usage: row.usage ?? undefined,
-  };
-}
 
 export function rowToInAppNotification(
   row: AutomationNotificationRow

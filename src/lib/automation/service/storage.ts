@@ -6,6 +6,13 @@ import type {
   AutomationTaskRow,
 } from "./types";
 
+export {
+  createAutomationContextForWalletUser,
+  readAutomationTaskRow,
+  readUsageAccount,
+  readUsageTotalSince,
+} from "./core";
+
 export async function readAutomationTaskRows(context: AutomationContext) {
   const { data, error } = await context.supabase
     .from("langclaw_automation_tasks")
@@ -22,24 +29,6 @@ export async function readAutomationTaskRows(context: AutomationContext) {
   return (data ?? []) as AutomationTaskRow[];
 }
 
-export async function readAutomationTaskRow(context: AutomationContext, taskId: string) {
-  const { data, error } = await context.supabase
-    .from("langclaw_automation_tasks")
-    .select("*")
-    .eq("id", taskId)
-    .eq("wallet_user_id", context.walletUser.id)
-    .maybeSingle();
-
-  if (error) {
-    throw new AutomationHttpError(500, error.message);
-  }
-
-  if (!data) {
-    throw new AutomationHttpError(404, "Automation task was not found.");
-  }
-
-  return data as AutomationTaskRow;
-}
 
 export async function readAutomationStats(context: AutomationContext): Promise<AutomationStats> {
   const [tasks, runningTaskIds, recentRuns] = await Promise.all([
@@ -113,58 +102,3 @@ export async function readRunningTaskIds(context: AutomationContext) {
 
   return new Set((data ?? []).map((row) => row.task_id));
 }
-
-export async function readUsageTotalSince(context: AutomationContext, since: Date) {
-  const { data, error } = await context.supabase
-    .from("langclaw_usage_charges")
-    .select("charged_neuron")
-    .eq("wallet_user_id", context.walletUser.id)
-    .gte("created_at", since.toISOString());
-
-  if (error) {
-    return "0";
-  }
-
-  return (data ?? [])
-    .reduce((total, row) => total + BigInt(readDecimalString(row.charged_neuron)), 0n)
-    .toString();
-}
-
-export async function readUsageAccount(context: AutomationContext) {
-  const { data } = await context.supabase
-    .from("langclaw_usage_accounts")
-    .select("available_neuron")
-    .eq("wallet_user_id", context.walletUser.id)
-    .maybeSingle();
-
-  return data as { available_neuron: string } | null;
-}
-
-export async function createAutomationContextForWalletUser(
-  supabase: AutomationContext["supabase"],
-  walletUserId: string
-): Promise<AutomationContext> {
-  const { data, error } = await supabase
-    .from("langclaw_wallet_users")
-    .select("id,wallet_address")
-    .eq("id", walletUserId)
-    .maybeSingle();
-
-  if (error) {
-    throw new AutomationHttpError(500, error.message);
-  }
-
-  if (!data) {
-    throw new AutomationHttpError(404, "Automation owner was not found.");
-  }
-
-  return {
-    authMethod: "api_key",
-    supabase,
-    walletUser: {
-      id: data.id,
-      walletAddress: data.wallet_address,
-    },
-  };
-}
-

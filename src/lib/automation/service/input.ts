@@ -4,7 +4,11 @@ import {
   getZonedParts,
   randomBytes,
   read0GAmount,
+  readEventName,
+  readLimit,
   readOptionalString,
+  readTaskId,
+  readWebhookSlug,
 } from "./core";
 import type {
   AutomationFrequency,
@@ -15,6 +19,8 @@ import type {
   AutomationTaskStatus,
   AutomationTriggerType,
 } from "./types";
+
+export { readEventName, readLimit, readTaskId, readWebhookSlug } from "./core";
 
 export function normalizeTaskInput(
   input: AutomationTaskInput,
@@ -191,13 +197,6 @@ export function normalizeSettingsInput(
   };
 }
 
-export function readTaskId(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new AutomationHttpError(400, "taskId is required.");
-  }
-
-  return value.trim();
-}
 
 export function readNotificationId(value: unknown) {
   if (typeof value !== "string" || !value.trim()) {
@@ -207,38 +206,8 @@ export function readNotificationId(value: unknown) {
   return value.trim();
 }
 
-export function readEventName(value: unknown) {
-  const eventName = readOptionalString(value, 160);
 
-  if (!eventName) {
-    throw new AutomationHttpError(400, "eventName is required.");
-  }
 
-  return eventName;
-}
-
-export function readWebhookSlug(value: unknown) {
-  if (
-    typeof value !== "string" ||
-    !/^[a-z0-9][a-z0-9-]{0,80}$/i.test(value.trim())
-  ) {
-    throw new AutomationHttpError(400, "A valid webhook slug is required.");
-  }
-
-  return value.trim();
-}
-
-export function readLimit(value: unknown, fallback: number, max = 10) {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new AutomationHttpError(400, "limit must be an integer.");
-  }
-
-  return Math.min(Math.max(value, 1), max);
-}
 
 
 export function readOptionalInputString(

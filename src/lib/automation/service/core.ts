@@ -27,8 +27,12 @@ import {
 import type {
   AccountAuthInput,
   AutomationContext,
+  AutomationRun,
+  AutomationRunRow,
   AutomationSettings,
   AutomationSettingsRow,
+  AutomationTaskRow,
+  AutomationTaskStatus,
 } from "./types";
 
 export {
@@ -219,4 +223,248 @@ export function requireAutomationSupabaseAdmin() {
 
     throw error;
   }
+}
+
+export async function readAutomationTaskRow(context: AutomationContext, taskId: string) {
+  const { data, error } = await context.supabase
+    .from("langclaw_automation_tasks")
+    .select("*")
+    .eq("id", taskId)
+    .eq("wallet_user_id", context.walletUser.id)
+    .maybeSingle();
+
+  if (error) {
+    throw new AutomationHttpError(500, error.message);
+  }
+
+  if (!data) {
+    throw new AutomationHttpError(404, "Automation task was not found.");
+  }
+
+  return data as AutomationTaskRow;
+}
+
+export async function readUsageTotalSince(context: AutomationContext, since: Date) {
+  const { data, error } = await context.supabase
+    .from("langclaw_usage_charges")
+    .select("charged_neuron")
+    .eq("wallet_user_id", context.walletUser.id)
+    .gte("created_at", since.toISOString());
+
+  if (error) {
+    return "0";
+  }
+
+  return (data ?? [])
+    .reduce((total, row) => total + BigInt(readDecimalString(row.charged_neuron)), 0n)
+    .toString();
+}
+
+export async function readUsageAccount(context: AutomationContext) {
+  const { data } = await context.supabase
+    .from("langclaw_usage_accounts")
+    .select("available_neuron")
+    .eq("wallet_user_id", context.walletUser.id)
+    .maybeSingle();
+
+  return data as { available_neuron: string } | null;
+}
+
+export async function createAutomationContextForWalletUser(
+  supabase: AutomationContext["supabase"],
+  walletUserId: string
+): Promise<AutomationContext> {
+  const { data, error } = await supabase
+    .from("langclaw_wallet_users")
+    .select("id,wallet_address")
+    .eq("id", walletUserId)
+    .maybeSingle();
+
+  if (error) {
+    throw new AutomationHttpError(500, error.message);
+  }
+
+  if (!data) {
+    throw new AutomationHttpError(404, "Automation owner was not found.");
+  }
+
+  return {
+    authMethod: "api_key",
+    supabase,
+    walletUser: {
+      id: data.id,
+      walletAddress: data.wallet_address,
+    },
+  };
+}
+
+export function readMaxAttempts(maxRetries: number) {
+  if (!Number.isFinite(maxRetries) || maxRetries <= 0) {
+    return 1;
+  }
+
+  return Math.min(Math.trunc(maxRetries), 5);
+}
+
+export function startOfLocalDay(date: Date, timezone: string) {
+  const parts = getZonedParts(date, timezone);
+
+  return localPartsToUtc({
+    day: parts.day,
+    hour: 0,
+    minute: 0,
+    month: parts.month,
+    year: parts.year,
+  }, timezone);
+}
+
+export function startOfLocalMonth(date: Date, timezone: string) {
+  const parts = getZonedParts(date, timezone);
+
+  return localPartsToUtc({
+    day: 1,
+    hour: 0,
+    minute: 0,
+    month: parts.month,
+    year: parts.year,
+  }, timezone);
+}
+
+export function localPartsToUtc(
+  parts: {
+    day: number;
+    hour: number;
+    minute: number;
+    month: number;
+    year: number;
+  },
+  timezone: string
+) {
+  const utcGuess = new Date(
+    Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute)
+  );
+  const zoned = getZonedParts(utcGuess, timezone);
+  const offset =
+    Date.UTC(
+      zoned.year,
+      zoned.month - 1,
+      zoned.day,
+      zoned.hour,
+      zoned.minute,
+      zoned.second
+    ) - utcGuess.getTime();
+
+  return new Date(utcGuess.getTime() - offset);
+}
+
+export function rowToRun(row: AutomationRunRow, taskName?: string): AutomationRun {
+  return {
+    attempt: row.attempt,
+    completedAt: row.completed_at ?? undefined,
+    createdAt: row.created_at,
+    durationMs: row.duration_ms ?? undefined,
+    error: row.error ?? undefined,
+    id: row.id,
+    result: row.result ?? undefined,
+    scheduledFor: row.scheduled_for ?? undefined,
+    startedAt: row.started_at ?? undefined,
+    status: row.status,
+    taskId: row.task_id,
+    taskName,
+    triggeredBy: row.triggered_by,
+    usage: row.usage ?? undefined,
+  };
+}
+
+export async function readAutomationSettingsForContext(context: AutomationContext) {
+  return rowToSettings(await readAutomationSettingsRow(context));
+}
+
+export function requireTelegramLinkedSettings(settings: AutomationSettings) {
+  if (!settings.telegramVerified || !settings.telegramChatId?.trim()) {
+    throw new AutomationHttpError(403, "Telegram connection is required.");
+  }
+}
+
+export async function updateTaskStatus(
+  context: AutomationContext,
+  task: AutomationTaskRow,
+  status: Extract<AutomationTaskStatus, "active" | "paused">
+) {
+  if (status === "active") {
+    requireTelegramLinkedSettings(await readAutomationSettingsForContext(context));
+  }
+
+  const nextRunAt =
+    status === "active" &&
+    task.trigger_type === "schedule" &&
+    task.schedule_frequency
+      ? computeNextRunAt({
+          frequency: task.schedule_frequency,
+          scheduleMonthDay: task.schedule_month_day ?? undefined,
+          scheduleTime: task.schedule_time,
+          scheduleWeekday: task.schedule_weekday ?? undefined,
+          timezone: task.timezone,
+        })
+      : null;
+  const { data, error } = await context.supabase
+    .from("langclaw_automation_tasks")
+    .update({
+      next_run_at: nextRunAt,
+      status,
+    })
+    .eq("id", task.id)
+    .eq("wallet_user_id", context.walletUser.id)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new AutomationHttpError(
+      500,
+      error?.message || "Unable to update automation task status."
+    );
+  }
+
+  return data as AutomationTaskRow;
+}
+
+export function readTaskId(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new AutomationHttpError(400, "taskId is required.");
+  }
+
+  return value.trim();
+}
+
+export function readEventName(value: unknown) {
+  const eventName = readOptionalString(value, 160);
+
+  if (!eventName) {
+    throw new AutomationHttpError(400, "eventName is required.");
+  }
+
+  return eventName;
+}
+
+export function readWebhookSlug(value: unknown) {
+  if (
+    typeof value !== "string" ||
+    !/^[a-z0-9][a-z0-9-]{0,80}$/i.test(value.trim())
+  ) {
+    throw new AutomationHttpError(400, "A valid webhook slug is required.");
+  }
+
+  return value.trim();
+}
+
+export function readLimit(value: unknown, fallback: number, max = 10) {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new AutomationHttpError(400, "limit must be an integer.");
+  }
+
+  return Math.min(Math.max(value, 1), max);
 }
