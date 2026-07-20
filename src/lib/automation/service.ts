@@ -1,91 +1,71 @@
-import { createHash, randomBytes, randomInt } from "node:crypto";
-
 import {
   AccountAuthError,
-  requireAccountAuth,
-  requireSupabaseAdmin,
-  type AccountAuthInput,
-  type AuthenticatedAccount,
-} from "../server/account-auth";
-import type { Database, Json } from "../supabase/database.types";
-import { writeAutomationRunMemory } from "../memory";
-import {
-  readAlphaSignalFromPayload,
-  withAlphaSignalNotification,
-} from "../langclaw/alpha-quality";
-import { runLangclawWorkflow } from "../langclaw/workflow";
-import type { ResearchReport, ZeroGProof } from "../langclaw/types";
-import type { OnChainToolFinalPayload } from "../onchain-tools/types";
-import {
-  refundResearchUsage,
-  reserveResearchUsage,
-  settleResearchUsage,
-  type UsageReservation,
-} from "../usage";
-import { buildTriggerLabel, computeNextRunAt, getZonedParts } from "./schedule";
-import {
+  AutomationHttpError,
   buildAlphaSignalNotificationMessage,
   buildAutomationNotificationMessage,
-  sendAutomationEmail,
+  buildTriggerLabel,
+  computeNextRunAt,
+  createHash,
+  defaultTelegramBotUsername,
+  getZonedParts,
+  neuronPer0G,
+  randomBytes,
+  randomInt,
+  readAlphaSignalFromPayload,
+  refundResearchUsage,
+  requireAccountAuth,
+  requireSupabaseAdmin,
+  reserveResearchUsage,
+  runLangclawWorkflow,
   sendAlphaSignalNotification,
+  sendAutomationEmail,
   sendAutomationRunNotification,
-} from "./notifications";
+  settleResearchUsage,
+  withAlphaSignalNotification,
+  writeAutomationRunMemory,
+} from "./service/core";
+import {
+  createWebhookSlug,
+  normalizeSettingsInput,
+  normalizeTaskInput,
+  parse0GToNeuron,
+  readEventName,
+  readLimit,
+  readNotificationId,
+  readOptionalString,
+  readTaskId,
+  readWebhookSlug,
+} from "./service/input";
 import type {
+  AccountAuthInput,
   AutomationDashboard,
   AutomationFrequency,
   AutomationInAppNotification,
+  AutomationNotificationRow,
+  AutomationContext,
   AutomationRun,
+  AutomationRunRow,
   AutomationRunStatus,
   AutomationSettings,
   AutomationSettingsInput,
+  AutomationSettingsRow,
   AutomationStats,
   AutomationTask,
   AutomationTaskInput,
+  AutomationTaskRow,
   AutomationTaskStatus,
   AutomationTriggeredBy,
   AutomationTriggerType,
-} from "./types";
+  GuardrailDecision,
+  Json,
+  OnChainToolFinalPayload,
+  ResearchReport,
+  TelegramLinkCandidate,
+  UsageReservation,
+  ZeroGProof,
+} from "./service/types";
 
-type AutomationSettingsRow =
-  Database["public"]["Tables"]["langclaw_automation_settings"]["Row"];
-type AutomationTaskRow =
-  Database["public"]["Tables"]["langclaw_automation_tasks"]["Row"];
-type AutomationRunRow =
-  Database["public"]["Tables"]["langclaw_automation_runs"]["Row"];
-type AutomationNotificationRow =
-  Database["public"]["Tables"]["langclaw_automation_notifications"]["Row"];
-type AutomationContext = AuthenticatedAccount;
-
-type GuardrailDecision =
-  | {
-      allowed: true;
-      note?: string;
-    }
-  | {
-      allowed: false;
-      pauseTask: boolean;
-      reason: string;
-    };
-
-type TelegramLinkCandidate = {
-  chatId: string;
-  code: string;
-  username?: string;
-};
-
-const defaultTimezone = "Asia/Jakarta";
-const neuronPer0G = 1_000_000_000_000_000_000n;
-const maxStoredNeuron = 10n ** 78n - 1n;
-const defaultTelegramBotUsername = "langclawaibot";
-
-export class AutomationHttpError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export { AutomationHttpError, createWebhookSlug };
 
 export function automationErrorResponse(error: unknown) {
   if (error instanceof AutomationHttpError) {
@@ -350,7 +330,7 @@ export async function updateAutomationSettings(
 ) {
   const context = await requireAutomationContext(authInput);
   const existing = await readAutomationSettingsRow(context);
-  const settings = normalizeSettingsInput(input, existing);
+  const settings = normalizeSettingsInput(input, rowToSettings(existing));
   const { data, error } = await context.supabase
     .from("langclaw_automation_settings")
     .upsert(
@@ -1783,406 +1763,21 @@ function rowToSettings(row: AutomationSettingsRow): AutomationSettings {
   };
 }
 
-function normalizeTaskInput(
-  input: AutomationTaskInput,
-  {
-    existing,
-    requireName,
-    settings,
-  }: {
-    existing?: AutomationTaskRow;
-    requireName: boolean;
-    settings: AutomationSettings;
-  }
-) {
-  const name = readOptionalInputString(input.name, 120, "name");
 
-  if ((requireName || input.name !== undefined) && !name) {
-    throw new AutomationHttpError(400, "Task name is required.");
-  }
 
-  const project = readOptionalInputString(input.project, 120, "project");
 
-  if (input.project !== undefined && !project) {
-    throw new AutomationHttpError(400, "Project is required.");
-  }
 
-  const triggerType = readInputEnum<AutomationTriggerType>(
-    input.triggerType,
-    ["schedule", "event", "webhook"],
-    existing?.trigger_type ?? "schedule",
-    "triggerType"
-  );
-  const scheduleFrequency =
-    triggerType === "schedule"
-      ? readInputEnum<AutomationFrequency>(
-          input.scheduleFrequency,
-          ["daily", "weekly", "monthly"],
-          existing?.schedule_frequency ?? "daily",
-          "scheduleFrequency"
-        )
-      : undefined;
-  const scheduleTime = readScheduleTime(
-    input.scheduleTime,
-    existing?.schedule_time ?? "09:00"
-  );
-  const timezone = readTimezone(
-    input.timezone,
-    existing?.timezone || defaultTimezone
-  );
-  const nowParts = getZonedParts(new Date(), timezone);
-  const eventName =
-    triggerType === "event"
-      ? readEventName(input.eventName ?? existing?.event_name)
-      : readOptionalInputString(input.eventName, 160, "eventName");
 
-  return {
-    eventName,
-    failureThreshold: existing?.failure_threshold ?? 5,
-    maxRetries:
-      existing?.max_retries ??
-      (settings.retryPolicy === "5-attempts"
-        ? 5
-        : settings.retryPolicy === "none"
-          ? 0
-          : 3),
-    model: readOptionalInputString(input.model, 120, "model"),
-    name,
-    project: project ?? existing?.project ?? "Langclaw Website",
-    prompt: readOptionalInputString(input.prompt, 2000, "prompt"),
-    scheduleFrequency,
-    scheduleMonthDay:
-      triggerType === "schedule"
-        ? readInteger(
-            input.scheduleMonthDay,
-            existing?.schedule_month_day ?? nowParts.day,
-            1,
-            31,
-            "scheduleMonthDay"
-          )
-        : undefined,
-    scheduleTime,
-    scheduleWeekday:
-      triggerType === "schedule"
-        ? readInteger(
-            input.scheduleWeekday,
-            existing?.schedule_weekday ?? nowParts.weekday,
-            0,
-            6,
-            "scheduleWeekday"
-          )
-        : undefined,
-    status:
-      input.status === undefined
-        ? existing?.status
-        : readInputEnum<AutomationTaskStatus>(
-            input.status,
-            ["draft", "active", "paused"],
-            existing?.status ?? "draft",
-            "status"
-          ),
-    timezone,
-    triggerType,
-  };
-}
 
-function normalizeSettingsInput(
-  input: AutomationSettingsInput,
-  existing?: AutomationSettingsRow
-): AutomationSettings {
-  const current = existing ? rowToSettings(existing) : undefined;
 
-  return {
-    autoPauseRepeatedFailures: readSettingsBoolean(
-      input.autoPauseRepeatedFailures,
-      current?.autoPauseRepeatedFailures ?? true,
-      "autoPauseRepeatedFailures"
-    ),
-    dailyLimit0G: read0GAmount(
-      input.dailyLimit0G,
-      current?.dailyLimit0G ?? "25",
-      "dailyLimit0G"
-    ),
-    failureNotification: readInputEnum(
-      input.failureNotification,
-      ["email", "in-app", "none"],
-      current?.failureNotification ?? "email",
-      "failureNotification"
-    ),
-    limitBehavior: readInputEnum(
-      input.limitBehavior,
-      ["pause", "alert", "allow"],
-      current?.limitBehavior ?? "pause",
-      "limitBehavior"
-    ),
-    lowBalanceThreshold0G: read0GAmount(
-      input.lowBalanceThreshold0G,
-      current?.lowBalanceThreshold0G ?? "10",
-      "lowBalanceThreshold0G"
-    ),
-    monthlyCap0G: read0GAmount(
-      input.monthlyCap0G,
-      current?.monthlyCap0G ?? "500",
-      "monthlyCap0G"
-    ),
-    notificationChannels: readNotificationChannels(
-      input.notificationChannels,
-      current?.notificationChannels
-    ),
-    notificationEmail:
-      input.notificationEmail === undefined
-        ? current?.notificationEmail
-        : readOptionalString(input.notificationEmail, 320),
-    notificationEmailVerified: current?.notificationEmailVerified ?? false,
-    retryPolicy: readInputEnum(
-      input.retryPolicy,
-      ["none", "3-attempts", "5-attempts"],
-      current?.retryPolicy ?? "3-attempts",
-      "retryPolicy"
-    ),
-    telegramChatId:
-      input.telegramChatId === undefined
-        ? current?.telegramChatId
-        : readOptionalString(input.telegramChatId, 120),
-    telegramVerified: current?.telegramVerified ?? false,
-    thresholdAction: readInputEnum(
-      input.thresholdAction,
-      ["notify", "pause", "continue"],
-      current?.thresholdAction ?? "notify",
-      "thresholdAction"
-    ),
-    writeRunLogsToMemory: readSettingsBoolean(
-      input.writeRunLogsToMemory,
-      current?.writeRunLogsToMemory ?? false,
-      "writeRunLogsToMemory"
-    ),
-  };
-}
 
-function readTaskId(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new AutomationHttpError(400, "taskId is required.");
-  }
 
-  return value.trim();
-}
 
-function readNotificationId(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new AutomationHttpError(400, "notificationId is required.");
-  }
 
-  return value.trim();
-}
 
-function readEventName(value: unknown) {
-  const eventName = readOptionalString(value, 160);
 
-  if (!eventName) {
-    throw new AutomationHttpError(400, "eventName is required.");
-  }
 
-  return eventName;
-}
 
-function readWebhookSlug(value: unknown) {
-  if (
-    typeof value !== "string" ||
-    !/^[a-z0-9][a-z0-9-]{0,80}$/i.test(value.trim())
-  ) {
-    throw new AutomationHttpError(400, "A valid webhook slug is required.");
-  }
-
-  return value.trim();
-}
-
-function readLimit(value: unknown, fallback: number, max = 10) {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new AutomationHttpError(400, "limit must be an integer.");
-  }
-
-  return Math.min(Math.max(value, 1), max);
-}
-
-function readOptionalString(value: unknown, maxLength: number) {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return undefined;
-  }
-
-  return trimmed.slice(0, maxLength);
-}
-
-function readOptionalInputString(
-  value: unknown,
-  maxLength: number,
-  field: string
-) {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (typeof value !== "string") {
-    throw new AutomationHttpError(400, `${field} must be a string.`);
-  }
-
-  return readOptionalString(value, maxLength);
-}
-
-function readScheduleTime(value: unknown, fallback: string) {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  if (typeof value === "string" && /^[0-2][0-9]:[0-5][0-9]$/.test(value)) {
-    const [hour] = value.split(":").map(Number);
-
-    if (hour <= 23) {
-      return value;
-    }
-  }
-
-  throw new AutomationHttpError(
-    400,
-    "scheduleTime must use 24-hour HH:MM format."
-  );
-}
-
-function readTimezone(value: unknown, fallback: string) {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  if (typeof value === "string") {
-    const timezone = value.trim();
-
-    if (timezone && timezone.length <= 80) {
-      try {
-        new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
-        return timezone;
-      } catch {
-        // The common validation error below keeps the API response stable.
-      }
-    }
-  }
-
-  throw new AutomationHttpError(
-    400,
-    "timezone must be a valid IANA time zone."
-  );
-}
-
-function readInteger(
-  value: unknown,
-  fallback: number,
-  min: number,
-  max: number,
-  field: string
-) {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  if (
-    typeof value !== "number" ||
-    !Number.isInteger(value) ||
-    value < min ||
-    value > max
-  ) {
-    throw new AutomationHttpError(
-      400,
-      `${field} must be an integer between ${min} and ${max}.`
-    );
-  }
-
-  return value;
-}
-
-function readEnum<T extends string>(
-  value: unknown,
-  allowed: readonly T[],
-  fallback?: T
-) {
-  if (typeof value === "string" && allowed.includes(value as T)) {
-    return value as T;
-  }
-
-  return fallback;
-}
-
-function readInputEnum<T extends string>(
-  value: unknown,
-  allowed: readonly T[],
-  fallback: T,
-  field: string
-) {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  const result = readEnum(value, allowed);
-
-  if (!result) {
-    throw new AutomationHttpError(
-      400,
-      `${field} must be one of: ${allowed.join(", ")}.`
-    );
-  }
-
-  return result;
-}
-
-function readSettingsBoolean(
-  value: unknown,
-  fallback: boolean,
-  field: string
-) {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  if (typeof value !== "boolean") {
-    throw new AutomationHttpError(400, `${field} must be a boolean.`);
-  }
-
-  return value;
-}
-
-function readNotificationChannels(
-  value: unknown,
-  fallback: Array<"email" | "telegram" | "in-app"> = ["email"]
-): Array<"email" | "telegram" | "in-app"> {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  if (
-    !Array.isArray(value) ||
-    !value.every(
-      (item) => item === "email" || item === "telegram" || item === "in-app"
-    )
-  ) {
-    throw new AutomationHttpError(
-      400,
-      "notificationChannels must contain only email, telegram, or in-app."
-    );
-  }
-
-  const channels = value as Array<"email" | "telegram" | "in-app">;
-
-  return channels.length
-    ? Array.from(new Set(channels))
-    : ["email"];
-}
 
 async function findTelegramUpdateByCodeHash(codeHash: string) {
   const token = process.env.LANGCLAW_TELEGRAM_BOT_TOKEN?.trim();
@@ -2443,40 +2038,7 @@ function withAutomationAttemptMetadata(
   };
 }
 
-function read0GAmount(value: unknown, fallback: string, field: string) {
-  if (value === undefined) {
-    return fallback;
-  }
 
-  const raw =
-    typeof value === "string" || typeof value === "number"
-      ? String(value).trim()
-      : "";
-
-  if (!/^\d+(\.\d{1,18})?$/.test(raw)) {
-    throw new AutomationHttpError(
-      400,
-      `${field} must be a non-negative decimal with up to 18 fractional digits.`
-    );
-  }
-
-  if (BigInt(parse0GToNeuron(raw)) > maxStoredNeuron) {
-    throw new AutomationHttpError(
-      400,
-      `${field} exceeds the supported 0G amount.`,
-    );
-  }
-
-  return raw;
-}
-
-function parse0GToNeuron(value: string) {
-  const [wholePart, fractionPart = ""] = value.split(".");
-  const whole = BigInt(wholePart || "0") * neuronPer0G;
-  const fraction = BigInt(fractionPart.padEnd(18, "0").slice(0, 18) || "0");
-
-  return (whole + fraction).toString();
-}
 
 function formatNeuronAs0G(value: bigint) {
   const whole = value / neuronPer0G;
@@ -2498,15 +2060,6 @@ function readDecimalString(value: string | number | null | undefined) {
   return /^\d+$/.test(value) ? value : "0";
 }
 
-export function createWebhookSlug(name: string) {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-
-  return `${slug || "task"}-${randomBytes(16).toString("hex")}`;
-}
 
 function startOfLocalDay(date: Date, timezone: string) {
   const parts = getZonedParts(date, timezone);
