@@ -50,6 +50,8 @@ type ContextMessage = {
   content: string;
 };
 
+const MAX_CHAT_MESSAGE_CHARACTERS = 16_000;
+
 export async function handleChatStream(request: Request) {
   let body: ChatRequestBody;
 
@@ -79,6 +81,14 @@ export async function handleChatStream(request: Request) {
   }
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
+
+  if (message.length > MAX_CHAT_MESSAGE_CHARACTERS) {
+    return Response.json(
+      { error: "Message must be at most 16000 characters." },
+      { status: 400 }
+    );
+  }
+
   const context = readContextMessages(body.messages);
 
   if (!context) {
