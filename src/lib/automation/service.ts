@@ -202,17 +202,20 @@ export async function updateAutomationTask(
       "scheduleMonthDay" in input ||
       "timezone" in input);
 
-  const nextRunAt = shouldRecomputeNextRun
-    ? computeNextRunAt({
-        frequency: scheduleFrequency,
-        scheduleMonthDay,
-        scheduleTime,
-        scheduleWeekday,
-        timezone,
-      })
-    : status === "paused" || status === "draft"
+  const nextRunAt =
+    triggerType !== "schedule"
       ? null
-      : existing.next_run_at;
+      : shouldRecomputeNextRun
+        ? computeNextRunAt({
+            frequency: scheduleFrequency,
+            scheduleMonthDay,
+            scheduleTime,
+            scheduleWeekday,
+            timezone,
+          })
+        : status === "paused" || status === "draft"
+          ? null
+          : existing.next_run_at;
   const webhookSlug =
     triggerType === "webhook"
       ? existing.webhook_slug ?? createWebhookSlug(patch.name ?? existing.name)

@@ -223,7 +223,16 @@ export function readOptionalInputString(
     throw new AutomationHttpError(400, `${field} must be a string.`);
   }
 
-  return readOptionalString(value, maxLength);
+  const trimmed = value.trim();
+
+  if (trimmed.length > maxLength) {
+    throw new AutomationHttpError(
+      400,
+      `${field} must be at most ${maxLength} characters.`
+    );
+  }
+
+  return trimmed || undefined;
 }
 
 export function readScheduleTime(value: unknown, fallback: string) {

@@ -275,7 +275,7 @@ async function readStrategyBody(
     }
 
     if (
-      !isValidOptionalPositiveNumber(strategyBody.limit) ||
+      !isValidOptionalLimit(strategyBody.limit) ||
       !isValidOptionalPositiveNumber(strategyBody.notionalUsd)
     ) {
       return {
@@ -394,6 +394,23 @@ function isValidOptionalPositiveNumber(value: unknown) {
   return Number.isFinite(parsed) && parsed > 0;
 }
 
+function isValidOptionalLimit(value: unknown) {
+  if (value === undefined) {
+    return true;
+  }
+
+  if (
+    typeof value !== "number" &&
+    (typeof value !== "string" || !value.trim())
+  ) {
+    return false;
+  }
+
+  const parsed = typeof value === "number" ? value : Number(value);
+
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 100;
+}
+
 function isValidPaperBacktest(value: unknown) {
   if (value === undefined) {
     return true;
@@ -489,7 +506,7 @@ function isNonEmptyString(value: unknown) {
 function isValidOptionalQueryId(value: unknown) {
   return (
     value === undefined ||
-    (typeof value === "string" && /^\d+$/.test(value.trim()))
+    (typeof value === "string" && /^\d{1,32}$/.test(value.trim()))
   );
 }
 

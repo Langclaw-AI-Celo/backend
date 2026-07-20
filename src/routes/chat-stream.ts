@@ -50,6 +50,9 @@ type ContextMessage = {
   content: string;
 };
 
+const MAX_CHAT_MESSAGE_CHARACTERS = 16_000;
+const MAX_CHAT_CONTEXT_CHARACTERS = 32_000;
+
 export async function handleChatStream(request: Request) {
   let body: ChatRequestBody;
 
@@ -79,6 +82,14 @@ export async function handleChatStream(request: Request) {
   }
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
+
+  if (message.length > MAX_CHAT_MESSAGE_CHARACTERS) {
+    return Response.json(
+      { error: "Message must be at most 16000 characters." },
+      { status: 400 }
+    );
+  }
+
   const context = readContextMessages(body.messages);
 
   if (!context) {
@@ -328,6 +339,7 @@ function readContextMessages(value: unknown): ContextMessage[] | null {
   }
 
   const messages: ContextMessage[] = [];
+  let totalCharacters = 0;
 
   for (const item of value as ChatMessageInput[]) {
     const role = item?.role;
@@ -335,6 +347,12 @@ function readContextMessages(value: unknown): ContextMessage[] | null {
       typeof item?.content === "string" ? item.content.trim() : "";
 
     if ((role !== "assistant" && role !== "user") || !content) {
+      return null;
+    }
+
+    totalCharacters += content.length;
+
+    if (totalCharacters > MAX_CHAT_CONTEXT_CHARACTERS) {
       return null;
     }
 

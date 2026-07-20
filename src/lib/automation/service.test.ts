@@ -19,6 +19,7 @@ import {
   readTelegramCodeFromText,
   requestNotificationEmailLink,
   runAutomationTask,
+  runDueAutomationTasks,
   runAutomationEvent,
   runAutomationWebhook,
   setAllAutomationStatus,
@@ -146,6 +147,55 @@ test("automation trigger changes clear stale event metadata", async () => {
   assert.equal(storage.updated?.trigger_type, "schedule");
 });
 
+test("automation trigger changes clear stale scheduled runs", async () => {
+  const storage = buildAutomationStorage("active", {
+    next_run_at: "2026-08-01T02:00:00.000Z",
+    trigger_type: "schedule",
+  });
+
+  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    eventName: "price.changed",
+    triggerType: "event",
+  });
+
+  assert.equal(storage.updated?.next_run_at, null);
+  assert.equal(storage.updated?.trigger_type, "event");
+});
+
+test("due automation queries exclude non-schedule tasks", async () => {
+  const equalityFilters: Array<[string, unknown]> = [];
+  const query = {
+    eq(column: string, value: unknown) {
+      equalityFilters.push([column, value]);
+      return query;
+    },
+    limit: () => Promise.resolve({ data: [], error: null }),
+    lte() {
+      return query;
+    },
+    not() {
+      return query;
+    },
+    order() {
+      return query;
+    },
+  };
+  const supabase = {
+    from(table: string) {
+      assert.equal(table, "langclaw_automation_tasks");
+      return { select: () => query };
+    },
+  };
+
+  await runDueAutomationTasks(buildAccount(supabase), 3);
+
+  assert.deepEqual(equalityFilters, [
+    ["wallet_user_id", walletUser.id],
+    ["status", "active"],
+    ["trigger_type", "schedule"],
+  ]);
+});
+
 test("automation error responses preserve safe HTTP status and messages", async () => {
   const invalid = automationErrorResponse(
     new AutomationHttpError(400, "Invalid automation input.")
@@ -232,6 +282,36 @@ test("automation task text fields reject non-string values", async () => {
         error instanceof AutomationHttpError &&
         error.status === 400 &&
         error.message === `${field} must be a string.`
+    );
+  }
+});
+
+test("automation task text fields reject overlong values", async () => {
+  const cases = [
+    [{ name: "n".repeat(121) }, "name", 120],
+    [{ name: "Valid task", project: "p".repeat(121) }, "project", 120],
+    [{ model: "m".repeat(121), name: "Valid task" }, "model", 120],
+    [{ name: "Valid task", prompt: "p".repeat(2_001) }, "prompt", 2_000],
+    [
+      {
+        eventName: "e".repeat(161),
+        name: "Valid task",
+        triggerType: "event",
+      },
+      "eventName",
+      160,
+    ],
+  ] as const;
+
+  for (const [input, field, maxLength] of cases) {
+    const storage = buildAutomationStorage("active");
+
+    await assert.rejects(
+      createAutomationTask(buildAccount(storage.supabase), input),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be at most ${maxLength} characters.`
     );
   }
 });

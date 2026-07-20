@@ -440,10 +440,17 @@ export function readTaskId(value: unknown) {
 }
 
 export function readEventName(value: unknown) {
-  const eventName = readOptionalString(value, 160);
+  const eventName = typeof value === "string" ? value.trim() : "";
 
   if (!eventName) {
     throw new AutomationHttpError(400, "eventName is required.");
+  }
+
+  if (eventName.length > 160) {
+    throw new AutomationHttpError(
+      400,
+      "eventName must be at most 160 characters."
+    );
   }
 
   return eventName;

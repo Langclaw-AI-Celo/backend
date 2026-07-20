@@ -157,6 +157,20 @@ test("direct chat requires wallet auth", async () => {
   assert.match((await response.json() as { error: string }).error, /required/);
 });
 
+test("chat stream rejects oversized prompts before authentication", async () => {
+  const response = await handleChatStream(
+    new Request("http://localhost/api/chat/stream", {
+      body: JSON.stringify({ message: "x".repeat(16_001) }),
+      method: "POST",
+    })
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "Message must be at most 16000 characters.",
+  });
+});
+
 test("chat stream rejects unsupported product chains before authentication", async () => {
   for (const chain of ["base", "", 42220]) {
     const response = await handleChatStream(
@@ -193,6 +207,26 @@ test("chat stream rejects malformed context instead of dropping messages", async
       error: "messages must contain valid user or assistant text records.",
     });
   }
+});
+
+test("chat stream rejects oversized context before authentication", async () => {
+  const response = await handleChatStream(
+    new Request("http://localhost/api/chat/stream", {
+      body: JSON.stringify({
+        message: "Continue",
+        messages: Array.from({ length: 12 }, (_, index) => ({
+          content: "x".repeat(3_000),
+          role: index % 2 === 0 ? "user" : "assistant",
+        })),
+      }),
+      method: "POST",
+    })
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: "messages must contain valid user or assistant text records.",
+  });
 });
 
 test("chat stream rejects malformed routing controls", async () => {

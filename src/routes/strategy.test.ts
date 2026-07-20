@@ -132,6 +132,7 @@ test("strategy routes reject invalid identifier syntax before provider work", as
 
   for (const body of [
     { queryId: "12/path" },
+    { queryId: "1".repeat(33) },
     { pairAddress: "not-an-address" },
   ]) {
     const response = await handleStrategyBacktest(
@@ -287,6 +288,8 @@ test("strategy routes reject malformed positive numbers before provider work", a
   for (const [handler, body] of [
     [handleStrategyScanPairs, { limit: "12rows" }],
     [handleStrategyScanPairs, { limit: 0 }],
+    [handleStrategyScanPairs, { limit: 1.5 }],
+    [handleStrategyScanPairs, { limit: 101 }],
     [handleStrategyPaperTrade, { notionalUsd: false }],
     [handleStrategyPaperTrade, { notionalUsd: -1 }],
   ] as const) {
