@@ -32,6 +32,7 @@ export type AlphaWatchlistInput = Partial<AlphaWatchlistItem>;
 type AlphaWatchlistRow =
   Database["public"]["Tables"]["langclaw_alpha_watchlist"]["Row"];
 type AlphaWatchlistContext = AuthenticatedAccount;
+const UINT256_MAX = (1n << 256n) - 1n;
 
 export class WatchlistHttpError extends Error {
   status: number;
@@ -185,11 +186,11 @@ function normalizeAlphaWatchlistInput(
 ): AlphaWatchlistItem {
   return {
     addedAt: readIsoDate(input.addedAt),
-    agentId: readOptionalText(input.agentId, "agentId"),
+    agentId: readOptionalUint256Text(input.agentId, "agentId"),
     caveat: readRequiredText(input.caveat, "Caveat", 4_000),
     chain: readRequiredText(input.chain || "celo", "Chain", 64),
     decisionHash: readOptionalText(input.decisionHash, "decisionHash", 160),
-    decisionId: readOptionalText(input.decisionId, "decisionId", 80),
+    decisionId: readOptionalUint256Text(input.decisionId, "decisionId"),
     evidenceUri: readOptionalText(input.evidenceUri, "evidenceUri", 1_000),
     explorerUrl: readOptionalText(input.explorerUrl, "explorerUrl", 1_000),
     gapCount: readCount(input.gapCount, "gapCount"),
@@ -270,6 +271,22 @@ function readOptionalText(value: unknown, field: string, maxLength = 500) {
     throw new WatchlistHttpError(
       400,
       `${field} must be at most ${maxLength} characters.`,
+    );
+  }
+
+  return text;
+}
+
+function readOptionalUint256Text(value: unknown, field: string) {
+  const text = readOptionalText(value, field, 78);
+
+  if (
+    text &&
+    (!/^(0|[1-9]\d*)$/.test(text) || BigInt(text) > UINT256_MAX)
+  ) {
+    throw new WatchlistHttpError(
+      400,
+      `${field} must be a canonical unsigned 256-bit decimal integer.`,
     );
   }
 

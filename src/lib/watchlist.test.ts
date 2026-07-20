@@ -260,6 +260,46 @@ test("watchlist upserts reject overlong optional text", async () => {
   );
 });
 
+test("watchlist upserts reject invalid on-chain identifiers", async () => {
+  const account = {
+    account: {
+      authMethod: "wallet" as const,
+      supabase: {
+        from() {
+          throw new Error("validation should finish before querying storage");
+        },
+      } as never,
+      walletUser,
+    },
+  };
+  const baseInput = {
+    caveat: "Verify the source.",
+    id: "proof:invalid-identifier",
+    intent: "track activity",
+    recommendation: "Review the evidence.",
+    signalType: "smart-money",
+    subject: "CELO",
+    summary: "On-chain identifiers must retain their uint256 meaning.",
+    title: "CELO evidence",
+  };
+
+  for (const [field, value] of [
+    ["agentId", "-1"],
+    ["agentId", "01"],
+    ["decisionId", "0x2"],
+    ["decisionId", (1n << 256n).toString()],
+  ] as const) {
+    await assert.rejects(
+      upsertAlphaWatchlistItem(account, { ...baseInput, [field]: value }),
+      (error: unknown) =>
+        error instanceof WatchlistHttpError &&
+        error.status === 400 &&
+        error.message ===
+          `${field} must be a canonical unsigned 256-bit decimal integer.`,
+    );
+  }
+});
+
 test("watchlist upserts reject invalid evidence counts", async () => {
   const account = {
     account: {
