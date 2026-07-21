@@ -679,6 +679,31 @@ test("creates polls and unlinks a Telegram automation connection", async () => {
   }
 });
 
+test("Telegram link polling rejects oversized provider responses", async () => {
+  const storage = buildAutomationStorage("active");
+  const account = buildAccount(storage.supabase);
+  const restoreFetch = mockFetch(() =>
+    new Response(JSON.stringify({ ok: true, result: [] }), {
+      headers: { "Content-Length": String(5 * 1024 * 1024 + 1) },
+    }),
+  );
+
+  try {
+    await withEnv(
+      { LANGCLAW_TELEGRAM_BOT_TOKEN: "telegram-test-token" },
+      async () => {
+        await createTelegramLinkCode(account);
+        await assert.rejects(
+          pollTelegramLink(account),
+          /Provider response exceeds the 5242880 byte limit/,
+        );
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("reads the automation dashboard, runs, settings, and in-app notifications", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);

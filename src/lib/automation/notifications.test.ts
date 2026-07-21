@@ -478,6 +478,36 @@ test("sendAutomationEmail includes Resend 403 details and config hint", async ()
   }
 });
 
+test("sendAutomationEmail rejects oversized provider error bodies", async () => {
+  const restoreFetch = mockFetch(() =>
+    new Response("provider failure", {
+      headers: { "Content-Length": String(5 * 1024 * 1024 + 1) },
+      status: 502,
+    }),
+  );
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_AUTOMATION_EMAIL_FROM: "alerts@example.com",
+        RESEND_API_KEY: "test-api-key",
+      },
+      async () => {
+        await assert.rejects(
+          sendAutomationEmail({
+            subject: "Automation alert",
+            text: "Provider failed",
+            to: "user@example.com",
+          }),
+          /Provider response exceeds the 5242880 byte limit/,
+        );
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("run notifications fail when every configured provider rejects", async () => {
   const originalFetch = globalThis.fetch;
   const originalApiKey = process.env.RESEND_API_KEY;

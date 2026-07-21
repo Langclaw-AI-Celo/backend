@@ -11,6 +11,7 @@ import type {
   OnChainToolFinalPayload,
   OnChainToolResult,
 } from "../onchain-tools/types";
+import { readProviderResponseText } from "../provider-response";
 import type {
   AutomationNotificationChannel,
   AutomationRunStatus,
@@ -700,7 +701,7 @@ async function buildEmailProviderError(response: Response) {
 
 async function readProviderErrorDetail(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
-  const raw = await response.text().catch(() => "");
+  const raw = await readProviderResponseText(response);
   const trimmed = raw.trim();
 
   if (!trimmed) {

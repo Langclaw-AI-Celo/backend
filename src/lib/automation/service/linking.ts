@@ -9,6 +9,7 @@ import {
   randomInt,
   readAutomationSettingsRow,
   readOptionalString,
+  readProviderResponseJson,
   requireAutomationContext,
   requireSupabaseAdmin,
   rowToSettings,
@@ -315,9 +316,18 @@ async function findTelegramUpdateByCodeHash(codeHash: string) {
     );
   }
 
-  const payload = (await response.json().catch(() => null)) as
-    | { ok?: boolean; result?: unknown[] }
-    | null;
+  let payload: { ok?: boolean; result?: unknown[] } | null = null;
+
+  try {
+    payload = await readProviderResponseJson<{
+      ok?: boolean;
+      result?: unknown[];
+    }>(response);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
+    }
+  }
 
   if (!payload?.ok || !Array.isArray(payload.result)) {
     return null;
