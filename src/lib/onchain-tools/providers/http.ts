@@ -16,6 +16,8 @@ export async function fetchJson(
     timeoutMs = 12000,
   }: FetchJsonOptions = {}
 ) {
+  signal?.throwIfAborted();
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const abort = () => controller.abort();

@@ -50,6 +50,31 @@ test("provider JSON requests honor caller abort signals", async () => {
   }
 });
 
+test("provider JSON requests do not start after caller cancellation", async () => {
+  const originalFetch = globalThis.fetch;
+  const caller = new AbortController();
+  let fetchCalls = 0;
+  caller.abort();
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    return Response.json({ ok: true });
+  }) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      fetchJson("https://provider.example/data", {
+        signal: caller.signal,
+        timeoutMs: 1000,
+      }),
+      (error: unknown) =>
+        error instanceof DOMException && error.name === "AbortError",
+    );
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("provider JSON requests abort after their timeout", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = ((_url, init) =>
