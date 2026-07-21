@@ -113,3 +113,26 @@ test("OpenAI streaming reads a trailing completed event without a final separato
     restore();
   }
 });
+
+test("OpenAI requests do not start after caller cancellation", async () => {
+  const caller = new AbortController();
+  let fetchCalls = 0;
+  caller.abort();
+  const restore = mockFetch(() => {
+    fetchCalls += 1;
+    return sseResponse([]);
+  });
+
+  try {
+    await withEnv({ OPENAI_API_KEY: "test-key" }, async () => {
+      await assert.rejects(
+        streamOpenAITextResponse({ input: "halo", signal: caller.signal }),
+        (error: unknown) =>
+          error instanceof DOMException && error.name === "AbortError",
+      );
+    });
+    assert.equal(fetchCalls, 0);
+  } finally {
+    restore();
+  }
+});

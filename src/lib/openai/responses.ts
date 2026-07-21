@@ -318,6 +318,8 @@ async function openAIFetch(
     throw new Error("OPENAI_API_KEY is empty.");
   }
 
+  options.signal?.throwIfAborted();
+
   const timeoutSeconds = readPositiveInt(
     process.env.OPENAI_TIMEOUT_SECONDS,
     90
