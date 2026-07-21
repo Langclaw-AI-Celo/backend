@@ -6,6 +6,8 @@ type FetchJsonOptions = {
   timeoutMs?: number;
 };
 
+const MAX_PROVIDER_RESPONSE_BYTES = 5 * 1024 * 1024;
+
 export async function fetchJson(
   url: string,
   {
@@ -31,9 +33,9 @@ export async function fetchJson(
       method,
       signal: controller.signal,
     });
+    const text = await readProviderResponseText(response);
 
     if (!response.ok) {
-      const text = await response.text().catch(() => "");
       const compact = text.replace(/\s+/g, " ").trim();
       throw new Error(
         `${response.status} ${response.statusText}${
@@ -42,11 +44,60 @@ export async function fetchJson(
       );
     }
 
-    return response.json() as Promise<unknown>;
+    return JSON.parse(text) as unknown;
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener("abort", abort);
   }
+}
+
+async function readProviderResponseText(response: Response) {
+  const declaredLength = response.headers.get("content-length")?.trim();
+
+  if (
+    declaredLength &&
+    /^\d+$/.test(declaredLength) &&
+    Number(declaredLength) > MAX_PROVIDER_RESPONSE_BYTES
+  ) {
+    throw providerResponseTooLarge();
+  }
+
+  if (!response.body) {
+    return "";
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let receivedBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      receivedBytes += value.byteLength;
+
+      if (receivedBytes > MAX_PROVIDER_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw providerResponseTooLarge();
+      }
+
+      chunks.push(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return new TextDecoder().decode(Buffer.concat(chunks, receivedBytes));
+}
+
+function providerResponseTooLarge() {
+  return new Error(
+    `Provider response exceeds the ${MAX_PROVIDER_RESPONSE_BYTES} byte limit.`,
+  );
 }
 
 export function readString(value: unknown) {
