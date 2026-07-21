@@ -1,4 +1,5 @@
 import { readPremiumProviderConfig } from "../../premium-providers";
+import { readProviderResponseJson } from "../../provider-response";
 import {
   cleanError,
   cleanExcerpt,
@@ -53,7 +54,7 @@ export async function discoverSurf(topic: string): Promise<ProviderResult> {
         return providerFailure("Surf", await responseMessage(response));
       }
 
-      const payload = (await response.json()) as SurfWebResponse;
+      const payload = await readProviderResponseJson<SurfWebResponse>(response);
       const results = payload.data ?? payload.items ?? payload.results ?? [];
 
       return {

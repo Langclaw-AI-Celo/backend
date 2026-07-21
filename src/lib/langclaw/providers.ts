@@ -4,6 +4,10 @@ import {
   type PremiumProviderId,
 } from "../premium-providers";
 import {
+  readProviderResponseJson,
+  readProviderResponseText,
+} from "../provider-response";
+import {
   cleanError,
   cleanExcerpt,
   compactTitle,
@@ -363,12 +367,12 @@ async function discoverXApi(topic: string): Promise<ProviderResult> {
       return providerFailure("X", await responseMessage(response));
     }
 
-    const payload = (await response.json()) as {
+    const payload = await readProviderResponseJson<{
       data?: XTweet[];
       includes?: {
         users?: XUser[];
       };
-    };
+    }>(response);
 
     const users = new Map(
       (payload.includes?.users ?? []).map((user) => [user.id, user])
@@ -436,9 +440,9 @@ async function discoverGitHub(topic: string): Promise<ProviderResult> {
       return providerFailure("GitHub", await responseMessage(response));
     }
 
-    const payload = (await response.json()) as {
+    const payload = await readProviderResponseJson<{
       items?: GitHubRepository[];
-    };
+    }>(response);
 
     const sources =
       payload.items?.slice(0, 3).map((repo) => ({
@@ -550,7 +554,7 @@ async function discoverHackQuestDirectory(): Promise<ProviderResult> {
       return providerFailure("HackQuest", await responseMessage(response));
     }
 
-    const html = await response.text();
+    const html = await readProviderResponseText(response);
     const text = htmlToText(html);
     const hrefs = extractHackQuestLinks(html);
     const hackathonUrl =
@@ -614,7 +618,7 @@ async function tavilySearch(
       return { error: await responseMessage(response) };
     }
 
-    const payload = (await response.json()) as TavilyResponse;
+    const payload = await readProviderResponseJson<TavilyResponse>(response);
 
     return {
       results: (payload.results ?? []).map((result) => ({
@@ -662,7 +666,7 @@ async function braveSearch(
       return { error: await responseMessage(response) };
     }
 
-    const payload = (await response.json()) as BraveSearchResponse;
+    const payload = await readProviderResponseJson<BraveSearchResponse>(response);
 
     return {
       results:
