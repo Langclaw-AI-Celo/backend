@@ -617,9 +617,12 @@ test("creates polls and unlinks a Telegram automation connection", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);
   let linkCode = "";
+  let pollSignal: AbortSignal | null | undefined;
+  let replySignal: AbortSignal | null | undefined;
   let verificationReply: Record<string, unknown> | undefined;
   const restoreFetch = mockFetch((url, init) => {
     if (url.endsWith("/getUpdates")) {
+      pollSignal = init?.signal;
       return Response.json({
         ok: true,
         result: [
@@ -635,6 +638,7 @@ test("creates polls and unlinks a Telegram automation connection", async () => {
       });
     }
 
+    replySignal = init?.signal;
     verificationReply = JSON.parse(String(init?.body));
     return Response.json({ ok: true, result: { message_id: 9 } });
   });
@@ -661,6 +665,8 @@ test("creates polls and unlinks a Telegram automation connection", async () => {
         assert.equal(linked.settings?.telegramChatId, "123456");
         assert.equal(linked.settings?.telegramUsername, "nant361");
         assert.equal(verificationReply?.chat_id, "123456");
+        assert.ok(pollSignal instanceof AbortSignal);
+        assert.ok(replySignal instanceof AbortSignal);
 
         const unlinked = await unlinkTelegramLink(account);
         assert.equal(unlinked.telegramVerified, false);

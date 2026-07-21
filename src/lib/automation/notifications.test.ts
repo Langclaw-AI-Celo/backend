@@ -134,8 +134,10 @@ test("alpha signal Telegram notification is disabled unless the flag is enabled"
 
 test("alpha signal Telegram notification posts when enabled", async () => {
   let requestBody: unknown;
+  let requestSignal: AbortSignal | null | undefined;
   const restoreFetch = mockFetch((_url, init) => {
     requestBody = JSON.parse(String(init?.body));
+    requestSignal = init?.signal;
 
     return new Response("{}", { status: 200 });
   });
@@ -165,6 +167,7 @@ test("alpha signal Telegram notification posts when enabled", async () => {
         assert.equal(body.chat_id, "123");
         assert.equal(body.disable_web_page_preview, true);
         assert.match(body.text, /Langclaw Alpha Alert: smart-money/);
+        assert.ok(requestSignal instanceof AbortSignal);
       }
     );
   } finally {
@@ -344,9 +347,11 @@ test("sendAutomationEmail posts the requested payload to Resend", async () => {
   const originalApiKey = process.env.RESEND_API_KEY;
   const originalFrom = process.env.LANGCLAW_AUTOMATION_EMAIL_FROM;
   let requestBody: unknown;
+  let requestSignal: AbortSignal | null | undefined;
 
   globalThis.fetch = (async (_url, init) => {
     requestBody = JSON.parse(String(init?.body));
+    requestSignal = init?.signal;
 
     return new Response("{}", { status: 200 });
   }) as typeof fetch;
@@ -367,6 +372,7 @@ test("sendAutomationEmail posts the requested payload to Resend", async () => {
       text: "123456",
       to: "user@example.com",
     });
+    assert.ok(requestSignal instanceof AbortSignal);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalApiKey === undefined) {

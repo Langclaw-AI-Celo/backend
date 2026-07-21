@@ -17,6 +17,7 @@ import type {
   AutomationSettings,
   AutomationTriggeredBy,
 } from "./types";
+import { createAutomationProviderSignal } from "./provider-http";
 
 type NotificationInput = {
   completedAt?: string;
@@ -595,6 +596,7 @@ async function postTelegramMessage(
         "Content-Type": "application/json",
       },
       method: "POST",
+      signal: createAutomationProviderSignal(),
     }
   );
 
@@ -648,6 +650,7 @@ export async function sendAutomationEmail({
       "Content-Type": "application/json",
     },
     method: "POST",
+    signal: createAutomationProviderSignal(),
   });
 
   if (!response.ok) {

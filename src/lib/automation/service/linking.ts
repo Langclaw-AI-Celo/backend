@@ -1,6 +1,7 @@
 import {
   AccountAuthError,
   AutomationHttpError,
+  createAutomationProviderSignal,
   createHash,
   defaultTelegramBotUsername,
   maskEmail,
@@ -303,7 +304,9 @@ async function findTelegramUpdateByCodeHash(codeHash: string) {
     throw new AutomationHttpError(503, "Telegram bot token is not configured.");
   }
 
-  const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
+  const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, {
+    signal: createAutomationProviderSignal(),
+  });
 
   if (!response.ok) {
     throw new AutomationHttpError(
@@ -383,6 +386,7 @@ async function sendTelegramVerificationSuccess(chatId: string) {
       "Content-Type": "application/json",
     },
     method: "POST",
+    signal: createAutomationProviderSignal(),
   });
 
   if (!response.ok) {
@@ -495,4 +499,3 @@ function removeChannel(
 ) {
   return current.filter((item) => item !== channel);
 }
-

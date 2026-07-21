@@ -11,6 +11,7 @@ import {
   withAlphaSignalNotification,
 } from "../../langclaw/alpha-quality";
 import { runLangclawWorkflow } from "../../langclaw/workflow";
+import { createAutomationProviderSignal } from "../provider-http";
 import {
   refundResearchUsage,
   reserveResearchUsage,
@@ -44,6 +45,7 @@ export {
   buildAutomationNotificationMessage,
   buildTriggerLabel,
   computeNextRunAt,
+  createAutomationProviderSignal,
   createHash,
   getZonedParts,
   randomBytes,
