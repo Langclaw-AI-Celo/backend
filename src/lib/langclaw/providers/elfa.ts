@@ -1,4 +1,5 @@
 import { readPremiumProviderConfig } from "../../premium-providers";
+import { readProviderResponseJson } from "../../provider-response";
 import {
   cleanError,
   cleanExcerpt,
@@ -58,7 +59,7 @@ export async function discoverElfa(topic: string): Promise<ProviderResult> {
         return providerFailure("Elfa", await responseMessage(response));
       }
 
-      const payload = (await response.json()) as ElfaNarrativesResponse;
+      const payload = await readProviderResponseJson<ElfaNarrativesResponse>(response);
       const results = normalizeElfaNarratives(payload);
 
       if (!results.length) {

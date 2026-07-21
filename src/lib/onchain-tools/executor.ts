@@ -261,6 +261,7 @@ const executors: Record<OnChainExecutorId, Executor> = {
     getSurfWebSearch({ query: input.query, signal: input.signal }),
 };
 
+const MAX_ONCHAIN_CACHE_ENTRIES = 64;
 const cache = new Map<string, { expiresAt: number; result: OnChainToolResult }>();
 
 export async function executeOnChainPlan({
@@ -451,10 +452,31 @@ function writeCache(key: string, ttlSeconds: number, result: OnChainToolResult) 
     return;
   }
 
+  const now = Date.now();
+  pruneExpiredCache(now);
+
+  while (cache.size >= MAX_ONCHAIN_CACHE_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+
+    if (oldestKey === undefined) {
+      break;
+    }
+
+    cache.delete(oldestKey);
+  }
+
   cache.set(key, {
-    expiresAt: Date.now() + ttlSeconds * 1000,
+    expiresAt: now + ttlSeconds * 1000,
     result,
   });
+}
+
+function pruneExpiredCache(now: number) {
+  for (const [key, value] of cache) {
+    if (value.expiresAt <= now) {
+      cache.delete(key);
+    }
+  }
 }
 
 function summarizePreviousResults(results: OnChainToolResult[]) {

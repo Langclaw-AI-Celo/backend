@@ -1,6 +1,7 @@
 import {
   AccountAuthError,
   AutomationHttpError,
+  createAutomationProviderSignal,
   createHash,
   defaultTelegramBotUsername,
   maskEmail,
@@ -8,6 +9,7 @@ import {
   randomInt,
   readAutomationSettingsRow,
   readOptionalString,
+  readProviderResponseJson,
   requireAutomationContext,
   requireSupabaseAdmin,
   rowToSettings,
@@ -303,7 +305,9 @@ async function findTelegramUpdateByCodeHash(codeHash: string) {
     throw new AutomationHttpError(503, "Telegram bot token is not configured.");
   }
 
-  const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates`);
+  const response = await fetch(`https://api.telegram.org/bot${token}/getUpdates`, {
+    signal: createAutomationProviderSignal(),
+  });
 
   if (!response.ok) {
     throw new AutomationHttpError(
@@ -312,9 +316,18 @@ async function findTelegramUpdateByCodeHash(codeHash: string) {
     );
   }
 
-  const payload = (await response.json().catch(() => null)) as
-    | { ok?: boolean; result?: unknown[] }
-    | null;
+  let payload: { ok?: boolean; result?: unknown[] } | null = null;
+
+  try {
+    payload = await readProviderResponseJson<{
+      ok?: boolean;
+      result?: unknown[];
+    }>(response);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
+    }
+  }
 
   if (!payload?.ok || !Array.isArray(payload.result)) {
     return null;
@@ -383,6 +396,7 @@ async function sendTelegramVerificationSuccess(chatId: string) {
       "Content-Type": "application/json",
     },
     method: "POST",
+    signal: createAutomationProviderSignal(),
   });
 
   if (!response.ok) {
@@ -495,4 +509,3 @@ function removeChannel(
 ) {
   return current.filter((item) => item !== channel);
 }
-

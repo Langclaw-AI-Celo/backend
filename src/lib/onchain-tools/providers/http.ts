@@ -1,3 +1,5 @@
+import { readProviderResponseText } from "../../provider-response";
+
 type FetchJsonOptions = {
   headers?: HeadersInit;
   method?: string;
@@ -16,6 +18,8 @@ export async function fetchJson(
     timeoutMs = 12000,
   }: FetchJsonOptions = {}
 ) {
+  signal?.throwIfAborted();
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const abort = () => controller.abort();
@@ -29,9 +33,9 @@ export async function fetchJson(
       method,
       signal: controller.signal,
     });
+    const text = await readProviderResponseText(response);
 
     if (!response.ok) {
-      const text = await response.text().catch(() => "");
       const compact = text.replace(/\s+/g, " ").trim();
       throw new Error(
         `${response.status} ${response.statusText}${
@@ -40,7 +44,7 @@ export async function fetchJson(
       );
     }
 
-    return response.json() as Promise<unknown>;
+    return JSON.parse(text) as unknown;
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener("abort", abort);

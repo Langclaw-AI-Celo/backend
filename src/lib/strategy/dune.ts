@@ -1,4 +1,5 @@
 import type { StrategyMarketBar } from "./types";
+import { fetchJson } from "../onchain-tools/providers/http";
 import { parseDuneHistoricalRows } from "./backtest";
 
 const duneBaseUrl = "https://api.dune.com/api/v1";
@@ -34,18 +35,12 @@ export async function fetchStrategyBarsFromDune({
   const sourceUrl = `${duneBaseUrl}/query/${encodeURIComponent(
     resolvedQueryId
   )}/results`;
-  const response = await fetch(sourceUrl, {
+  const payload = await fetchJson(sourceUrl, {
     headers: {
       "X-Dune-API-Key": apiKey,
     },
     signal,
   });
-
-  if (!response.ok) {
-    throw new Error(`Dune strategy query failed with status ${response.status}.`);
-  }
-
-  const payload = await response.json();
   const bars = parseDuneHistoricalRows(payload);
 
   if (!bars.length) {

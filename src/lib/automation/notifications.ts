@@ -11,12 +11,14 @@ import type {
   OnChainToolFinalPayload,
   OnChainToolResult,
 } from "../onchain-tools/types";
+import { readProviderResponseText } from "../provider-response";
 import type {
   AutomationNotificationChannel,
   AutomationRunStatus,
   AutomationSettings,
   AutomationTriggeredBy,
 } from "./types";
+import { createAutomationProviderSignal } from "./provider-http";
 
 type NotificationInput = {
   completedAt?: string;
@@ -595,6 +597,7 @@ async function postTelegramMessage(
         "Content-Type": "application/json",
       },
       method: "POST",
+      signal: createAutomationProviderSignal(),
     }
   );
 
@@ -648,6 +651,7 @@ export async function sendAutomationEmail({
       "Content-Type": "application/json",
     },
     method: "POST",
+    signal: createAutomationProviderSignal(),
   });
 
   if (!response.ok) {
@@ -697,7 +701,7 @@ async function buildEmailProviderError(response: Response) {
 
 async function readProviderErrorDetail(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
-  const raw = await response.text().catch(() => "");
+  const raw = await readProviderResponseText(response);
   const trimmed = raw.trim();
 
   if (!trimmed) {

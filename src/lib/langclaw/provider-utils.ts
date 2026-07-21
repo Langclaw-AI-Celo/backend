@@ -3,6 +3,7 @@ import type {
   ProviderResult,
   SourceCard,
 } from "./types";
+import { readProviderResponseText } from "../provider-response";
 
 export function providerFailure(
   provider: ProviderName,
@@ -83,7 +84,7 @@ export function delay(ms: number) {
 }
 
 export async function responseMessage(response: Response) {
-  const text = await response.text();
+  const text = await readProviderResponseText(response);
   const compact = text.replace(/\s+/g, " ").trim();
 
   if (!compact) {

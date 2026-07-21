@@ -617,9 +617,12 @@ test("creates polls and unlinks a Telegram automation connection", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);
   let linkCode = "";
+  let pollSignal: AbortSignal | null | undefined;
+  let replySignal: AbortSignal | null | undefined;
   let verificationReply: Record<string, unknown> | undefined;
   const restoreFetch = mockFetch((url, init) => {
     if (url.endsWith("/getUpdates")) {
+      pollSignal = init?.signal;
       return Response.json({
         ok: true,
         result: [
@@ -635,6 +638,7 @@ test("creates polls and unlinks a Telegram automation connection", async () => {
       });
     }
 
+    replySignal = init?.signal;
     verificationReply = JSON.parse(String(init?.body));
     return Response.json({ ok: true, result: { message_id: 9 } });
   });
@@ -661,12 +665,39 @@ test("creates polls and unlinks a Telegram automation connection", async () => {
         assert.equal(linked.settings?.telegramChatId, "123456");
         assert.equal(linked.settings?.telegramUsername, "nant361");
         assert.equal(verificationReply?.chat_id, "123456");
+        assert.ok(pollSignal instanceof AbortSignal);
+        assert.ok(replySignal instanceof AbortSignal);
 
         const unlinked = await unlinkTelegramLink(account);
         assert.equal(unlinked.telegramVerified, false);
         assert.equal(unlinked.telegramChatId, undefined);
         assert.equal(unlinked.notificationChannels.includes("telegram"), false);
       }
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("Telegram link polling rejects oversized provider responses", async () => {
+  const storage = buildAutomationStorage("active");
+  const account = buildAccount(storage.supabase);
+  const restoreFetch = mockFetch(() =>
+    new Response(JSON.stringify({ ok: true, result: [] }), {
+      headers: { "Content-Length": String(5 * 1024 * 1024 + 1) },
+    }),
+  );
+
+  try {
+    await withEnv(
+      { LANGCLAW_TELEGRAM_BOT_TOKEN: "telegram-test-token" },
+      async () => {
+        await createTelegramLinkCode(account);
+        await assert.rejects(
+          pollTelegramLink(account),
+          /Provider response exceeds the 5242880 byte limit/,
+        );
+      },
     );
   } finally {
     restoreFetch();

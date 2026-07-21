@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { runProviderDiscovery } from "./providers";
+import { discoverSurf } from "./providers/surf";
 import { runLangclawWorkflow } from "./workflow";
 import { jsonResponse, mockFetch, withEnv } from "../../test/helpers";
 
@@ -87,6 +88,40 @@ test("Celo workflow exposes Surf and Elfa provider trace when premium discovery 
           )
         );
       }
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("premium discovery rejects oversized provider responses", async () => {
+  const restore = mockFetch(() =>
+    jsonResponse(
+      {
+        data: [
+          {
+            content: "Oversized provider result",
+            title: "Oversized result",
+            url: "https://surf.test/oversized",
+          },
+        ],
+      },
+      { headers: { "Content-Length": String(5 * 1024 * 1024 + 1) } },
+    ),
+  );
+
+  try {
+    await withEnv(
+      {
+        SURF_API_KEY: "surf-test-key",
+        SURF_ENABLED: "true",
+      },
+      async () => {
+        const result = await discoverSurf("Celo market pulse");
+
+        assert.equal(result.sources.length, 0);
+        assert.match(result.errors[0]?.message ?? "", /5242880 byte limit/);
+      },
     );
   } finally {
     restore();
