@@ -1,3 +1,9 @@
+import {
+  assertProviderResponseBytes,
+  assertProviderResponseLength,
+  readProviderResponseJson,
+} from "../provider-response";
+
 export type OpenAITextMessage = {
   role: "assistant" | "developer" | "system" | "user";
   content: string;
@@ -142,6 +148,7 @@ export async function streamOpenAITextResponse({
   let buffer = "";
   let text = "";
   let id: string | undefined;
+  let receivedBytes = 0;
   let usedModel = model;
   let usage: OpenAITokenUsage | undefined;
 
@@ -150,6 +157,15 @@ export async function streamOpenAITextResponse({
 
     if (done) {
       break;
+    }
+
+    receivedBytes += value.byteLength;
+
+    try {
+      assertProviderResponseBytes(receivedBytes);
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error;
     }
 
     buffer += decoder.decode(value, { stream: true });
@@ -305,7 +321,7 @@ async function openAIJson<T>(
 ) {
   const response = await openAIFetch(path, options);
 
-  return (await response.json()) as T;
+  return readProviderResponseJson<T>(response);
 }
 
 async function openAIFetch(
@@ -340,6 +356,7 @@ async function openAIFetch(
       method: "POST",
       signal: controller.signal,
     });
+    assertProviderResponseLength(response);
 
     if (!response.ok) {
       throw new Error(await readOpenAIHttpError(response));
@@ -372,9 +389,17 @@ function parseSseData(event: string) {
 }
 
 async function readOpenAIHttpError(response: Response) {
-  const payload = (await response.json().catch(() => null)) as {
-    error?: { message?: unknown };
-  } | null;
+  let payload: { error?: { message?: unknown } } | null = null;
+
+  try {
+    payload = await readProviderResponseJson<{
+      error?: { message?: unknown };
+    }>(response);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      throw error;
+    }
+  }
 
   return (
     readString(payload?.error?.message) ||

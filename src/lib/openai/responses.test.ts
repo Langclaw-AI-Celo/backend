@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getDefaultOpenAIModel, streamOpenAITextResponse } from "./responses";
+import {
+  createOpenAITextResponse,
+  getDefaultOpenAIModel,
+  streamOpenAITextResponse,
+} from "./responses";
 import { mockFetch, sseResponse, withEnv } from "../../test/helpers";
 
 test("chat default model falls back to GPT-5.2", async () => {
@@ -132,6 +136,57 @@ test("OpenAI requests do not start after caller cancellation", async () => {
       );
     });
     assert.equal(fetchCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("OpenAI JSON requests reject oversized provider responses", async () => {
+  const restore = mockFetch(() =>
+    new Response(
+      JSON.stringify({ model: "gpt-5-mini", output_text: "Halo" }),
+      {
+        headers: {
+          "Content-Length": String(5 * 1024 * 1024 + 1),
+          "Content-Type": "application/json",
+        },
+      },
+    ),
+  );
+
+  try {
+    await withEnv({ OPENAI_API_KEY: "test-key" }, async () => {
+      await assert.rejects(
+        createOpenAITextResponse({ input: "halo", model: "gpt-5-mini" }),
+        /Provider response exceeds the 5242880 byte limit/,
+      );
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("OpenAI streaming rejects oversized declared responses", async () => {
+  const restore = mockFetch(() =>
+    sseResponse(
+      [
+        `data: ${JSON.stringify({
+          type: "response.output_text.delta",
+          delta: "Halo",
+        })}`,
+        "",
+      ],
+      { headers: { "Content-Length": String(5 * 1024 * 1024 + 1) } },
+    ),
+  );
+
+  try {
+    await withEnv({ OPENAI_API_KEY: "test-key" }, async () => {
+      await assert.rejects(
+        streamOpenAITextResponse({ input: "halo", model: "gpt-5-mini" }),
+        /Provider response exceeds the 5242880 byte limit/,
+      );
+    });
   } finally {
     restore();
   }

@@ -5,15 +5,7 @@ export async function readProviderResponseJson<T>(response: Response) {
 }
 
 export async function readProviderResponseText(response: Response) {
-  const declaredLength = response.headers.get("content-length")?.trim();
-
-  if (
-    declaredLength &&
-    /^\d+$/.test(declaredLength) &&
-    Number(declaredLength) > maxProviderResponseBytes
-  ) {
-    throw providerResponseTooLarge();
-  }
+  assertProviderResponseLength(response);
 
   if (!response.body) {
     return "";
@@ -33,9 +25,11 @@ export async function readProviderResponseText(response: Response) {
 
       receivedBytes += value.byteLength;
 
-      if (receivedBytes > maxProviderResponseBytes) {
+      try {
+        assertProviderResponseBytes(receivedBytes);
+      } catch (error) {
         await reader.cancel().catch(() => undefined);
-        throw providerResponseTooLarge();
+        throw error;
       }
 
       chunks.push(Buffer.from(value));
@@ -45,6 +39,20 @@ export async function readProviderResponseText(response: Response) {
   }
 
   return new TextDecoder().decode(Buffer.concat(chunks, receivedBytes));
+}
+
+export function assertProviderResponseLength(response: Response) {
+  const declaredLength = response.headers.get("content-length")?.trim();
+
+  if (declaredLength && /^\d+$/.test(declaredLength)) {
+    assertProviderResponseBytes(Number(declaredLength));
+  }
+}
+
+export function assertProviderResponseBytes(receivedBytes: number) {
+  if (receivedBytes > maxProviderResponseBytes) {
+    throw providerResponseTooLarge();
+  }
 }
 
 function providerResponseTooLarge() {
