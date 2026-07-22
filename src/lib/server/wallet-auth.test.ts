@@ -192,6 +192,39 @@ test("failed challenge verification does not consume a valid nonce", async () =>
   });
 });
 
+test("rejects a wallet challenge that expires during signature verification", async () => {
+  await withEnv({ LANGCLAW_WALLET_SESSION_SECRET: "test-wallet-secret" }, async () => {
+    const challenge = createWalletChallenge({
+      address: testAccount.address,
+      request: new Request("https://api.langclaw.test/api/wallet/challenge"),
+    });
+    const signature = await testAccount.signMessage({ message: challenge.message });
+    const expiresAtMs = Date.parse(challenge.expiresAt);
+    const originalNow = Date.now;
+    let timeReads = 0;
+
+    Date.now = () => {
+      timeReads += 1;
+      return timeReads <= 2 ? expiresAtMs - 1 : expiresAtMs;
+    };
+
+    try {
+      const verified = await verifyWalletSession(
+        {
+          address: testAccount.address,
+          message: challenge.message,
+          signature,
+        },
+        { requiredPurpose: "session" },
+      );
+
+      assert.equal(verified, null);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+});
+
 test("malformed wallet signatures fail safely without consuming the nonce", async () => {
   const challenge = createWalletChallenge({
     address: testAccount.address,
