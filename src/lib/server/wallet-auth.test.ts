@@ -8,6 +8,7 @@ import {
   createWalletChallenge,
   MAX_PENDING_WALLET_CHALLENGES,
   verifyWalletSession,
+  WalletAuthError,
 } from "./wallet-auth";
 
 const testAccount = privateKeyToAccount(
@@ -221,7 +222,7 @@ test("malformed wallet signatures fail safely without consuming the nonce", asyn
   assert.equal(verified?.authMethod, "challenge");
 });
 
-test("wallet challenge storage evicts the oldest entry at capacity", async () => {
+test("wallet challenge storage rejects overflow without evicting pending entries", async () => {
   const request = new Request(
     "https://api.langclaw.test/api/wallet/challenge"
   );
@@ -231,11 +232,21 @@ test("wallet challenge storage evicts the oldest entry at capacity", async () =>
   });
   const signature = await testAccount.signMessage({ message: oldest.message });
 
-  for (let index = 0; index < MAX_PENDING_WALLET_CHALLENGES; index += 1) {
+  for (let index = 1; index < MAX_PENDING_WALLET_CHALLENGES; index += 1) {
     createWalletChallenge({ address: testAccount.address, request });
   }
 
-  const evicted = await verifyWalletSession(
+  assert.throws(
+    () => createWalletChallenge({ address: testAccount.address, request }),
+    (error: unknown) => {
+      assert.ok(error instanceof WalletAuthError);
+      assert.equal(error.status, 429);
+      assert.equal(error.message, "Too many pending wallet challenges. Try again later.");
+      return true;
+    }
+  );
+
+  const verified = await verifyWalletSession(
     {
       address: testAccount.address,
       message: oldest.message,
@@ -244,5 +255,5 @@ test("wallet challenge storage evicts the oldest entry at capacity", async () =>
     { requiredPurpose: "session" }
   );
 
-  assert.equal(evicted, null);
+  assert.equal(verified?.authMethod, "challenge");
 });
