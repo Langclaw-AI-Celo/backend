@@ -456,6 +456,33 @@ test("settlement and refund calls remain idempotent for one reservation", async 
   }
 });
 
+test("refund rejects an empty storage result instead of inferring released funds", async () => {
+  const restoreFetch = mockFetch((url) => {
+    assert.match(url, /langclaw_usage_refund_reservation$/);
+    return Response.json([]);
+  });
+
+  try {
+    await withEnv(
+      {
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+        SUPABASE_URL: "https://supabase.test",
+      },
+      async () => {
+        await assert.rejects(
+          refundResearchUsage(buildUsageReservation(), "provider failed"),
+          (error: unknown) =>
+            error instanceof UsageHttpError &&
+            error.status === 500 &&
+            error.message === "Usage refund was not finalized."
+        );
+      }
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("verifies native and token deposits before crediting balances", async () => {
   const native = await runDepositVerificationCase({
     amount: 2_000_000n,

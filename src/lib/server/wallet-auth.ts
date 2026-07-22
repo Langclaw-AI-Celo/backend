@@ -121,7 +121,7 @@ export function createWalletChallenge({
   };
 
   pruneExpiredChallenges(now);
-  evictOldestChallengesAtCapacity();
+  requireChallengeCapacity();
   challenges.set(nonce, challenge);
 
   return publicChallenge(challenge);
@@ -387,15 +387,12 @@ function pruneExpiredChallenges(now = Date.now()) {
   }
 }
 
-function evictOldestChallengesAtCapacity() {
-  while (challenges.size >= MAX_PENDING_WALLET_CHALLENGES) {
-    const oldestNonce = challenges.keys().next().value;
-
-    if (!oldestNonce) {
-      return;
-    }
-
-    challenges.delete(oldestNonce);
+function requireChallengeCapacity() {
+  if (challenges.size >= MAX_PENDING_WALLET_CHALLENGES) {
+    throw new WalletAuthError(
+      429,
+      "Too many pending wallet challenges. Try again later."
+    );
   }
 }
 
