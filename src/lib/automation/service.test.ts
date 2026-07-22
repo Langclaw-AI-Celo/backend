@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { mockFetch, withEnv } from "../../test/helpers";
@@ -679,6 +680,59 @@ test("creates polls and unlinks a Telegram automation connection", async () => {
   }
 });
 
+test("Telegram link codes are consumed by only one concurrent poll", async () => {
+  const code = "9A3A093A29";
+  const storage = buildConcurrentTelegramLinkStorage(code);
+  const account = buildAccount(storage.supabase);
+  const restoreFetch = mockFetch((url) => {
+    if (url.endsWith("/getUpdates")) {
+      return Response.json({
+        ok: true,
+        result: [
+          {
+            message: {
+              chat: { id: 123456 },
+              from: { username: "nant361" },
+              text: `/link ${code}`,
+            },
+          },
+        ],
+      });
+    }
+
+    return Response.json({ ok: true, result: { message_id: 9 } });
+  });
+
+  try {
+    await withEnv(
+      { LANGCLAW_TELEGRAM_BOT_TOKEN: "telegram-test-token" },
+      async () => {
+        const results = await Promise.allSettled([
+          pollTelegramLink(account),
+          pollTelegramLink(account),
+        ]);
+        const fulfilled = results.filter(
+          (result) => result.status === "fulfilled",
+        );
+        const rejected = results.filter(
+          (result) => result.status === "rejected",
+        );
+
+        assert.equal(fulfilled.length, 1);
+        assert.equal(rejected.length, 1);
+        const reason = (rejected[0] as PromiseRejectedResult).reason;
+        assert.ok(
+          reason instanceof AutomationHttpError &&
+            reason.status === 409 &&
+            /already used or expired/.test(reason.message),
+        );
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("Telegram link polling rejects oversized provider responses", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);
@@ -1044,6 +1098,101 @@ function buildAccount(supabase: unknown) {
   };
 }
 
+function buildConcurrentTelegramLinkStorage(code: string) {
+  const walletUserId = walletUser.id;
+  const settings: Record<string, unknown> = {
+    auto_pause_repeated_failures: true,
+    created_at: "2026-07-23T00:00:00.000Z",
+    daily_limit_neuron: "25000000000000000000",
+    failure_notification: "in-app",
+    limit_behavior: "pause",
+    low_balance_threshold_neuron: "10000000000000000000",
+    monthly_cap_neuron: "500000000000000000000",
+    notification_channels: [],
+    notification_email: null,
+    notification_email_linked_at: null,
+    notification_email_pending: null,
+    notification_email_verified: false,
+    retry_policy: "3-attempts",
+    telegram_chat_id: null,
+    telegram_link_code_hash: createHash("sha256")
+      .update(code)
+      .digest("hex"),
+    telegram_link_expires_at: "2099-07-23T00:15:00.000Z",
+    telegram_linked_at: null,
+    telegram_username: null,
+    telegram_verified: false,
+    threshold_action: "notify",
+    updated_at: "2026-07-23T00:00:00.000Z",
+    wallet_user_id: walletUserId,
+    write_run_logs_to_memory: false,
+  };
+  let readCount = 0;
+  let releaseReads = () => undefined;
+  const bothReadsStarted = new Promise<void>((resolve) => {
+    releaseReads = resolve;
+  });
+
+  const supabase = {
+    from(table: string) {
+      assert.equal(table, "langclaw_automation_settings");
+
+      return {
+        update(payload: Record<string, unknown>) {
+          const filters: Array<[string, unknown]> = [];
+          const query = {
+            eq(column: string, value: unknown) {
+              filters.push([column, value]);
+              return query;
+            },
+            select() {
+              const finish = async () => {
+                const matches = filters.every(
+                  ([column, value]) => settings[column] === value,
+                );
+
+                if (!matches) {
+                  return { data: null, error: null };
+                }
+
+                Object.assign(settings, payload);
+                return { data: { ...settings }, error: null };
+              };
+
+              return {
+                maybeSingle: finish,
+                single: finish,
+              };
+            },
+          };
+
+          return query;
+        },
+        upsert() {
+          return {
+            select() {
+              return {
+                async single() {
+                  readCount += 1;
+
+                  if (readCount === 2) {
+                    releaseReads();
+                  }
+
+                  await bothReadsStarted;
+                  return { data: { ...settings }, error: null };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  return { settings, supabase };
+}
+
 function buildAutomationStorage(
   initialStatus: "active" | "archived" | "paused",
   taskOverrides: Record<string, unknown> = {}
@@ -1174,6 +1323,7 @@ function buildAutomationStorage(
               },
               select() {
                 return {
+                  maybeSingle: () => Promise.resolve({ data: settings, error: null }),
                   single: () => Promise.resolve({ data: settings, error: null }),
                 };
               },

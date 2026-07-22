@@ -349,6 +349,15 @@ async function linkTelegramChat(
   settings: AutomationSettingsRow,
   candidate: TelegramLinkCandidate
 ) {
+  const pendingCodeHash = settings.telegram_link_code_hash;
+
+  if (!pendingCodeHash) {
+    throw new AutomationHttpError(
+      409,
+      "Telegram link code was already used or expired."
+    );
+  }
+
   const { data, error } = await supabase
     .from("langclaw_automation_settings")
     .update({
@@ -364,13 +373,21 @@ async function linkTelegramChat(
       telegram_verified: true,
     })
     .eq("wallet_user_id", settings.wallet_user_id)
+    .eq("telegram_link_code_hash", pendingCodeHash)
     .select("*")
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
     throw new AutomationHttpError(
       500,
-      error?.message || "Unable to link Telegram chat."
+      error.message || "Unable to link Telegram chat."
+    );
+  }
+
+  if (!data) {
+    throw new AutomationHttpError(
+      409,
+      "Telegram link code was already used or expired."
     );
   }
 
