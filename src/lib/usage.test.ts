@@ -510,6 +510,19 @@ test("verifies native and token deposits before crediting balances", async () =>
   assert.equal(token.result.walletSession?.authMethod, "session");
 });
 
+test("duplicate private deposit claims do not issue new wallet sessions", async () => {
+  const duplicate = await runDepositVerificationCase({
+    amount: 2_000_000n,
+    credited: false,
+    tokenAddress: "0x0000000000000000000000000000000000000000",
+    txHash: `0x${"b".repeat(64)}` as Hex,
+    value: 2_000_000n,
+  });
+
+  assert.equal(duplicate.result.credited, false);
+  assert.equal(duplicate.result.walletSession, undefined);
+});
+
 test("deposit verification rejects public proof without a private claim", async () => {
   const storageCalls = { credits: 0, walletUsers: 0 };
 
@@ -627,6 +640,7 @@ function buildReservationQuery(result: {
 async function runDepositVerificationCase({
   amount,
   claimSecret = depositClaimSecret,
+  credited = true,
   includeClaimSecret = true,
   storageCalls,
   tokenAddress,
@@ -636,6 +650,7 @@ async function runDepositVerificationCase({
 }: {
   amount: bigint;
   claimSecret?: unknown;
+  credited?: boolean;
   includeClaimSecret?: boolean;
   storageCalls?: { credits: number; walletUsers: number };
   tokenAddress: Address;
@@ -744,7 +759,7 @@ async function runDepositVerificationCase({
       {
         balance_after_neuron: amount.toString(),
         balance_before_neuron: "0",
-        credited: true,
+        credited,
       },
     ]);
   });
