@@ -589,6 +589,8 @@ export async function verifyUsageDeposit({
     throw new UsageHttpError(500, "Deposit was not credited.");
   }
 
+  const credited = readBoolean(row.credited);
+
   return {
     chain: chain.id,
     chainId: chain.chainId,
@@ -596,13 +598,13 @@ export async function verifyUsageDeposit({
     configured: true,
     nativeSymbol: chain.billingCurrency.symbol,
     wallet: context.wallet.address,
-    walletSession,
+    walletSession: credited ? walletSession : undefined,
     txHash: hash.toLowerCase(),
     amountNeuron: depositEvent.amountNeuron,
     amount0G: formatBillingAmount(BigInt(depositEvent.amountNeuron), chain),
     amountMnt: formatBillingAmount(BigInt(depositEvent.amountNeuron), chain),
     amountNative: formatBillingAmount(BigInt(depositEvent.amountNeuron), chain),
-    credited: readBoolean(row.credited),
+    credited,
     balanceBefore: readDecimalString(row.balance_before_neuron),
     balanceAfter: readDecimalString(row.balance_after_neuron),
   };
