@@ -184,14 +184,20 @@ export async function authenticateApiKey(
     throw new ApiKeyHttpError(401, "API key owner was not found.");
   }
 
-  const { error: touchError } = await supabase
+  const { data: touchedKey, error: touchError } = await supabase
     .from("langclaw_api_keys")
     .update({ last_used_at: new Date().toISOString() })
     .eq("id", keyRow.id)
-    .eq("status", "active");
+    .eq("status", "active")
+    .select("id")
+    .maybeSingle();
 
   if (touchError) {
     throw new ApiKeyHttpError(500, touchError.message);
+  }
+
+  if (!touchedKey) {
+    throw new ApiKeyHttpError(401, "Valid API key is required.");
   }
 
   return {
