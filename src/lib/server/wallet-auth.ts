@@ -71,6 +71,7 @@ const allowedPurposes = new Set<WalletAuthPurpose>([
   "session",
 ]);
 const challenges = new Map<string, WalletChallengeRecord>();
+const reservedChallenges = new Set<string>();
 
 export function createWalletChallenge({
   address,
@@ -171,32 +172,42 @@ export async function verifyWalletSession(
     return null;
   }
 
-  let valid = false;
+  if (reservedChallenges.has(nonce)) {
+    return null;
+  }
+
+  reservedChallenges.add(nonce);
 
   try {
-    valid = await verifyMessage({
-      address: checksumAddress,
+    let valid = false;
+
+    try {
+      valid = await verifyMessage({
+        address: checksumAddress,
+        message: wallet.message,
+        signature: wallet.signature as `0x${string}`,
+      });
+    } catch {
+      return null;
+    }
+
+    if (!valid) {
+      return null;
+    }
+
+    deleteChallenge(nonce);
+
+    return {
+      authMethod: "challenge",
+      address: checksumAddress.toLowerCase(),
       message: wallet.message,
-      signature: wallet.signature as `0x${string}`,
-    });
-  } catch {
-    return null;
+      purpose: challenge.purpose,
+      ...issueSession(checksumAddress, options),
+      signature: wallet.signature,
+    };
+  } finally {
+    reservedChallenges.delete(nonce);
   }
-
-  if (!valid) {
-    return null;
-  }
-
-  deleteChallenge(nonce);
-
-  return {
-    authMethod: "challenge",
-    address: checksumAddress.toLowerCase(),
-    message: wallet.message,
-    purpose: challenge.purpose,
-    ...issueSession(checksumAddress, options),
-    signature: wallet.signature,
-  };
 }
 
 export function createWalletSessionForVerifiedAddress(address: string): VerifiedWallet {
