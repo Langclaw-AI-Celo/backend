@@ -71,6 +71,34 @@ test("verifies a nonce challenge once and issues a short session token", async (
   });
 });
 
+test("rejects concurrent replay of the same wallet challenge", async () => {
+  const challenge = createWalletChallenge({
+    address: testAccount.address,
+    request: new Request("https://api.langclaw.test/api/wallet/challenge"),
+  });
+  const signature = await testAccount.signMessage({
+    message: challenge.message,
+  });
+  const wallet = {
+    address: testAccount.address,
+    message: challenge.message,
+    signature,
+  };
+
+  const results = await Promise.all([
+    verifyWalletSession(wallet),
+    verifyWalletSession(wallet),
+  ]);
+
+  assert.deepEqual(
+    {
+      nonNull: results.filter((result) => result !== null).length,
+      null: results.filter((result) => result === null).length,
+    },
+    { nonNull: 1, null: 1 }
+  );
+});
+
 test("API key creation requires a fresh api-key:create challenge", async () => {
   await withEnv({ LANGCLAW_WALLET_SESSION_SECRET: "test-wallet-secret" }, async () => {
     const sessionChallenge = createWalletChallenge({

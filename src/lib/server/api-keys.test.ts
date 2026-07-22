@@ -60,6 +60,7 @@ function createSupabaseMock(options?: {
   } | null;
   keySelectError?: string;
   touchError?: string;
+  touchRow?: { id: string } | null;
   walletError?: string;
   walletUser?: { id: string; wallet_address: string } | null;
 }) {
@@ -94,10 +95,24 @@ function createSupabaseMock(options?: {
         },
         update() {
           return {
-            eq() {
+            eq(_column: string, value: string) {
               return {
                 eq() {
-                  return resolveQuery(null, options?.touchError);
+                  const data =
+                    options?.touchRow === undefined
+                      ? options?.keyRow
+                        ? { id: value }
+                        : null
+                      : options.touchRow;
+                  const result = resolveQuery(data, options?.touchError);
+
+                  return Object.assign(result, {
+                    select() {
+                      return {
+                        maybeSingle: () => result,
+                      };
+                    },
+                  });
                 },
               };
             },
@@ -172,6 +187,40 @@ test("authenticateApiKey fails when last-used persistence fails", async () => {
         error instanceof ApiKeyHttpError &&
         error.status === 500 &&
         error.message === "could not persist audit timestamp"
+    );
+  });
+});
+
+test("authenticateApiKey rejects a key revoked before last-used persistence", async () => {
+  await withEnv({ LANGCLAW_API_KEY_PEPPER: "test-pepper" }, async () => {
+    const secret = generateApiKeySecret(Buffer.alloc(32, 9));
+    const keyHash = hashApiKeySecret(secret, "test-pepper");
+    const supabase = createSupabaseMock({
+      keyRow: {
+        id: "key-revoked-during-auth",
+        key_hash: keyHash,
+        name: "Racing key",
+        status: "active",
+        wallet_user_id: "wallet-user-racing",
+      },
+      touchRow: null,
+      walletUser: {
+        id: "wallet-user-racing",
+        wallet_address: "0x123456",
+      },
+    });
+
+    await assert.rejects(
+      authenticateApiKey(
+        new Request("https://api.langclaw.test", {
+          headers: { authorization: `Bearer ${secret}` },
+        }),
+        supabase as never
+      ),
+      (error: unknown) =>
+        error instanceof ApiKeyHttpError &&
+        error.status === 401 &&
+        error.message === "Valid API key is required."
     );
   });
 });
