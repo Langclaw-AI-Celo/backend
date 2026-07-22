@@ -195,6 +195,11 @@ export async function verifyWalletSession(
       return null;
     }
 
+    if (challenge.expiresAtMs <= Date.now()) {
+      deleteChallenge(nonce);
+      return null;
+    }
+
     deleteChallenge(nonce);
 
     return {
