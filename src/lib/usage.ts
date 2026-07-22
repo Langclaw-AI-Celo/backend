@@ -454,6 +454,10 @@ export async function refundResearchUsage(
 
   const row = firstRpcRow(data);
 
+  if (!row) {
+    throw new UsageHttpError(500, "Usage refund was not finalized.");
+  }
+
   return {
     wallet: reservation.wallet,
     chain: reservation.chain,
@@ -468,13 +472,9 @@ export async function refundResearchUsage(
     markupBps: readUsageMarkupBps(),
     markupNeuron: "0",
     chargedNeuron: "0",
-    releasedNeuron: row
-      ? readDecimalString(row.released_neuron)
-      : reservation.reservedNeuron,
+    releasedNeuron: readDecimalString(row.released_neuron),
     balanceBefore: reservation.balanceBefore,
-    balanceAfter: row
-      ? readDecimalString(row.balance_after_neuron)
-      : reservation.balanceBefore,
+    balanceAfter: readDecimalString(row.balance_after_neuron),
     costSource: "reserved-estimate",
     meter: buildUsageMeter({
       model: reservation.model,
