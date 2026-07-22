@@ -31,7 +31,8 @@ const expectedClaims = [
   "frontend `/usage` flow approves USDT",
   "POST /api/usage/deposit/verify",
   "confirmed vault deposit event",
-  "git submodule update --init",
+  "vendor.lock",
+  "bash script/check-vendored-dependencies.sh",
   "forge build",
   "forge test",
   "npm run verify:celo-contracts",
@@ -48,4 +49,9 @@ test("contracts README stays aligned with live public Celo proof references", ()
       `Expected contracts README to include ${claim}`
     );
   }
+
+  assert.ok(
+    !source.includes("git submodule update --init"),
+    "Expected contracts README to omit the retired submodule setup command"
+  );
 });
