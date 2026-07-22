@@ -8,6 +8,7 @@ import {
   getAddress,
   http,
   isAddress,
+  keccak256,
   parseAbiItem,
   type Address,
   type Hex,
@@ -485,11 +486,13 @@ export async function refundResearchUsage(
 
 export async function verifyUsageDeposit({
   chain: chainInput = "celo",
+  claimSecret,
   reference,
   txHash,
   wallet: walletInput,
 }: {
   chain?: ProductChainId;
+  claimSecret?: unknown;
   reference?: unknown;
   txHash?: unknown;
   wallet: WalletAuthInput;
@@ -533,12 +536,7 @@ export async function verifyUsageDeposit({
     throw new UsageHttpError(400, "Deposit event was not found.");
   }
 
-  const { context, walletSession } = await resolveDepositUsageContext(
-    walletInput,
-    txSender
-  );
-
-  if (getAddress(depositEvent.payer) !== getAddress(context.wallet.address)) {
+  if (getAddress(depositEvent.payer) !== txSender) {
     throw new UsageHttpError(403, "Deposit event wallet mismatch.");
   }
 
@@ -557,6 +555,13 @@ export async function verifyUsageDeposit({
   ) {
     throw new UsageHttpError(400, "Deposit reference mismatch.");
   }
+
+  const { context, walletSession } = await resolveDepositUsageContext(
+    walletInput,
+    txSender,
+    depositEvent.reference,
+    claimSecret
+  );
 
   const { data, error } = await context.supabase.rpc(
     "langclaw_usage_credit_deposit",
@@ -684,7 +689,9 @@ async function requireWalletUsageContext(walletInput: WalletAuthInput) {
 
 async function resolveDepositUsageContext(
   walletInput: WalletAuthInput,
-  txSender: Address
+  txSender: Address,
+  depositReference: Hex,
+  claimSecret: unknown
 ) {
   if (hasReusableWalletAuth(walletInput)) {
     const context = await requireWalletUsageContext(walletInput);
@@ -695,6 +702,8 @@ async function resolveDepositUsageContext(
 
     return { context, walletSession: undefined };
   }
+
+  requirePrivateDepositClaim(claimSecret, depositReference);
 
   const walletSession = createWalletSessionForVerifiedAddress(txSender);
   const account = await createVerifiedWalletAccount(walletSession);
@@ -707,6 +716,23 @@ async function resolveDepositUsageContext(
     },
     walletSession,
   };
+}
+
+function requirePrivateDepositClaim(
+  claimSecret: unknown,
+  depositReference: Hex
+) {
+  const secret = typeof claimSecret === "string" ? claimSecret.trim() : "";
+
+  if (
+    !/^0x[0-9a-f]{64}$/i.test(secret) ||
+    keccak256(secret as Hex).toLowerCase() !== depositReference.toLowerCase()
+  ) {
+    throw new UsageHttpError(
+      401,
+      "Private deposit claim or wallet authentication is required."
+    );
+  }
 }
 
 function hasReusableWalletAuth(walletInput: WalletAuthInput) {

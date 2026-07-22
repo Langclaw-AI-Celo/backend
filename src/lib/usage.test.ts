@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   encodeAbiParameters,
   encodeEventTopics,
+  keccak256,
   parseAbiItem,
   toHex,
   type Address,
@@ -29,7 +30,8 @@ import {
 const validHash = `0x${"1".repeat(64)}`;
 const validVault = "0x1111111111111111111111111111111111111111";
 const depositSender = "0x2222222222222222222222222222222222222222";
-const depositReference = `0x${"3".repeat(64)}`;
+const depositClaimSecret = `0x${"3".repeat(64)}` as Hex;
+const depositReference = keccak256(depositClaimSecret);
 const depositEvent = parseAbiItem(
   "event Deposit(address indexed payer,uint256 amount,bytes32 indexed depositReference)"
 );
@@ -481,6 +483,65 @@ test("verifies native and token deposits before crediting balances", async () =>
   assert.equal(token.result.walletSession?.authMethod, "session");
 });
 
+test("deposit verification rejects public proof without a private claim", async () => {
+  const storageCalls = { credits: 0, walletUsers: 0 };
+
+  await assert.rejects(
+    runDepositVerificationCase({
+      amount: 2_000_000n,
+      includeClaimSecret: false,
+      storageCalls,
+      tokenAddress: "0x0000000000000000000000000000000000000000",
+      txHash: `0x${"9".repeat(64)}` as Hex,
+      value: 2_000_000n,
+    }),
+    (error: unknown) =>
+      error instanceof UsageHttpError &&
+      error.status === 401 &&
+      error.message ===
+        "Private deposit claim or wallet authentication is required.",
+  );
+
+  assert.deepEqual(storageCalls, { credits: 0, walletUsers: 0 });
+});
+
+test("deposit verification rejects malformed and mismatched private claims", async () => {
+  for (const [index, claimSecret] of [
+    null,
+    "not-a-claim",
+    `0x${"4".repeat(64)}`,
+  ].entries()) {
+    await assert.rejects(
+      runDepositVerificationCase({
+        amount: 2_000_000n,
+        claimSecret,
+        tokenAddress: "0x0000000000000000000000000000000000000000",
+        txHash: `0x${String(index + 10).padStart(64, "0")}` as Hex,
+        value: 2_000_000n,
+      }),
+      (error: unknown) =>
+        error instanceof UsageHttpError &&
+        error.status === 401 &&
+        error.message ===
+          "Private deposit claim or wallet authentication is required.",
+    );
+  }
+});
+
+test("authenticated deposit verification does not require a private claim", async () => {
+  const verified = await runDepositVerificationCase({
+    amount: 2_000_000n,
+    includeClaimSecret: false,
+    tokenAddress: "0x0000000000000000000000000000000000000000",
+    txHash: `0x${"a".repeat(64)}` as Hex,
+    useWalletSession: true,
+    value: 2_000_000n,
+  });
+
+  assert.equal(verified.result.credited, true);
+  assert.equal(verified.result.walletSession, undefined);
+});
+
 function buildUsageReservation(): UsageReservation {
   return {
     balanceAfterReserve: "900",
@@ -538,13 +599,21 @@ function buildReservationQuery(result: {
 
 async function runDepositVerificationCase({
   amount,
+  claimSecret = depositClaimSecret,
+  includeClaimSecret = true,
+  storageCalls,
   tokenAddress,
   txHash,
+  useWalletSession = false,
   value,
 }: {
   amount: bigint;
+  claimSecret?: unknown;
+  includeClaimSecret?: boolean;
+  storageCalls?: { credits: number; walletUsers: number };
   tokenAddress: Address;
   txHash: Hex;
+  useWalletSession?: boolean;
   value: bigint;
 }) {
   let creditBody: Record<string, unknown> = {};
@@ -626,6 +695,10 @@ async function runDepositVerificationCase({
     }
 
     if (parsedUrl.pathname.endsWith("/langclaw_wallet_users")) {
+      if (storageCalls) {
+        storageCalls.walletUsers += 1;
+      }
+
       return Response.json({
         id: "wallet-user-deposit",
         wallet_address: depositSender,
@@ -636,6 +709,9 @@ async function runDepositVerificationCase({
       parsedUrl.pathname,
       /\/rpc\/langclaw_usage_credit_deposit$/
     );
+    if (storageCalls) {
+      storageCalls.credits += 1;
+    }
     creditBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
     return Response.json([
       {
@@ -647,6 +723,18 @@ async function runDepositVerificationCase({
   });
 
   try {
+    const input: Parameters<typeof verifyUsageDeposit>[0] & {
+      claimSecret?: unknown;
+    } = {
+      reference: depositReference,
+      txHash,
+      wallet: { address: depositSender },
+    };
+
+    if (includeClaimSecret) {
+      input.claimSecret = claimSecret;
+    }
+
     const result = await withEnv(
       {
         CELO_CHAIN_RPC_URL: "https://celo-rpc.test",
@@ -656,12 +744,18 @@ async function runDepositVerificationCase({
         SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
         SUPABASE_URL: "https://supabase.test",
       },
-      () =>
-        verifyUsageDeposit({
-          reference: depositReference,
-          txHash,
-          wallet: { address: depositSender },
-        })
+      () => {
+        if (useWalletSession) {
+          const walletSession =
+            createWalletSessionForVerifiedAddress(depositSender);
+          input.wallet = {
+            address: depositSender,
+            sessionToken: walletSession.sessionToken,
+          };
+        }
+
+        return verifyUsageDeposit(input);
+      }
     );
 
     return { creditBody, result };

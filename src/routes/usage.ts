@@ -10,6 +10,7 @@ import {
 } from "../lib/usage";
 
 type UsageRequestBody = {
+  claimSecret?: unknown;
   chain?: unknown;
   wallet?: WalletAuthInput;
   txHash?: unknown;
@@ -81,6 +82,7 @@ export async function handleUsageDepositVerify(request: Request) {
 
   try {
     const payload = await verifyUsageDeposit({
+      claimSecret: body.claimSecret,
       reference: body.reference,
       chain: readProductChainId(body.chain),
       txHash: body.txHash,
