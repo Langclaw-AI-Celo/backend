@@ -231,14 +231,17 @@ test("chat session metadata accepts omitted titles and rejects invalid values", 
   assert.deepEqual(readOptionalTitle("   \n  "), { error: "title cannot be empty." });
 });
 
-test("chat session metadata normalizes and limits titles", () => {
+test("chat session metadata normalizes titles and rejects oversized input", () => {
   assert.deepEqual(readOptionalTitle("  CELO\n  proof   status  "), {
     value: "CELO proof status",
   });
 
-  const result = readOptionalTitle("a".repeat(140));
-  assert.equal(result.value?.length, 120);
-  assert.equal(result.value, `${"a".repeat(117)}...`);
+  assert.deepEqual(readOptionalTitle("a".repeat(120)), {
+    value: "a".repeat(120),
+  });
+  assert.deepEqual(readOptionalTitle("a".repeat(121)), {
+    error: "title must be at most 120 characters.",
+  });
 });
 
 test("chat session routes reject malformed JSON and unauthenticated requests", async () => {
