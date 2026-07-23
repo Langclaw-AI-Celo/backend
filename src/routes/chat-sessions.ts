@@ -597,12 +597,12 @@ export function normalizeSession(value: unknown): ChatSession | null {
   }
 
   const session = value as Partial<ChatSession>;
+  const titleResult = readOptionalTitle(session.title);
 
   if (
     typeof session.id !== "string" ||
     !session.id.trim() ||
-    typeof session.title !== "string" ||
-    !session.title.trim() ||
+    titleResult.value === undefined ||
     typeof session.createdAt !== "string" ||
     !Number.isFinite(Date.parse(session.createdAt)) ||
     Date.parse(session.createdAt) > Date.now() + 5 * 60 * 1000 ||
@@ -636,7 +636,7 @@ export function normalizeSession(value: unknown): ChatSession | null {
     id: session.id,
     messages: normalizedMessages,
     pinned: session.pinned ?? false,
-    title: session.title,
+    title: titleResult.value,
     updatedAt: session.updatedAt,
   };
 }

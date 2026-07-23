@@ -244,6 +244,37 @@ test("chat session metadata normalizes titles and rejects oversized input", () =
   });
 });
 
+test("chat session upserts enforce title normalization and length", () => {
+  const baseSession = {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id: "session-title-validation",
+    messages: [],
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
+
+  assert.equal(
+    normalizeSession({
+      ...baseSession,
+      title: "  CELO\n  proof   status  ",
+    })?.title,
+    "CELO proof status",
+  );
+  assert.equal(
+    normalizeSession({
+      ...baseSession,
+      title: "a".repeat(120),
+    })?.title,
+    "a".repeat(120),
+  );
+  assert.equal(
+    normalizeSession({
+      ...baseSession,
+      title: "a".repeat(121),
+    }),
+    null,
+  );
+});
+
 test("chat session routes reject malformed JSON and unauthenticated requests", async () => {
   await withEnv(
     {
