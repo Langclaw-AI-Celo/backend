@@ -255,6 +255,10 @@ npm run check:eligibility
 npm run check:celo-proof
 ```
 
+`check:celo-proof` compares the latest decision recorder with the address
+derived from the configured proof key. A mismatch changes the report status to
+`warning` while keeping `ready` true when every required write check passes.
+
 As of the 2026-06-10 readiness check, `npm run check:celo-proof` reports
 `ready`. The latest registry decision is decision `#47`,
 `campaign-backend-proof`, for the configured ERC-8004 proof agent `9109`,

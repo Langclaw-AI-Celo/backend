@@ -220,6 +220,7 @@ export async function buildProofReadinessReport({
 
     if (registryAddress && isAddress(registryAddress)) {
       latestDecision = await checkRegistry({
+        expectedRecorder: account?.address,
         preferredAgent,
         chain,
         checks,
@@ -353,12 +354,14 @@ async function checkRecorderBalance({
 }
 
 async function checkRegistry({
+  expectedRecorder,
   preferredAgent,
   chain,
   checks,
   client,
   registryAddress,
 }: {
+  expectedRecorder?: Address;
   preferredAgent: PreferredAgentConfig;
   chain: ProductChainConfig;
   checks: ProofReadinessCheck[];
@@ -437,6 +440,25 @@ async function checkRegistry({
         : `Latest decision ${latestDecisionId.toString()} belongs to agent ${decision.agentId.toString()}, not ${expectedAgentSummary}.`,
       detail: latestDecision,
     });
+
+    if (expectedRecorder) {
+      const matchesRecorder =
+        isAddress(decision.recorder) &&
+        getAddress(decision.recorder) === getAddress(expectedRecorder);
+
+      addCheck(checks, {
+        id: "latest-decision-recorder",
+        label: "Latest proof recorder",
+        status: matchesRecorder ? "pass" : "warn",
+        summary: matchesRecorder
+          ? `Latest decision ${latestDecisionId.toString()} was recorded by the configured recorder ${expectedRecorder}.`
+          : `Latest decision ${latestDecisionId.toString()} was recorded by ${decision.recorder}, not the configured recorder ${expectedRecorder}.`,
+        detail: {
+          actualRecorder: decision.recorder,
+          expectedRecorder,
+        },
+      });
+    }
 
     return latestDecision;
   } catch (error) {
