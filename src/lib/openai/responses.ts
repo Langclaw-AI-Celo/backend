@@ -169,7 +169,7 @@ export async function streamOpenAITextResponse({
     }
 
     buffer += decoder.decode(value, { stream: true });
-    const events = buffer.split(/\n\n/);
+    const events = buffer.split(/(?:\r\n|\r|\n){2}/);
     buffer = events.pop() ?? "";
 
     for (const event of events) {
@@ -371,7 +371,7 @@ async function openAIFetch(
 
 function parseSseData(event: string) {
   const data = event
-    .split(/\r?\n/)
+    .split(/\r\n|\r|\n/)
     .filter((line) => line.startsWith("data:"))
     .map((line) => line.slice(5).trim())
     .join("\n")
