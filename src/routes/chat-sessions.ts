@@ -287,7 +287,11 @@ export async function handleChatSessions(request: Request) {
       );
     }
 
-    const saved = await upsertSession(walletUserId, session);
+    const saved = await saveSession(
+      walletUserId,
+      session,
+      existing !== null,
+    );
 
     if (!saved) {
       return Response.json(
@@ -400,29 +404,50 @@ async function readSession(walletUserId: string, sessionId: string) {
   };
 }
 
-async function upsertSession(walletUserId: string, session: ChatSession) {
+async function saveSession(
+  walletUserId: string,
+  session: ChatSession,
+  existing: boolean,
+) {
   const supabase = getSupabaseAdmin();
 
   if (!supabase) {
     return null;
   }
 
-  const { error: sessionError } = await supabase
-    .from("langclaw_chat_sessions")
-    .upsert(
-      {
-        created_at: session.createdAt,
-        id: session.id,
-        pinned: Boolean(session.pinned),
-        title: session.title,
-        updated_at: session.updatedAt,
-        wallet_user_id: walletUserId,
-      },
-      { onConflict: "id" }
-    );
+  const sessionValues = {
+    created_at: session.createdAt,
+    pinned: Boolean(session.pinned),
+    title: session.title,
+    updated_at: session.updatedAt,
+  };
 
-  if (sessionError) {
-    return null;
+  if (existing) {
+    const { data, error } = await supabase
+      .from("langclaw_chat_sessions")
+      .update(sessionValues)
+      .eq("wallet_user_id", walletUserId)
+      .eq("id", session.id)
+      .select("id")
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+  } else {
+    const { data, error } = await supabase
+      .from("langclaw_chat_sessions")
+      .insert({
+        ...sessionValues,
+        id: session.id,
+        wallet_user_id: walletUserId,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
   }
 
   const { error: deleteError } = await supabase
@@ -597,12 +622,12 @@ export function normalizeSession(value: unknown): ChatSession | null {
   }
 
   const session = value as Partial<ChatSession>;
+  const titleResult = readOptionalTitle(session.title);
 
   if (
     typeof session.id !== "string" ||
     !session.id.trim() ||
-    typeof session.title !== "string" ||
-    !session.title.trim() ||
+    titleResult.value === undefined ||
     typeof session.createdAt !== "string" ||
     !Number.isFinite(Date.parse(session.createdAt)) ||
     Date.parse(session.createdAt) > Date.now() + 5 * 60 * 1000 ||
@@ -636,7 +661,7 @@ export function normalizeSession(value: unknown): ChatSession | null {
     id: session.id,
     messages: normalizedMessages,
     pinned: session.pinned ?? false,
-    title: session.title,
+    title: titleResult.value,
     updatedAt: session.updatedAt,
   };
 }

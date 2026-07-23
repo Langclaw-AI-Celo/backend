@@ -17,6 +17,8 @@ const walletUser = {
   id: "wallet-user-1",
   walletAddress: "0x1111111111111111111111111111111111111111",
 };
+const memoryIdOne = "11111111-1111-4111-8111-111111111111";
+const memoryIdTwo = "22222222-2222-4222-8222-222222222222";
 
 test("memory dashboards scope memories and settings to the authenticated wallet", async () => {
   const calls: Array<{ args: unknown[]; method: string; table: string }> = [];
@@ -143,7 +145,7 @@ test("bulk memory status validation rejects missing ids and unsupported states",
       "active",
       "memoryIds must contain only non-empty strings.",
     ],
-    [["memory-1"], "archived", "A valid memory status is required."],
+    [[memoryIdOne], "archived", "A valid memory status is required."],
   ] as const) {
     await assert.rejects(
       updateManyMemoryStatuses({ account }, memoryIds, status),
@@ -153,6 +155,44 @@ test("bulk memory status validation rejects missing ids and unsupported states",
         error.message === message,
     );
   }
+});
+
+test("memory mutations reject invalid and oversized identifier sets before storage", async () => {
+  const account = {
+    authMethod: "wallet" as const,
+    supabase: {
+      from() {
+        throw new Error("storage must not be queried for invalid identifiers");
+      },
+    } as never,
+    walletUser,
+  };
+  const tooManyIds = Array.from(
+    { length: 201 },
+    (_, index) => `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`,
+  );
+
+  await assert.rejects(
+    deleteMemory({ account }, "not-a-uuid"),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 400 &&
+      error.message === "memoryId must be a valid UUID.",
+  );
+  await assert.rejects(
+    deleteManyMemories({ account }, ["not-a-uuid"]),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 400 &&
+      error.message === "memoryIds must contain only valid UUIDs.",
+  );
+  await assert.rejects(
+    updateManyMemoryStatuses({ account }, tooManyIds, "active"),
+    (error: unknown) =>
+      error instanceof MemoryHttpError &&
+      error.status === 400 &&
+      error.message === "memoryIds must contain at most 200 unique values.",
+  );
 });
 
 test("bulk memory status updates trim and deduplicate ids", async () => {
@@ -193,14 +233,14 @@ test("bulk memory status updates trim and deduplicate ids", async () => {
         walletUser,
       },
     },
-    [" memory-1 ", "memory-1", "memory-2"],
+    [` ${memoryIdOne} `, memoryIdOne, memoryIdTwo],
     "disabled",
   );
 
   assert.deepEqual(result, []);
   assert.equal(updatedStatus, "disabled");
   assert.equal(scopedWallet, walletUser.id);
-  assert.deepEqual(selectedIds, ["memory-1", "memory-2"]);
+  assert.deepEqual(selectedIds, [memoryIdOne, memoryIdTwo]);
 });
 
 test("single memory deletion includes the authenticated wallet scope", async () => {
@@ -234,12 +274,12 @@ test("single memory deletion includes the authenticated wallet scope", async () 
         walletUser,
       },
     },
-    " memory-1 ",
+    ` ${memoryIdOne} `,
   );
 
   assert.deepEqual(result, { deleted: true, deletedIds: ["memory-1"] });
   assert.deepEqual(filters, [
-    ["id", "memory-1"],
+    ["id", memoryIdOne],
     ["wallet_user_id", walletUser.id],
   ]);
 });
@@ -283,13 +323,13 @@ test("bulk memory deletion scopes ids to the authenticated wallet", async () => 
         walletUser,
       },
     },
-    ["memory-1", "memory-2", "memory-1"],
+    [memoryIdOne, memoryIdTwo, memoryIdOne],
   );
 
   assert.deepEqual(result.deletedIds, ["memory-1", "memory-2"]);
   assert.deepEqual(calls, [
     { args: ["wallet_user_id", walletUser.id], method: "eq" },
-    { args: ["id", ["memory-1", "memory-2"]], method: "in" },
+    { args: ["id", [memoryIdOne, memoryIdTwo]], method: "in" },
     { args: ["id"], method: "select" },
   ]);
 });

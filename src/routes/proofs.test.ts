@@ -105,3 +105,39 @@ test("proof decisions reject malformed limits before chain access", async () => 
     });
   }
 });
+
+test("proof decisions reject limits above the documented maximum", async () => {
+  await withEnv(
+    {
+      CELO_LANGCLAW_REGISTRY_ADDRESS: "",
+      LANGCLAW_REGISTRY_ADDRESS: "",
+    },
+    async () => {
+      const oversized = await handleProofDecisions(
+        new Request("http://localhost/api/proofs", {
+          body: JSON.stringify({ chain: "celo", limit: 101 }),
+          headers: { "content-type": "application/json" },
+          method: "POST",
+        }),
+      );
+
+      assert.equal(oversized.status, 400);
+      assert.deepEqual(await oversized.json(), {
+        error: "limit must be 100 or less.",
+      });
+
+      const boundary = await handleProofDecisions(
+        new Request("http://localhost/api/proofs", {
+          body: JSON.stringify({ chain: "celo", limit: 100 }),
+          headers: { "content-type": "application/json" },
+          method: "POST",
+        }),
+      );
+
+      assert.equal(boundary.status, 503);
+      assert.deepEqual(await boundary.json(), {
+        error: "LANGCLAW_REGISTRY_ADDRESS is not configured.",
+      });
+    },
+  );
+});

@@ -7,6 +7,7 @@ import {
   readEventName,
   readLimit,
   readOptionalString,
+  readRequiredUuid,
   readTaskId,
   readWebhookSlug,
 } from "./core";
@@ -199,11 +200,7 @@ export function normalizeSettingsInput(
 
 
 export function readNotificationId(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new AutomationHttpError(400, "notificationId is required.");
-  }
-
-  return value.trim();
+  return readRequiredUuid(value, "notificationId");
 }
 
 
