@@ -556,8 +556,16 @@ function parseDuneRow(value: unknown): StrategyMarketBar | undefined {
   const priceUsd = readNumber(row.price_usd ?? row.priceUsd ?? row.close);
   const liquidityUsd = readNumber(row.liquidity_usd ?? row.liquidityUsd ?? row.liquidity);
   const volumeUsd = readNumber(row.volume_usd ?? row.volumeUsd ?? row.volume);
+  const timestampMs = Date.parse(timestamp);
 
-  if (!timestamp || !pairAddress || priceUsd <= 0 || liquidityUsd < 0 || volumeUsd < 0) {
+  if (
+    !timestamp ||
+    !Number.isFinite(timestampMs) ||
+    !pairAddress ||
+    priceUsd <= 0 ||
+    liquidityUsd < 0 ||
+    volumeUsd < 0
+  ) {
     return undefined;
   }
 
@@ -566,7 +574,7 @@ function parseDuneRow(value: unknown): StrategyMarketBar | undefined {
     netWhaleFlowUsd: readOptionalNumber(row.net_whale_flow_usd ?? row.netWhaleFlowUsd),
     pairAddress,
     priceUsd,
-    timestamp: new Date(timestamp).toISOString(),
+    timestamp: new Date(timestampMs).toISOString(),
     txCount: readOptionalNumber(row.tx_count ?? row.txCount),
     volumeUsd,
   };

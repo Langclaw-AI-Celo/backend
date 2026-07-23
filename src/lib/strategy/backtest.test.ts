@@ -35,6 +35,23 @@ test("parses Dune historical rows", () => {
   assert.equal(rows[0].txCount, 42);
 });
 
+test("Dune row parsing skips malformed timestamps without dropping valid rows", () => {
+  const valid = row("2026-05-19T00:00:00+07:00", "1.02", "25000");
+  const rows = parseDuneHistoricalRows({
+    result: {
+      rows: [
+        { ...valid, timestamp: "not-a-timestamp" },
+        valid,
+        { ...valid, timestamp: "275760-09-13T00:00:00Z" },
+      ],
+    },
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].timestamp, "2026-05-18T17:00:00.000Z");
+  assert.equal(rows[0].pairAddress, pairAddress);
+});
+
 test("backtest computes trades, PnL, win rate, and drawdown", () => {
   const backtest = runLiquidityMomentumBacktest({
     bars: parseDuneHistoricalRows({
