@@ -430,7 +430,7 @@ function buildMemoryStats(memories: MemoryItem[]): MemoryStats {
 }
 
 function normalizeMemoryInput(input: MemoryInput) {
-  const memory = readOptionalString(input.memory, 2000);
+  const memory = readOptionalString(input.memory, 2000, "memory");
 
   if (!memory) {
     throw new MemoryHttpError(400, "Memory text is required.");
@@ -582,7 +582,11 @@ function readConfidence(value: unknown) {
   return value;
 }
 
-function readOptionalString(value: unknown, maxLength: number) {
+function readOptionalString(
+  value: unknown,
+  maxLength: number,
+  field: string,
+) {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -593,7 +597,14 @@ function readOptionalString(value: unknown, maxLength: number) {
     return undefined;
   }
 
-  return trimmed.slice(0, maxLength);
+  if (trimmed.length > maxLength) {
+    throw new MemoryHttpError(
+      400,
+      `${field} must be at most ${maxLength} characters.`,
+    );
+  }
+
+  return trimmed;
 }
 
 function readOptionalInputString(
@@ -605,7 +616,7 @@ function readOptionalInputString(
     throw new MemoryHttpError(400, `${field} must be a string.`);
   }
 
-  return readOptionalString(value, maxLength);
+  return readOptionalString(value, maxLength, field);
 }
 
 function readOptionalDate(value: unknown) {

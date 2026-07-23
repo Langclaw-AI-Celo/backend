@@ -341,6 +341,82 @@ test("memory creation normalizes input and persists wallet ownership", async () 
   assert.deepEqual(inserted?.metadata, {});
 });
 
+test("memory creation rejects oversized text before querying storage", async () => {
+  const account = buildMemoryAccount({
+    from() {
+      throw new Error("validation should finish before querying storage");
+    },
+  });
+  const cases = [
+    {
+      field: "memory",
+      input: { memory: "m".repeat(2_001) },
+      limit: 2_000,
+    },
+    {
+      field: "scope",
+      input: { memory: "Keep proof records", scope: "s".repeat(121) },
+      limit: 120,
+    },
+    {
+      field: "source",
+      input: { memory: "Keep proof records", source: "s".repeat(161) },
+      limit: 160,
+    },
+  ] as const;
+
+  for (const { field, input, limit } of cases) {
+    await assert.rejects(
+      createMemory(account, input),
+      (error: unknown) =>
+        error instanceof MemoryHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be at most ${limit} characters.`,
+      field,
+    );
+  }
+});
+
+test("memory creation accepts text at every exact limit", async () => {
+  let inserted: Record<string, unknown> | undefined;
+  const supabase = {
+    from(table: string) {
+      assert.equal(table, "langclaw_memories");
+      return {
+        insert(payload: Record<string, unknown>) {
+          inserted = payload;
+          return {
+            select() {
+              return {
+                single: () =>
+                  Promise.resolve({
+                    data: {
+                      ...payload,
+                      created_at: "2026-07-24T01:00:00.000Z",
+                      id: "memory-at-limits",
+                      updated_at: "2026-07-24T01:00:00.000Z",
+                    },
+                    error: null,
+                  }),
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  await createMemory(buildMemoryAccount(supabase), {
+    memory: "m".repeat(2_000),
+    scope: "s".repeat(120),
+    source: "o".repeat(160),
+  });
+
+  assert.equal(String(inserted?.memory).length, 2_000);
+  assert.equal(String(inserted?.scope).length, 120);
+  assert.equal(String(inserted?.source).length, 160);
+});
+
 test("memory creation rejects an unsupported category", async () => {
   const account = buildMemoryAccount({
     from() {
