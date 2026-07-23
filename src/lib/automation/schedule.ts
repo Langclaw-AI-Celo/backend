@@ -262,14 +262,33 @@ function zonedTimeToUtc(
   const utcGuess = new Date(
     Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute)
   );
-  const offset = getTimeZoneOffsetMs(utcGuess, timezone);
+  const initialOffset = getTimeZoneOffsetMs(utcGuess, timezone);
+  const initialCandidate = new Date(utcGuess.getTime() - initialOffset);
 
-  return new Date(utcGuess.getTime() - offset);
+  if (getZonedTimeMs(initialCandidate, timezone) === utcGuess.getTime()) {
+    return initialCandidate;
+  }
+
+  const correctedOffset = getTimeZoneOffsetMs(initialCandidate, timezone);
+  const correctedCandidate = new Date(utcGuess.getTime() - correctedOffset);
+
+  if (getZonedTimeMs(correctedCandidate, timezone) === utcGuess.getTime()) {
+    return correctedCandidate;
+  }
+
+  return getZonedTimeMs(initialCandidate, timezone) > utcGuess.getTime()
+    ? initialCandidate
+    : correctedCandidate;
 }
 
 function getTimeZoneOffsetMs(date: Date, timezone: string) {
+  return getZonedTimeMs(date, timezone) - date.getTime();
+}
+
+function getZonedTimeMs(date: Date, timezone: string) {
   const parts = getZonedParts(date, timezone);
-  const asUtc = Date.UTC(
+
+  return Date.UTC(
     parts.year,
     parts.month - 1,
     parts.day,
@@ -277,8 +296,6 @@ function getTimeZoneOffsetMs(date: Date, timezone: string) {
     parts.minute,
     parts.second
   );
-
-  return asUtc - date.getTime();
 }
 
 function normalizeFormattedHour(hour: number) {

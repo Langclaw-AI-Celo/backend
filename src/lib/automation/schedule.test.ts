@@ -53,6 +53,62 @@ test("computes the next monthly run and clamps short months", () => {
   );
 });
 
+test("preserves local schedule times across a daylight-saving gap", () => {
+  const from = new Date("2026-03-28T12:00:00.000Z");
+
+  assert.equal(
+    computeNextRunAt({
+      frequency: "daily",
+      from,
+      scheduleTime: "01:30",
+      timezone: "Europe/Berlin",
+    }),
+    "2026-03-29T00:30:00.000Z",
+  );
+  assert.equal(
+    computeNextRunAt({
+      frequency: "daily",
+      from,
+      scheduleTime: "02:30",
+      timezone: "Europe/Berlin",
+    }),
+    "2026-03-29T01:30:00.000Z",
+  );
+  assert.equal(
+    computeNextRunAt({
+      frequency: "daily",
+      from,
+      scheduleTime: "03:30",
+      timezone: "Europe/Berlin",
+    }),
+    "2026-03-29T01:30:00.000Z",
+  );
+});
+
+test("uses the actual gap for non-hour daylight-saving transitions", () => {
+  assert.equal(
+    computeNextRunAt({
+      frequency: "daily",
+      from: new Date("2026-10-02T16:00:00.000Z"),
+      scheduleTime: "02:15",
+      timezone: "Australia/Lord_Howe",
+    }),
+    "2026-10-03T15:45:00.000Z",
+  );
+});
+
+test("moves forward across a midnight gap in a negative-offset timezone", () => {
+  assert.equal(
+    computeNextRunAt({
+      frequency: "daily",
+      from: new Date("2026-09-05T12:00:00.000Z"),
+      scheduleTime: "00:30",
+      timezone: "America/Santiago",
+    }),
+    "2026-09-06T04:30:00.000Z",
+  );
+});
+
 test("builds readable trigger labels", () => {
   assert.equal(
     buildTriggerLabel({
