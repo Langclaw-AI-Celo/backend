@@ -90,6 +90,7 @@ export async function verifyNotificationEmailLink(
     throw new AutomationHttpError(400, "Email link code is invalid.");
   }
 
+  const linkedAt = new Date(Date.now()).toISOString();
   const { data, error } = await context.supabase
     .from("langclaw_automation_settings")
     .update({
@@ -97,7 +98,7 @@ export async function verifyNotificationEmailLink(
       notification_email: email,
       notification_email_code_hash: null,
       notification_email_expires_at: null,
-      notification_email_linked_at: new Date().toISOString(),
+      notification_email_linked_at: linkedAt,
       notification_email_pending: null,
       notification_email_verified: true,
     })
@@ -105,6 +106,7 @@ export async function verifyNotificationEmailLink(
     .eq("notification_email_code_hash", pendingCodeHash)
     .eq("notification_email_pending", email)
     .eq("notification_email_expires_at", pendingExpiresAt)
+    .gt("notification_email_expires_at", linkedAt)
     .select("*")
     .maybeSingle();
 
@@ -366,6 +368,7 @@ async function linkTelegramChat(
     );
   }
 
+  const linkedAt = new Date(Date.now()).toISOString();
   const { data, error } = await supabase
     .from("langclaw_automation_settings")
     .update({
@@ -376,12 +379,13 @@ async function linkTelegramChat(
       telegram_chat_id: candidate.chatId,
       telegram_link_code_hash: null,
       telegram_link_expires_at: null,
-      telegram_linked_at: new Date().toISOString(),
+      telegram_linked_at: linkedAt,
       telegram_username: candidate.username ?? null,
       telegram_verified: true,
     })
     .eq("wallet_user_id", settings.wallet_user_id)
     .eq("telegram_link_code_hash", pendingCodeHash)
+    .gt("telegram_link_expires_at", linkedAt)
     .select("*")
     .maybeSingle();
 
