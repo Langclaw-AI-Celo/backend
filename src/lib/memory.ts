@@ -80,6 +80,9 @@ const memoryCategories: readonly MemoryCategory[] = [
   "API",
 ];
 const memoryStatuses: readonly MemoryStatus[] = ["active", "disabled"];
+const maxMemoryMutationIds = 200;
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class MemoryHttpError extends Error {
   status: number;
@@ -171,10 +174,11 @@ export async function updateMemoryStatus(
 ) {
   const context = await requireMemoryContext(authInput);
   const status = readMemoryStatus(statusInput);
+  const id = readMemoryId(memoryId);
   const { data, error } = await context.supabase
     .from("langclaw_memories")
     .update({ status })
-    .eq("id", readMemoryId(memoryId))
+    .eq("id", id)
     .eq("wallet_user_id", context.walletUser.id)
     .select("*")
     .maybeSingle();
@@ -217,10 +221,11 @@ export async function deleteMemory(
   memoryId: unknown
 ) {
   const context = await requireMemoryContext(authInput);
+  const id = readMemoryId(memoryId);
   const { data, error } = await context.supabase
     .from("langclaw_memories")
     .delete()
-    .eq("id", readMemoryId(memoryId))
+    .eq("id", id)
     .eq("wallet_user_id", context.walletUser.id)
     .select("id")
     .maybeSingle();
@@ -482,7 +487,13 @@ function readMemoryId(value: unknown) {
     throw new MemoryHttpError(400, "memoryId is required.");
   }
 
-  return value.trim();
+  const id = value.trim();
+
+  if (!uuidPattern.test(id)) {
+    throw new MemoryHttpError(400, "memoryId must be a valid UUID.");
+  }
+
+  return id;
 }
 
 function readMemoryIds(value: unknown) {
@@ -501,6 +512,20 @@ function readMemoryIds(value: unknown) {
 
   if (!ids.length) {
     throw new MemoryHttpError(400, "At least one memory id is required.");
+  }
+
+  if (ids.some((id) => !uuidPattern.test(id))) {
+    throw new MemoryHttpError(
+      400,
+      "memoryIds must contain only valid UUIDs.",
+    );
+  }
+
+  if (ids.length > maxMemoryMutationIds) {
+    throw new MemoryHttpError(
+      400,
+      `memoryIds must contain at most ${maxMemoryMutationIds} unique values.`,
+    );
   }
 
   return ids;
