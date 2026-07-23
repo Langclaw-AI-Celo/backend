@@ -102,7 +102,14 @@ export async function handleProofDecisions(request: Request) {
         );
       }
 
-      limit = Math.min(requestedLimit, 100);
+      if (requestedLimit > 100) {
+        return Response.json(
+          { error: "limit must be 100 or less." },
+          { status: 400 }
+        );
+      }
+
+      limit = requestedLimit;
     }
   } catch {
     return Response.json(
