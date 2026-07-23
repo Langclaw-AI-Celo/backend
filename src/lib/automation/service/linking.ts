@@ -8,7 +8,6 @@ import {
   randomBytes,
   randomInt,
   readAutomationSettingsRow,
-  readOptionalString,
   readProviderResponseJson,
   requireAutomationContext,
   requireSupabaseAdmin,
@@ -502,7 +501,18 @@ function readTelegramBotUsername() {
 }
 
 function readEmail(value: unknown) {
-  const email = readOptionalString(value, 320)?.toLowerCase();
+  if (typeof value !== "string") {
+    throw new AutomationHttpError(400, "A valid email is required.");
+  }
+
+  const email = value.trim().toLowerCase();
+
+  if (email.length > 320) {
+    throw new AutomationHttpError(
+      400,
+      "Email must be at most 320 characters.",
+    );
+  }
 
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     throw new AutomationHttpError(400, "A valid email is required.");
