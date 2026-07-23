@@ -723,6 +723,194 @@ test("chat session mutations reject sessions owned by another wallet", async () 
   }
 });
 
+test("new chat sessions cannot merge over a concurrent owner", async () => {
+  let sessionWrite:
+    | { headers: Headers; method: string; url: URL }
+    | undefined;
+  const restoreFetch = mockFetch((url, init) => {
+    const parsed = new URL(url);
+
+    if (parsed.pathname.endsWith("/langclaw_wallet_users")) {
+      return Response.json({
+        id: "wallet-user-owner",
+        wallet_address: sessionOwner,
+      });
+    }
+
+    assert.match(parsed.pathname, /\/langclaw_chat_sessions$/);
+
+    if ((init?.method ?? "GET") === "GET") {
+      return Response.json(null);
+    }
+
+    sessionWrite = {
+      headers: new Headers(init?.headers),
+      method: init?.method ?? "GET",
+      url: parsed,
+    };
+    return Response.json(
+      { message: "duplicate key value violates unique constraint" },
+      { status: 409 },
+    );
+  });
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_WALLET_SESSION_SECRET: "chat-route-test-secret",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+        SUPABASE_URL: "https://supabase.test",
+      },
+      async () => {
+        const wallet = createWalletSessionForVerifiedAddress(sessionOwner);
+        const response = await handleChatSessions(
+          chatSessionRequest({
+            action: "upsert",
+            session: validChatSession("new-session"),
+            wallet,
+          }),
+        );
+
+        assert.equal(response.status, 500);
+        assert.equal(sessionWrite?.method, "POST");
+        assert.equal(sessionWrite?.url.searchParams.has("on_conflict"), false);
+        assert.doesNotMatch(
+          sessionWrite?.headers.get("prefer") ?? "",
+          /resolution=merge-duplicates/,
+        );
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("existing chat session writes retain the checked wallet scope", async () => {
+  let sessionWrite: { method: string; url: URL } | undefined;
+  const restoreFetch = mockFetch((url, init) => {
+    const parsed = new URL(url);
+
+    if (parsed.pathname.endsWith("/langclaw_wallet_users")) {
+      return Response.json({
+        id: "wallet-user-owner",
+        wallet_address: sessionOwner,
+      });
+    }
+
+    assert.match(parsed.pathname, /\/langclaw_chat_sessions$/);
+
+    if ((init?.method ?? "GET") === "GET") {
+      return Response.json({ wallet_user_id: "wallet-user-owner" });
+    }
+
+    sessionWrite = {
+      method: init?.method ?? "GET",
+      url: parsed,
+    };
+    return Response.json(
+      { message: "simulated scoped update failure" },
+      { status: 500 },
+    );
+  });
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_WALLET_SESSION_SECRET: "chat-route-test-secret",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+        SUPABASE_URL: "https://supabase.test",
+      },
+      async () => {
+        const wallet = createWalletSessionForVerifiedAddress(sessionOwner);
+        const response = await handleChatSessions(
+          chatSessionRequest({
+            action: "upsert",
+            session: validChatSession("existing-session"),
+            wallet,
+          }),
+        );
+
+        assert.equal(response.status, 500);
+        assert.equal(sessionWrite?.method, "PATCH");
+        assert.equal(
+          sessionWrite?.url.searchParams.get("wallet_user_id"),
+          "eq.wallet-user-owner",
+        );
+        assert.equal(
+          sessionWrite?.url.searchParams.get("id"),
+          "eq.existing-session",
+        );
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("ownership-safe inserts preserve valid chat session persistence", async () => {
+  const restoreFetch = mockFetch((url, init) => {
+    const parsed = new URL(url);
+    const method = init?.method ?? "GET";
+
+    if (parsed.pathname.endsWith("/langclaw_wallet_users")) {
+      return Response.json({
+        id: "wallet-user-owner",
+        wallet_address: sessionOwner,
+      });
+    }
+
+    if (parsed.pathname.endsWith("/langclaw_chat_sessions")) {
+      if (method === "POST") {
+        return Response.json({ id: "new-session" });
+      }
+
+      const selected = parsed.searchParams.get("select") ?? "";
+
+      return selected === "wallet_user_id"
+        ? Response.json(null)
+        : Response.json({
+            created_at: "2026-07-19T01:00:00.000Z",
+            id: "new-session",
+            pinned: false,
+            title: "Ownership-safe session",
+            updated_at: "2026-07-19T01:01:00.000Z",
+          });
+    }
+
+    assert.match(parsed.pathname, /\/langclaw_chat_messages$/);
+
+    return method === "DELETE" ? Response.json(null) : Response.json([]);
+  });
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_WALLET_SESSION_SECRET: "chat-route-test-secret",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+        SUPABASE_URL: "https://supabase.test",
+      },
+      async () => {
+        const wallet = createWalletSessionForVerifiedAddress(sessionOwner);
+        const response = await handleChatSessions(
+          chatSessionRequest({
+            action: "upsert",
+            session: validChatSession("new-session"),
+            wallet,
+          }),
+        );
+
+        assert.equal(response.status, 200);
+        assert.deepEqual(await response.json(), {
+          configured: true,
+          session: validChatSession("new-session"),
+        });
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("chat session routes reject unsupported actions after authentication", async () => {
   const restoreFetch = mockFetch((url) => {
     const path = new URL(url).pathname;
@@ -765,4 +953,15 @@ function chatSessionRequest(body: Record<string, unknown>) {
     headers: { "Content-Type": "application/json" },
     method: "POST",
   });
+}
+
+function validChatSession(id: string) {
+  return {
+    createdAt: "2026-07-19T01:00:00.000Z",
+    id,
+    messages: [],
+    pinned: false,
+    title: "Ownership-safe session",
+    updatedAt: "2026-07-19T01:01:00.000Z",
+  };
 }
