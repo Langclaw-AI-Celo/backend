@@ -614,6 +614,57 @@ test("links verifies and unlinks an automation notification email", async () => 
   }
 });
 
+test("email link codes are consumed by only one concurrent verification", async () => {
+  const code = "123456";
+  const storage = buildConcurrentEmailLinkStorage(code);
+  const account = buildAccount(storage.supabase);
+  const results = await Promise.allSettled([
+    verifyNotificationEmailLink(account, code),
+    verifyNotificationEmailLink(account, code),
+  ]);
+  const fulfilled = results.filter((result) => result.status === "fulfilled");
+  const rejected = results.filter((result) => result.status === "rejected");
+
+  assert.equal(fulfilled.length, 1);
+  assert.equal(rejected.length, 1);
+  const reason = (rejected[0] as PromiseRejectedResult).reason;
+  assert.ok(
+    reason instanceof AutomationHttpError &&
+      reason.status === 409 &&
+      /already used or expired/.test(reason.message),
+  );
+});
+
+test("stale email verification cannot consume a rotated request with a reused code", async () => {
+  const code = "123456";
+  const storage = buildConcurrentEmailLinkStorage(code, {
+    pauseReads: true,
+    requiredReads: 1,
+  });
+  const verification = verifyNotificationEmailLink(
+    buildAccount(storage.supabase),
+    code,
+  );
+
+  await storage.readsStarted;
+  const rotatedEmail = "new-alerts@example.com";
+  const rotatedExpiry = "2099-07-23T00:30:00.000Z";
+  storage.settings.notification_email_pending = rotatedEmail;
+  storage.settings.notification_email_expires_at = rotatedExpiry;
+  storage.releaseReads();
+
+  await assert.rejects(
+    verification,
+    (error: unknown) =>
+      error instanceof AutomationHttpError &&
+      error.status === 409 &&
+      /already used or expired/.test(error.message),
+  );
+  assert.equal(storage.settings.notification_email_pending, rotatedEmail);
+  assert.equal(storage.settings.notification_email_expires_at, rotatedExpiry);
+  assert.equal(storage.settings.notification_email, null);
+});
+
 test("creates polls and unlinks a Telegram automation connection", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);
@@ -1098,7 +1149,36 @@ function buildAccount(supabase: unknown) {
   };
 }
 
-function buildConcurrentTelegramLinkStorage(code: string) {
+type ConcurrentLinkStorageOptions = {
+  pauseReads?: boolean;
+  requiredReads?: number;
+};
+
+function buildConcurrentEmailLinkStorage(
+  code: string,
+  options: ConcurrentLinkStorageOptions = {},
+) {
+  const storage = buildConcurrentTelegramLinkStorage(code, options);
+
+  storage.settings.notification_email_code_hash = createHash("sha256")
+    .update(code)
+    .digest("hex");
+  storage.settings.notification_email_expires_at =
+    "2099-07-23T00:15:00.000Z";
+  storage.settings.notification_email_pending = "alerts@example.com";
+  storage.settings.telegram_link_code_hash = null;
+  storage.settings.telegram_link_expires_at = null;
+
+  return storage;
+}
+
+function buildConcurrentTelegramLinkStorage(
+  code: string,
+  {
+    pauseReads = false,
+    requiredReads = 2,
+  }: ConcurrentLinkStorageOptions = {},
+) {
   const walletUserId = walletUser.id;
   const settings: Record<string, unknown> = {
     auto_pause_repeated_failures: true,
@@ -1128,8 +1208,12 @@ function buildConcurrentTelegramLinkStorage(code: string) {
     write_run_logs_to_memory: false,
   };
   let readCount = 0;
+  let markReadsStarted = () => undefined;
+  const readsStarted = new Promise<void>((resolve) => {
+    markReadsStarted = resolve;
+  });
   let releaseReads = () => undefined;
-  const bothReadsStarted = new Promise<void>((resolve) => {
+  const readsReleased = new Promise<void>((resolve) => {
     releaseReads = resolve;
   });
 
@@ -1173,14 +1257,20 @@ function buildConcurrentTelegramLinkStorage(code: string) {
             select() {
               return {
                 async single() {
+                  const snapshot = { ...settings };
                   readCount += 1;
 
-                  if (readCount === 2) {
-                    releaseReads();
+                  if (readCount === requiredReads) {
+                    markReadsStarted();
+
+                    if (!pauseReads) {
+                      releaseReads();
+                    }
                   }
 
-                  await bothReadsStarted;
-                  return { data: { ...settings }, error: null };
+                  await readsStarted;
+                  await readsReleased;
+                  return { data: snapshot, error: null };
                 },
               };
             },
@@ -1190,7 +1280,7 @@ function buildConcurrentTelegramLinkStorage(code: string) {
     },
   };
 
-  return { settings, supabase };
+  return { readsStarted, releaseReads, settings, supabase };
 }
 
 function buildAutomationStorage(

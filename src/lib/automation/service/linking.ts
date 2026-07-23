@@ -75,20 +75,18 @@ export async function verifyNotificationEmailLink(
   const code = readLinkCode(codeInput);
   const settings = await readAutomationSettingsRow(context);
   const email = settings.notification_email_pending;
+  const pendingCodeHash = settings.notification_email_code_hash;
+  const pendingExpiresAt = settings.notification_email_expires_at;
 
-  if (
-    !email ||
-    !settings.notification_email_code_hash ||
-    !settings.notification_email_expires_at
-  ) {
+  if (!email || !pendingCodeHash || !pendingExpiresAt) {
     throw new AutomationHttpError(400, "No email link request is pending.");
   }
 
-  if (new Date(settings.notification_email_expires_at).getTime() < Date.now()) {
+  if (new Date(pendingExpiresAt).getTime() < Date.now()) {
     throw new AutomationHttpError(400, "Email link code has expired.");
   }
 
-  if (settings.notification_email_code_hash !== hashLinkCode(code)) {
+  if (pendingCodeHash !== hashLinkCode(code)) {
     throw new AutomationHttpError(400, "Email link code is invalid.");
   }
 
@@ -104,13 +102,23 @@ export async function verifyNotificationEmailLink(
       notification_email_verified: true,
     })
     .eq("wallet_user_id", context.walletUser.id)
+    .eq("notification_email_code_hash", pendingCodeHash)
+    .eq("notification_email_pending", email)
+    .eq("notification_email_expires_at", pendingExpiresAt)
     .select("*")
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
     throw new AutomationHttpError(
       500,
-      error?.message || "Unable to verify automation email."
+      error.message || "Unable to verify automation email."
+    );
+  }
+
+  if (!data) {
+    throw new AutomationHttpError(
+      409,
+      "Email link code was already used or expired."
     );
   }
 
