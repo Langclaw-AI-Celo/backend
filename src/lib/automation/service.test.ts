@@ -486,6 +486,49 @@ test("automation link and trigger inputs reject malformed values", async () => {
   assert.equal(readTelegramCodeFromText("/link short"), "");
 });
 
+test("automation email links reject oversized addresses before sending", async () => {
+  const storage = buildAutomationStorage("active");
+  const account = buildAccount(storage.supabase);
+  const exactLimitEmail = `${"a".repeat(308)}@example.com`;
+  const sentTo: string[] = [];
+  const restoreFetch = mockFetch((_url, init) => {
+    const body = JSON.parse(String(init?.body)) as { to?: string };
+    sentTo.push(body.to ?? "");
+    return Response.json({ id: "email-oversized" });
+  });
+
+  assert.equal(exactLimitEmail.length, 320);
+
+  try {
+    await withEnv(
+      {
+        LANGCLAW_AUTOMATION_EMAIL_FROM: "alerts@langclaw.ai",
+        RESEND_API_KEY: "resend-test-key",
+      },
+      async () => {
+        await assert.rejects(
+          requestNotificationEmailLink(account, `${exactLimitEmail}x`),
+          (error: unknown) =>
+            error instanceof AutomationHttpError &&
+            error.status === 400 &&
+            error.message === "Email must be at most 320 characters.",
+        );
+        assert.deepEqual(sentTo, []);
+
+        const result = await requestNotificationEmailLink(
+          account,
+          exactLimitEmail,
+        );
+        assert.equal(result.sent, true);
+      },
+    );
+  } finally {
+    restoreFetch();
+  }
+
+  assert.deepEqual(sentTo, [exactLimitEmail]);
+});
+
 test("creates and archives an automation webhook task", async () => {
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);
