@@ -635,6 +635,33 @@ test("email link codes are consumed by only one concurrent verification", async 
   );
 });
 
+test("email link codes cannot cross expiry during atomic verification", async () => {
+  const code = "123456";
+  const storage = buildConcurrentEmailLinkStorage(code, {
+    requiredReads: 1,
+  });
+  const expiry = Date.parse(
+    String(storage.settings.notification_email_expires_at),
+  );
+  const originalNow = Date.now;
+  let reads = 0;
+  Date.now = () => (reads++ === 0 ? expiry - 1 : expiry + 1);
+
+  try {
+    await assert.rejects(
+      verifyNotificationEmailLink(buildAccount(storage.supabase), code),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 409 &&
+        /already used or expired/.test(error.message),
+    );
+    assert.equal(storage.settings.notification_email_verified, false);
+    assert.equal(storage.settings.notification_email, null);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("stale email verification cannot consume a rotated request with a reused code", async () => {
   const code = "123456";
   const storage = buildConcurrentEmailLinkStorage(code, {
@@ -781,6 +808,55 @@ test("Telegram link codes are consumed by only one concurrent poll", async () =>
     );
   } finally {
     restoreFetch();
+  }
+});
+
+test("Telegram link codes cannot cross expiry during provider polling", async () => {
+  const code = "9A3A093A29";
+  const storage = buildConcurrentTelegramLinkStorage(code, {
+    requiredReads: 1,
+  });
+  const expiry = Date.parse(String(storage.settings.telegram_link_expires_at));
+  const originalNow = Date.now;
+  let reads = 0;
+  Date.now = () => (reads++ === 0 ? expiry - 1 : expiry + 1);
+  const restoreFetch = mockFetch((url) => {
+    if (url.endsWith("/getUpdates")) {
+      return Response.json({
+        ok: true,
+        result: [
+          {
+            message: {
+              chat: { id: 123456 },
+              from: { username: "nant361" },
+              text: `/link ${code}`,
+            },
+          },
+        ],
+      });
+    }
+
+    return Response.json({ ok: true, result: { message_id: 9 } });
+  });
+
+  try {
+    await withEnv(
+      { LANGCLAW_TELEGRAM_BOT_TOKEN: "telegram-test-token" },
+      async () => {
+        await assert.rejects(
+          pollTelegramLink(buildAccount(storage.supabase)),
+          (error: unknown) =>
+            error instanceof AutomationHttpError &&
+            error.status === 409 &&
+            /already used or expired/.test(error.message),
+        );
+      },
+    );
+    assert.equal(storage.settings.telegram_verified, false);
+    assert.equal(storage.settings.telegram_chat_id, null);
+  } finally {
+    restoreFetch();
+    Date.now = originalNow;
   }
 });
 
@@ -1223,16 +1299,26 @@ function buildConcurrentTelegramLinkStorage(
 
       return {
         update(payload: Record<string, unknown>) {
-          const filters: Array<[string, unknown]> = [];
+          const filters: Array<{
+            column: string;
+            operator: "eq" | "gt";
+            value: unknown;
+          }> = [];
           const query = {
             eq(column: string, value: unknown) {
-              filters.push([column, value]);
+              filters.push({ column, operator: "eq", value });
+              return query;
+            },
+            gt(column: string, value: unknown) {
+              filters.push({ column, operator: "gt", value });
               return query;
             },
             select() {
               const finish = async () => {
-                const matches = filters.every(
-                  ([column, value]) => settings[column] === value,
+                const matches = filters.every(({ column, operator, value }) =>
+                  operator === "eq"
+                    ? settings[column] === value
+                    : String(settings[column]) > String(value),
                 );
 
                 if (!matches) {
@@ -1409,6 +1495,9 @@ function buildAutomationStorage(
             Object.assign(settings, payload);
             const query = {
               eq() {
+                return query;
+              },
+              gt() {
                 return query;
               },
               select() {
