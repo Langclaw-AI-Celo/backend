@@ -466,12 +466,61 @@ function readChainId(value: unknown) {
 }
 
 function readRequestDomain(request: Request) {
-  const configuredDomain = process.env.LANGCLAW_WALLET_AUTH_DOMAIN?.trim();
-  const url = new URL(request.url);
-  const domain = configuredDomain || url.host;
-  const uri = `${url.protocol}//${domain}`;
+  const configuredDomain = readConfiguredWalletAuthDomain();
 
-  return { domain, uri };
+  if (configuredDomain) {
+    return {
+      domain: configuredDomain,
+      uri: `https://${configuredDomain}`,
+    };
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new WalletAuthError(
+      503,
+      "LANGCLAW_WALLET_AUTH_DOMAIN is required in production."
+    );
+  }
+
+  const url = new URL(request.url);
+
+  return {
+    domain: url.host,
+    uri: `${url.protocol}//${url.host}`,
+  };
+}
+
+function readConfiguredWalletAuthDomain() {
+  const value = process.env.LANGCLAW_WALLET_AUTH_DOMAIN;
+
+  if (value === undefined || value === "") {
+    return null;
+  }
+
+  const [hostname, port, ...extraParts] = value.split(":");
+  const validHostname =
+    value === value.trim() &&
+    !/\s/.test(value) &&
+    hostname.length <= 253 &&
+    hostname.split(".").every((label) =>
+      /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label)
+    );
+  const validPort =
+    port === undefined ||
+    (/^[1-9]\d{0,4}$/.test(port) && Number(port) <= 65_535);
+
+  if (!validHostname || !validPort || extraParts.length > 0) {
+    throw new WalletAuthError(
+      503,
+      "LANGCLAW_WALLET_AUTH_DOMAIN must be a valid hostname with an optional port."
+    );
+  }
+
+  const canonicalHostname = hostname.toLowerCase();
+
+  return port
+    ? `${canonicalHostname}:${Number(port)}`
+    : canonicalHostname;
 }
 
 function readMessageField(message: string, field: string) {
