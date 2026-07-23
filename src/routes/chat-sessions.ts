@@ -664,7 +664,11 @@ export function readOptionalTitle(value: unknown): { error?: string; value?: str
     return { error: "title cannot be empty." };
   }
 
-  return { value: title.length > 120 ? `${title.slice(0, 117)}...` : title };
+  if (title.length > 120) {
+    return { error: "title must be at most 120 characters." };
+  }
+
+  return { value: title };
 }
 
 function readSessionId(value: unknown) {
