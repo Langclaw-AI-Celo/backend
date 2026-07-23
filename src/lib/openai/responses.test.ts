@@ -8,6 +8,42 @@ import {
 } from "./responses";
 import { mockFetch, sseResponse, withEnv } from "../../test/helpers";
 
+function stalledSseResponse(
+  signal: AbortSignal | null | undefined,
+  releaseAfterMs: number,
+) {
+  let releaseTimer: ReturnType<typeof setTimeout> | undefined;
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        signal?.addEventListener(
+          "abort",
+          () => {
+            controller.error(
+              signal.reason ?? new DOMException("Aborted", "AbortError"),
+            );
+          },
+          { once: true },
+        );
+        releaseTimer = setTimeout(() => controller.close(), releaseAfterMs);
+      },
+    }),
+    {
+      headers: { "Content-Type": "text/event-stream; charset=utf-8" },
+      status: 200,
+    },
+  );
+
+  return {
+    cleanup() {
+      if (releaseTimer) {
+        clearTimeout(releaseTimer);
+      }
+    },
+    response,
+  };
+}
+
 test("chat default model falls back to GPT-5.2", async () => {
   await withEnv({}, async () => {
     assert.equal(getDefaultOpenAIModel("chat"), "gpt-5.2");
@@ -183,6 +219,65 @@ test("OpenAI requests do not start after caller cancellation", async () => {
     });
     assert.equal(fetchCalls, 0);
   } finally {
+    restore();
+  }
+});
+
+test("OpenAI caller cancellation remains active while the response streams", async () => {
+  const caller = new AbortController();
+  let cleanup = () => undefined;
+  const restore = mockFetch((_url, init) => {
+    const stalled = stalledSseResponse(init?.signal, 100);
+    cleanup = stalled.cleanup;
+    return stalled.response;
+  });
+
+  try {
+    await withEnv({ OPENAI_API_KEY: "test-key" }, async () => {
+      const request = streamOpenAITextResponse({
+        input: "halo",
+        signal: caller.signal,
+      });
+
+      await new Promise((resolve) => setImmediate(resolve));
+      caller.abort();
+
+      await assert.rejects(
+        request,
+        (error: unknown) =>
+          error instanceof DOMException && error.name === "AbortError",
+      );
+    });
+  } finally {
+    cleanup();
+    restore();
+  }
+});
+
+test("OpenAI timeout remains active while the response streams", async () => {
+  let cleanup = () => undefined;
+  const restore = mockFetch((_url, init) => {
+    const stalled = stalledSseResponse(init?.signal, 1_250);
+    cleanup = stalled.cleanup;
+    return stalled.response;
+  });
+
+  try {
+    await withEnv(
+      {
+        OPENAI_API_KEY: "test-key",
+        OPENAI_TIMEOUT_SECONDS: "1",
+      },
+      async () => {
+        await assert.rejects(
+          streamOpenAITextResponse({ input: "halo" }),
+          (error: unknown) =>
+            error instanceof DOMException && error.name === "AbortError",
+        );
+      },
+    );
+  } finally {
+    cleanup();
     restore();
   }
 });

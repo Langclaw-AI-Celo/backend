@@ -127,7 +127,7 @@ export async function streamOpenAITextResponse({
   signal,
   temperature,
 }: OpenAIStreamInput): Promise<OpenAITextResult> {
-  const response = await openAIFetch("/responses", {
+  const request = await openAIFetch("/responses", {
     body: {
       input,
       instructions,
@@ -138,70 +138,75 @@ export async function streamOpenAITextResponse({
     },
     signal,
   });
+  const { response } = request;
 
-  if (!response.body) {
-    throw new Error("OpenAI streaming response was empty.");
-  }
-
-  const decoder = new TextDecoder();
-  const reader = response.body.getReader();
-  let buffer = "";
-  let text = "";
-  let id: string | undefined;
-  let receivedBytes = 0;
-  let usedModel = model;
-  let usage: OpenAITokenUsage | undefined;
-
-  while (true) {
-    const { done, value } = await reader.read();
-
-    if (done) {
-      break;
+  try {
+    if (!response.body) {
+      throw new Error("OpenAI streaming response was empty.");
     }
 
-    receivedBytes += value.byteLength;
+    const decoder = new TextDecoder();
+    const reader = response.body.getReader();
+    let buffer = "";
+    let text = "";
+    let id: string | undefined;
+    let receivedBytes = 0;
+    let usedModel = model;
+    let usage: OpenAITokenUsage | undefined;
 
-    try {
-      assertProviderResponseBytes(receivedBytes);
-    } catch (error) {
-      await reader.cancel().catch(() => undefined);
-      throw error;
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        break;
+      }
+
+      receivedBytes += value.byteLength;
+
+      try {
+        assertProviderResponseBytes(receivedBytes);
+      } catch (error) {
+        await reader.cancel().catch(() => undefined);
+        throw error;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split(/(?:\r\n|\r|\n){2}/);
+      buffer = events.pop() ?? "";
+
+      for (const event of events) {
+        const parsed = parseSseData(event);
+        ({ id, text, usage, usedModel } = applySseEvent({
+          id,
+          onDelta,
+          parsed,
+          text,
+          usage,
+          usedModel,
+        }));
+      }
     }
 
-    buffer += decoder.decode(value, { stream: true });
-    const events = buffer.split(/(?:\r\n|\r|\n){2}/);
-    buffer = events.pop() ?? "";
-
-    for (const event of events) {
-      const parsed = parseSseData(event);
+    if (buffer.trim()) {
       ({ id, text, usage, usedModel } = applySseEvent({
         id,
         onDelta,
-        parsed,
+        parsed: parseSseData(buffer),
         text,
         usage,
         usedModel,
       }));
     }
-  }
 
-  if (buffer.trim()) {
-    ({ id, text, usage, usedModel } = applySseEvent({
+    return {
       id,
-      onDelta,
-      parsed: parseSseData(buffer),
+      model: usedModel,
       text,
       usage,
-      usedModel,
-    }));
+    };
+  } finally {
+    request.release();
   }
-
-  return {
-    id,
-    model: usedModel,
-    text,
-    usage,
-  };
 }
 
 function applySseEvent({
@@ -319,9 +324,13 @@ async function openAIJson<T>(
   path: string,
   options: { body: Record<string, unknown>; signal?: AbortSignal }
 ) {
-  const response = await openAIFetch(path, options);
+  const request = await openAIFetch(path, options);
 
-  return readProviderResponseJson<T>(response);
+  try {
+    return await readProviderResponseJson<T>(request.response);
+  } finally {
+    request.release();
+  }
 }
 
 async function openAIFetch(
@@ -346,6 +355,11 @@ async function openAIFetch(
 
   options.signal?.addEventListener("abort", onAbort, { once: true });
 
+  const release = () => {
+    clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", onAbort);
+  };
+
   try {
     const response = await fetch(`${getOpenAIBaseUrl()}${path}`, {
       body: JSON.stringify(removeUndefined(options.body)),
@@ -362,10 +376,10 @@ async function openAIFetch(
       throw new Error(await readOpenAIHttpError(response));
     }
 
-    return response;
-  } finally {
-    clearTimeout(timeout);
-    options.signal?.removeEventListener("abort", onAbort);
+    return { release, response };
+  } catch (error) {
+    release();
+    throw error;
   }
 }
 
