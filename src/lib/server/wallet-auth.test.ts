@@ -15,6 +15,137 @@ const testAccount = privateKeyToAccount(
   "0x59c6995e998f97a5a0044966f0945388c9d22d2334a4f12d7873b4d0b08c8756"
 );
 
+test("production wallet challenges require a trusted domain", async () => {
+  await withEnv(
+    {
+      LANGCLAW_WALLET_AUTH_DOMAIN: undefined,
+      NODE_ENV: "production",
+    },
+    async () => {
+      assert.throws(
+        () =>
+          createWalletChallenge({
+            address: testAccount.address,
+            request: new Request(
+              "https://attacker.example/api/wallet/challenge"
+            ),
+          }),
+        (error: unknown) => {
+          assert.ok(error instanceof WalletAuthError);
+          assert.equal(error.status, 503);
+          assert.equal(
+            error.message,
+            "LANGCLAW_WALLET_AUTH_DOMAIN is required in production."
+          );
+          return true;
+        }
+      );
+    }
+  );
+});
+
+test("production wallet challenges use the configured HTTPS origin", async () => {
+  await withEnv(
+    {
+      LANGCLAW_WALLET_AUTH_DOMAIN: "AUTH.LANGCLAW.TEST:8443",
+      LANGCLAW_WALLET_SESSION_SECRET: "test-wallet-secret",
+      NODE_ENV: "production",
+    },
+    async () => {
+      const challenge = createWalletChallenge({
+        address: testAccount.address,
+        request: new Request(
+          "http://attacker.example/api/wallet/challenge"
+        ),
+      });
+
+      assert.equal(challenge.domain, "auth.langclaw.test:8443");
+      assert.equal(challenge.uri, "https://auth.langclaw.test:8443");
+      assert.match(
+        challenge.message,
+        /^auth\.langclaw\.test:8443 wants you to sign in/
+      );
+
+      const signature = await testAccount.signMessage({
+        message: challenge.message,
+      });
+      const verified = await verifyWalletSession(
+        {
+          address: testAccount.address,
+          message: challenge.message,
+          signature,
+        },
+        { requiredPurpose: "session" }
+      );
+
+      assert.equal(verified?.authMethod, "challenge");
+      assert.equal(verified?.address, testAccount.address.toLowerCase());
+    }
+  );
+});
+
+test("wallet challenges reject malformed configured domains", async () => {
+  const invalidDomains = [
+    " https://api.langclaw.test",
+    "https://api.langclaw.test",
+    "api.langclaw.test/path",
+    "user@api.langclaw.test",
+    "api..langclaw.test",
+    "-api.langclaw.test",
+    "api.langclaw.test:",
+    "api.langclaw.test:0",
+    "api.langclaw.test:65536",
+    "api.langclaw.test:invalid",
+  ];
+
+  for (const domain of invalidDomains) {
+    await withEnv(
+      { LANGCLAW_WALLET_AUTH_DOMAIN: domain },
+      async () => {
+        assert.throws(
+          () =>
+            createWalletChallenge({
+              address: testAccount.address,
+              request: new Request(
+                "https://api.langclaw.test/api/wallet/challenge"
+              ),
+            }),
+          (error: unknown) => {
+            assert.ok(error instanceof WalletAuthError);
+            assert.equal(error.status, 503);
+            assert.equal(
+              error.message,
+              "LANGCLAW_WALLET_AUTH_DOMAIN must be a valid hostname with an optional port."
+            );
+            return true;
+          },
+          domain
+        );
+      }
+    );
+  }
+});
+
+test("development wallet challenges preserve request-origin fallback", async () => {
+  await withEnv(
+    {
+      LANGCLAW_WALLET_AUTH_DOMAIN: undefined,
+      NODE_ENV: "development",
+    },
+    async () => {
+      const challenge = createWalletChallenge({
+        address: testAccount.address,
+        request: new Request(
+          "http://localhost:3002/api/wallet/challenge"
+        ),
+      });
+
+      assert.equal(challenge.domain, "localhost:3002");
+      assert.equal(challenge.uri, "http://localhost:3002");
+    }
+  );
+});
+
 test("rejects the legacy reusable Langclaw login message", async () => {
   const message = `Login to Langclaw\nAddress: ${testAccount.address}\nTime: ${new Date().toISOString()}`;
   const signature = await testAccount.signMessage({ message });

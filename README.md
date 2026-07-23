@@ -125,6 +125,7 @@ Copy [`.env.example`](.env.example). Minimum useful local values:
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Persistence and server-side writes |
 | `LANGCLAW_API_KEY_PEPPER` | API-key hashing |
 | `LANGCLAW_WALLET_SESSION_SECRET` | Wallet session signing |
+| `LANGCLAW_WALLET_AUTH_DOMAIN` | Required production hostname, with an optional port, for wallet challenges |
 | `OPENAI_API_KEY` | Direct chat and final answer synthesis |
 | `CORS_ORIGIN` | Frontend origin, usually `http://localhost:3000` |
 
