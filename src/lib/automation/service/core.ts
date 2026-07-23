@@ -476,11 +476,23 @@ export function readLimit(value: unknown, fallback: number, max = 10) {
     return fallback;
   }
 
-  if (typeof value !== "number" || !Number.isInteger(value)) {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > max
+  ) {
+    if (typeof value === "number" && Number.isInteger(value)) {
+      throw new AutomationHttpError(
+        400,
+        `limit must be an integer from 1 to ${max}.`
+      );
+    }
+
     throw new AutomationHttpError(400, "limit must be an integer.");
   }
 
-  return Math.min(Math.max(value, 1), max);
+  return value;
 }
 
 export function rowToTask(row: AutomationTaskRow, running = false): AutomationTask {

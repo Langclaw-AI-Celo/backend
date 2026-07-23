@@ -934,7 +934,7 @@ test("reads the automation dashboard, runs, settings, and in-app notifications",
   const dashboard = await readAutomationDashboard(account);
   const runs = await readAutomationRuns(account, "task-1");
   const settings = await readAutomationSettings(account);
-  const notifications = await readInAppAutomationNotifications(account, 500);
+  const notifications = await readInAppAutomationNotifications(account, 50);
 
   assert.equal(dashboard.configured, true);
   assert.equal(dashboard.tasks.length, 1);
@@ -975,6 +975,30 @@ test("automation list limits reject non-integer values", async () => {
         error.status === 400 &&
         error.message === "limit must be an integer.",
     );
+  }
+});
+
+test("automation list limits reject values outside their supported range", async () => {
+  const storage = buildAutomationStorage("active");
+  const account = buildAccount(storage.supabase);
+
+  for (const limit of [0, 51]) {
+    await assert.rejects(
+      readInAppAutomationNotifications(account, limit),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === "limit must be an integer from 1 to 50.",
+    );
+  }
+
+  for (const limit of [1, 50]) {
+    const notifications = await readInAppAutomationNotifications(
+      account,
+      limit,
+    );
+
+    assert.equal(notifications.length, 1);
   }
 });
 
