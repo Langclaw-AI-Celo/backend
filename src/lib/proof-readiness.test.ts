@@ -1,20 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { privateKeyToAccount } from "viem/accounts";
 
 import { buildProofReadinessReport } from "./proof-readiness";
 import { withEnv } from "../test/helpers";
 
 const testPrivateKey =
   "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const testRecorderAddress = privateKeyToAccount(testPrivateKey).address;
+const lowercasedTestRecorderAddress =
+  testRecorderAddress.toLowerCase() as `0x${string}`;
 const registryAddress = "0xe69755e4249c4978c39fbe847ca9674ce7af3505";
 
 function buildClient({
   latestAgentId = 94n,
   latestDecisionId = 1n,
+  latestRecorder = lowercasedTestRecorderAddress,
   latestTxHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 }: {
   latestAgentId?: bigint;
   latestDecisionId?: bigint;
+  latestRecorder?: `0x${string}`;
   latestTxHash?: `0x${string}`;
 } = {}) {
   return {
@@ -46,7 +52,7 @@ function buildClient({
         decisionHash:
           "0x1111111111111111111111111111111111111111111111111111111111111111",
         evidenceUri: "langclaw://evidence/run/hash",
-        recorder: "0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c",
+        recorder: latestRecorder,
         runId: "run-1",
         signalType: "smart-money",
       };
@@ -82,6 +88,16 @@ test("proof readiness passes when Celo proof env and registry are usable", async
     assert.equal(
       report.checks.find((check) => check.id === "erc8004-agent-id")?.label,
       "CELO_ERC8004_AGENT_ID"
+    );
+    assert.equal(
+      report.checks.find((check) => check.id === "latest-decision-recorder")
+        ?.status,
+      "pass"
+    );
+    assert.equal(
+      report.checks.find((check) => check.id === "latest-decision-recorder")
+        ?.detail?.expectedRecorder,
+      testRecorderAddress
     );
   });
 });
@@ -150,6 +166,29 @@ test("proof readiness warns when the latest decision belongs to another agent", 
     assert.match(
       report.checks.find((check) => check.id === "latest-decision")?.summary ?? "",
       /configured ERC-8004 agent 94/
+    );
+  });
+});
+
+test("proof readiness warns when the latest decision has another recorder", async () => {
+  await withEnv(readyEnv, async () => {
+    const report = await buildProofReadinessReport({
+      publicClient: buildClient({
+        latestRecorder: "0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c",
+      }),
+    });
+
+    assert.equal(report.ready, true);
+    assert.equal(report.status, "warning");
+    assert.equal(report.latestDecision?.agentId, "94");
+    assert.equal(
+      report.checks.find((check) => check.id === "latest-decision-recorder")?.status,
+      "warn"
+    );
+    assert.match(
+      report.checks.find((check) => check.id === "latest-decision-recorder")
+        ?.summary ?? "",
+      /configured recorder/
     );
   });
 });
@@ -393,7 +432,7 @@ test("proof readiness normalizes tuple decisions without optional log access", a
             `0x${"4".repeat(64)}`,
             "langclaw://evidence/tuple",
             "liquidity",
-            "0x2cA915EF6be8D2D48ccD3c5dAF715546AF873A4c",
+            lowercasedTestRecorderAddress,
             1_780_000_000n,
           ] as const;
         },
@@ -405,6 +444,11 @@ test("proof readiness normalizes tuple decisions without optional log access", a
     assert.equal(report.latestDecision?.signalType, "liquidity");
     assert.equal(report.latestDecision?.txHash, undefined);
     assert.equal(report.latestDecision?.explorerUrl, undefined);
+    assert.equal(
+      report.checks.find((check) => check.id === "latest-decision-recorder")
+        ?.status,
+      "pass"
+    );
   });
 });
 
