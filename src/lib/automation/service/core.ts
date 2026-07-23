@@ -70,6 +70,8 @@ export const defaultTimezone = "Asia/Jakarta";
 export const neuronPer0G = 1_000_000_000_000_000_000n;
 export const maxStoredNeuron = 10n ** 78n - 1n;
 export const defaultTelegramBotUsername = "langclawaibot";
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class AutomationHttpError extends Error {
   status: number;
@@ -436,11 +438,21 @@ export async function updateTaskStatus(
 }
 
 export function readTaskId(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new AutomationHttpError(400, "taskId is required.");
+  return readRequiredUuid(value, "taskId");
+}
+
+export function readRequiredUuid(value: unknown, field: string) {
+  const id = typeof value === "string" ? value.trim() : "";
+
+  if (!id) {
+    throw new AutomationHttpError(400, `${field} is required.`);
   }
 
-  return value.trim();
+  if (!uuidPattern.test(id)) {
+    throw new AutomationHttpError(400, `${field} must be a valid UUID.`);
+  }
+
+  return id;
 }
 
 export function readEventName(value: unknown) {

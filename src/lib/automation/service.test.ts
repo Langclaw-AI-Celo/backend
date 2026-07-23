@@ -30,11 +30,16 @@ import {
   updateAutomationTask,
   verifyNotificationEmailLink,
 } from "./service";
+import { readNotificationId, readTaskId } from "./service/input";
 
 const walletUser = {
   id: "wallet-user-1",
   walletAddress: "0x1111111111111111111111111111111111111111",
 };
+const taskId = "11111111-1111-4111-8111-111111111111";
+const notificationId = "22222222-2222-4222-8222-222222222222";
+const createdTaskId = "33333333-3333-4333-8333-333333333333";
+const missingTaskId = "44444444-4444-4444-8444-444444444444";
 
 test("automation webhook slugs use a 128-bit random suffix", () => {
   const first = createWebhookSlug("Daily Usage Digest");
@@ -55,7 +60,7 @@ test("automation task status transitions update schedule state", async () => {
   const paused = buildAutomationStorage("active");
   const pausedTask = await updateAutomationTask(
     buildAccount(paused.supabase),
-    "task-1",
+    taskId,
     { status: "paused" },
   );
 
@@ -66,7 +71,7 @@ test("automation task status transitions update schedule state", async () => {
   const active = buildAutomationStorage("paused");
   const activeTask = await updateAutomationTask(
     buildAccount(active.supabase),
-    "task-1",
+    taskId,
     { status: "active" },
   );
 
@@ -79,7 +84,7 @@ test("archived automation tasks cannot be restored by updates", async () => {
   const storage = buildAutomationStorage("archived");
 
   await assert.rejects(
-    updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    updateAutomationTask(buildAccount(storage.supabase), taskId, {
       status: "active",
     }),
     (error: unknown) =>
@@ -97,7 +102,7 @@ test("automation metadata updates preserve the scheduled next run", async () => 
     next_run_at: nextRunAt,
   });
 
-  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+  await updateAutomationTask(buildAccount(storage.supabase), taskId, {
     name: "Renamed Celo scan",
   });
 
@@ -111,7 +116,7 @@ test("automation metadata updates preserve task retry guardrails", async () => {
     max_retries: 5,
   });
 
-  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+  await updateAutomationTask(buildAccount(storage.supabase), taskId, {
     name: "Renamed Celo scan",
   });
 
@@ -125,7 +130,7 @@ test("automation task updates can clear optional text fields", async () => {
     prompt: "Review Celo activity",
   });
 
-  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+  await updateAutomationTask(buildAccount(storage.supabase), taskId, {
     model: " ",
     prompt: "",
   });
@@ -140,7 +145,7 @@ test("automation trigger changes clear stale event metadata", async () => {
     trigger_type: "event",
   });
 
-  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+  await updateAutomationTask(buildAccount(storage.supabase), taskId, {
     triggerType: "schedule",
   });
 
@@ -154,7 +159,7 @@ test("automation trigger changes clear stale scheduled runs", async () => {
     trigger_type: "schedule",
   });
 
-  await updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+  await updateAutomationTask(buildAccount(storage.supabase), taskId, {
     eventName: "price.changed",
     triggerType: "event",
   });
@@ -276,7 +281,7 @@ test("automation task text fields reject non-string values", async () => {
     const storage = buildAutomationStorage("active");
 
     await assert.rejects(
-      updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+      updateAutomationTask(buildAccount(storage.supabase), taskId, {
         [field]: value,
       }),
       (error: unknown) =>
@@ -321,7 +326,7 @@ test("automation task updates reject blank names", async () => {
   const storage = buildAutomationStorage("active");
 
   await assert.rejects(
-    updateAutomationTask(buildAccount(storage.supabase), "task-1", {
+    updateAutomationTask(buildAccount(storage.supabase), taskId, {
       name: "   ",
     }),
     (error: unknown) =>
@@ -342,7 +347,7 @@ test("automation tasks reject blank provided projects", async () => {
         project: "   ",
       }),
     () =>
-      updateAutomationTask(buildAccount(updateStorage.supabase), "task-1", {
+      updateAutomationTask(buildAccount(updateStorage.supabase), taskId, {
         project: "\n\t",
       }),
   ]) {
@@ -430,7 +435,7 @@ test("automation tasks reject unsupported statuses", async () => {
 
   const updateStorage = buildAutomationStorage("active");
   await assert.rejects(
-    updateAutomationTask(buildAccount(updateStorage.supabase), "task-1", {
+    updateAutomationTask(buildAccount(updateStorage.supabase), taskId, {
       status: "running",
     }),
     (error: unknown) =>
@@ -574,7 +579,7 @@ test("archiving a missing automation task returns not found", async () => {
   };
 
   await assert.rejects(
-    deleteAutomationTask(buildAccount(supabase as never), "missing-task"),
+    deleteAutomationTask(buildAccount(supabase as never), missingTaskId),
     (error: unknown) =>
       error instanceof AutomationHttpError &&
       error.status === 404 &&
@@ -932,7 +937,7 @@ test("reads the automation dashboard, runs, settings, and in-app notifications",
   const storage = buildAutomationStorage("active");
   const account = buildAccount(storage.supabase);
   const dashboard = await readAutomationDashboard(account);
-  const runs = await readAutomationRuns(account, "task-1");
+  const runs = await readAutomationRuns(account, taskId);
   const settings = await readAutomationSettings(account);
   const notifications = await readInAppAutomationNotifications(account, 50);
 
@@ -959,6 +964,21 @@ test("automation run filters reject invalid task identifiers", async () => {
         error instanceof AutomationHttpError &&
         error.status === 400 &&
         error.message === "taskId is required.",
+    );
+  }
+});
+
+test("automation identifiers reject malformed UUIDs", () => {
+  for (const [reader, field] of [
+    [readTaskId, "taskId"],
+    [readNotificationId, "notificationId"],
+  ] as const) {
+    assert.throws(
+      () => reader("not-a-uuid"),
+      (error: unknown) =>
+        error instanceof AutomationHttpError &&
+        error.status === 400 &&
+        error.message === `${field} must be a valid UUID.`,
     );
   }
 });
@@ -1171,7 +1191,7 @@ test("marks one or all in-app automation notifications as read", async () => {
   const account = buildAccount(storage.supabase);
   const marked = await markInAppAutomationNotificationRead(
     account,
-    "notification-1"
+    notificationId
   );
   const all = await markAllInAppAutomationNotificationsRead(account);
 
@@ -1263,7 +1283,7 @@ test("retries failed automation work and pauses repeated failures", async () => 
   });
   const run = await runAutomationTask(
     buildAccount(storage.supabase),
-    "task-1",
+    taskId,
     "schedule"
   );
 
@@ -1448,7 +1468,7 @@ function buildAutomationStorage(
     created_at: "2026-07-17T10:00:00.000Z",
     event_name: null,
     failure_threshold: 5,
-    id: "task-1",
+    id: taskId,
     last_run_at: null,
     last_run_status: null,
     max_retries: 3,
@@ -1537,7 +1557,7 @@ function buildAutomationStorage(
     {
       body: "Automation run needs attention.",
       created_at: new Date().toISOString(),
-      id: "notification-1",
+      id: notificationId,
       metadata: { status: "failed" },
       read_at: null,
       run_id: "run-dashboard-completed",
@@ -1749,7 +1769,7 @@ function buildAutomationStorage(
                     data: {
                       ...task,
                       ...payload,
-                      id: "task-created",
+                      id: createdTaskId,
                       created_at: task.created_at,
                       updated_at: task.updated_at,
                     },
