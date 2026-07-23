@@ -118,6 +118,52 @@ test("OpenAI streaming reads a trailing completed event without a final separato
   }
 });
 
+test("OpenAI streaming accepts CRLF event separators", async () => {
+  const restore = mockFetch(
+    () =>
+      new Response(
+        [
+          `data: ${JSON.stringify({
+            type: "response.output_text.delta",
+            delta: "Halo",
+          })}`,
+          `data: ${JSON.stringify({
+            type: "response.completed",
+            response: {
+              id: "resp-crlf",
+              model: "gpt-5.2",
+              usage: {
+                input_tokens: 4,
+                output_tokens: 6,
+                total_tokens: 10,
+              },
+            },
+          })}`,
+        ].join("\r\n\r\n"),
+        {
+          headers: { "Content-Type": "text/event-stream; charset=utf-8" },
+          status: 200,
+        },
+      ),
+  );
+
+  try {
+    await withEnv({ OPENAI_API_KEY: "test-key" }, async () => {
+      const result = await streamOpenAITextResponse({
+        input: "halo",
+        model: "gpt-5-mini",
+      });
+
+      assert.equal(result.text, "Halo");
+      assert.equal(result.id, "resp-crlf");
+      assert.equal(result.model, "gpt-5.2");
+      assert.equal(result.usage?.totalTokens, 10);
+    });
+  } finally {
+    restore();
+  }
+});
+
 test("OpenAI requests do not start after caller cancellation", async () => {
   const caller = new AbortController();
   let fetchCalls = 0;
