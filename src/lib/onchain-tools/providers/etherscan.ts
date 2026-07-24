@@ -271,9 +271,13 @@ function parseRawTokenValue(value: string) {
 }
 
 function readTokenDecimals(value: string | undefined) {
-  const parsed = Number.parseInt(value ?? "", 10);
+  if (!value || !/^(0|[1-9]\d*)$/.test(value)) {
+    return 18;
+  }
 
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.min(parsed, 36) : 18;
+  const parsed = Number(value);
+
+  return Number.isSafeInteger(parsed) ? Math.min(parsed, 36) : 18;
 }
 
 function formatTokenAmount(value: bigint, decimals: number) {

@@ -148,6 +148,37 @@ test("Etherscan adapters validate inputs and summarize response variants", async
   }
 });
 
+test("Etherscan transfer summaries reject partially numeric token decimals", async () => {
+  const restoreFetch = mockFetch(() =>
+    jsonResponse({
+      result: [
+        {
+          from: walletAddress,
+          to: tokenAddress,
+          tokenDecimal: "6junk",
+          tokenSymbol: "USDT",
+          value: "1500000000000000000",
+        },
+      ],
+    })
+  );
+
+  try {
+    await withEnv({ ETHERSCAN_API_KEY: "etherscan-test-key" }, async () => {
+      const transfers = await getTokenTransfers({
+        chain: "celo",
+        tokenAddress,
+        walletAddress,
+      });
+
+      assert.match(transfers.summary, /latest 1\.5 USDT/);
+      assert.doesNotMatch(transfers.summary, /1,500,000,000,000 USDT/);
+    });
+  } finally {
+    restoreFetch();
+  }
+});
+
 test("CoinGecko adapters resolve tickers, cleaned names, empty matches, and markets", async () => {
   const restoreFetch = mockFetch((url, init) => {
     const parsed = new URL(url);
