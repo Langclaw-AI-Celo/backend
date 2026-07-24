@@ -52,6 +52,39 @@ test("Dune row parsing skips malformed timestamps without dropping valid rows", 
   assert.equal(rows[0].pairAddress, pairAddress);
 });
 
+test("Dune row parsing rejects partially numeric market fields", () => {
+  const valid = row("2026-05-19T00:00:00Z", "1.02", "25000");
+  const rows = parseDuneHistoricalRows({
+    result: {
+      rows: [
+        { ...valid, price_usd: "1.02usd" },
+        { ...valid, liquidity_usd: "100,00" },
+        { ...valid, volume_usd: "25000usd" },
+      ],
+    },
+  });
+
+  assert.equal(rows.length, 0);
+
+  const controls = parseDuneHistoricalRows({
+    result: {
+      rows: [
+        {
+          ...valid,
+          liquidity_usd: "100,000",
+          price_usd: "1.02e0",
+          volume_usd: "25,000",
+        },
+      ],
+    },
+  });
+
+  assert.equal(controls.length, 1);
+  assert.equal(controls[0].liquidityUsd, 100000);
+  assert.equal(controls[0].priceUsd, 1.02);
+  assert.equal(controls[0].volumeUsd, 25000);
+});
+
 test("backtest computes trades, PnL, win rate, and drawdown", () => {
   const backtest = runLiquidityMomentumBacktest({
     bars: parseDuneHistoricalRows({
