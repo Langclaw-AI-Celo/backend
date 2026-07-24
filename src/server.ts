@@ -9,6 +9,7 @@ import { once } from "node:events";
 
 import { createRequestErrorResponse } from "./lib/server/http-errors";
 import { readLimitedRequestBody } from "./lib/server/request-body";
+import { readServerPort } from "./lib/server/runtime-config";
 import {
   decodePathSegment,
   resolveRequestProtocol,
@@ -78,7 +79,7 @@ const routes = new Map<string, RouteHandler>([
   ["POST /api/watchlist", handleWatchlist],
 ]);
 
-const port = readPort(process.env.PORT, 3001);
+const port = readServerPort(process.env.PORT, 3001);
 const host = process.env.HOST || "0.0.0.0";
 
 const server = createServer((request, response) => {
@@ -311,10 +312,4 @@ function isLocalDevelopmentOrigin(origin: string) {
 
 function readHeader(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function readPort(value: string | undefined, fallback: number) {
-  const parsed = Number.parseInt(value || "", 10);
-
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
