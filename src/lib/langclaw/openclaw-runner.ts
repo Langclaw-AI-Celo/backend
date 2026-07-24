@@ -215,9 +215,13 @@ export function extractModel(agentJson: OpenClawAgentResponse) {
 }
 
 export function readPositiveInt(value: string | undefined, fallback: number) {
-  const parsed = Number.parseInt(value ?? "", 10);
+  if (!/^[1-9]\d*$/.test(value ?? "")) {
+    return fallback;
+  }
 
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  const parsed = Number(value);
+
+  return Number.isSafeInteger(parsed) ? parsed : fallback;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
