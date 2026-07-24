@@ -562,8 +562,11 @@ function parseDuneRow(value: unknown): StrategyMarketBar | undefined {
     !timestamp ||
     !Number.isFinite(timestampMs) ||
     !pairAddress ||
+    priceUsd === undefined ||
     priceUsd <= 0 ||
+    liquidityUsd === undefined ||
     liquidityUsd < 0 ||
+    volumeUsd === undefined ||
     volumeUsd < 0
   ) {
     return undefined;
@@ -758,22 +761,30 @@ function readString(value: unknown) {
 
 function readNumber(value: unknown) {
   if (typeof value === "number") {
-    return Number.isFinite(value) ? value : 0;
+    return Number.isFinite(value) ? value : undefined;
   }
 
   if (typeof value === "string") {
-    const parsed = Number.parseFloat(value.replace(/,/g, ""));
+    const normalized = value.trim();
+    const isCompleteDecimal =
+      /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(
+        normalized
+      );
 
-    return Number.isFinite(parsed) ? parsed : 0;
+    if (!isCompleteDecimal) {
+      return undefined;
+    }
+
+    const parsed = Number(normalized.replace(/,/g, ""));
+
+    return Number.isFinite(parsed) ? parsed : undefined;
   }
 
-  return 0;
+  return undefined;
 }
 
 function readOptionalNumber(value: unknown) {
-  const parsed = readNumber(value);
-
-  return parsed || parsed === 0 ? parsed : undefined;
+  return readNumber(value);
 }
 
 function roundUsd(value: number) {
