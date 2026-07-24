@@ -140,13 +140,13 @@ export function selectUsageCost({
 }
 
 export function readUsageMarkupBps(value = process.env.LANGCLAW_USAGE_MARKUP_BPS) {
-  const parsed = Number.parseInt(value ?? "3000", 10);
+  const configured = value ?? "3000";
 
-  if (!Number.isFinite(parsed) || parsed < 0) {
+  if (!/^(0|[1-9]\d*)$/.test(configured)) {
     return 3000;
   }
 
-  return Math.min(parsed, 100_000);
+  return Math.min(Number(configured), 100_000);
 }
 
 export function calculateMarkupNeuron(rawCostNeuron: string, markupBps: number) {

@@ -89,6 +89,23 @@ test("honors custom LANGCLAW_USAGE_MARKUP_BPS", async () => {
   });
 });
 
+test("rejects malformed usage markup configuration", () => {
+  for (const value of [
+    "1250bps",
+    "1e4",
+    " 1250 ",
+    "+1250",
+    "12.5",
+    "01250",
+  ]) {
+    assert.equal(readUsageMarkupBps(value), 3000, value);
+  }
+
+  assert.equal(readUsageMarkupBps("0"), 0);
+  assert.equal(readUsageMarkupBps("100000"), 100_000);
+  assert.equal(readUsageMarkupBps("100001"), 100_000);
+});
+
 test("maps token usage into UI-ready fields while keeping legacy fields", () => {
   assert.deepEqual(
     mapUiTokenUsage({
