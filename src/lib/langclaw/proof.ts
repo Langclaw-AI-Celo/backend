@@ -23,6 +23,7 @@ import {
   type ProductChainId,
   type ProductChainConfig,
 } from "../chain-config";
+import { readCanonicalPositiveInteger } from "../numeric-config";
 import { sanitizeError } from "./openclaw-runner";
 import type {
   AgentOutputs,
@@ -619,12 +620,10 @@ function readReputationFeedbackPrivateKey(
 }
 
 function readChainId(chain: ProductChainConfig) {
-  const parsed = Number.parseInt(
-    readChainEnv(chain, "CHAIN_ID", String(chain.chainId)) || "",
-    10
+  return readCanonicalPositiveInteger(
+    readChainEnv(chain, "CHAIN_ID"),
+    chain.chainId
   );
-
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : chain.chainId;
 }
 
 function readAgentId(chain: ProductChainConfig) {

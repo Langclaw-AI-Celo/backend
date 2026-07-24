@@ -14,6 +14,10 @@ import {
   readProductChainId,
   type ProductChainId,
 } from "../lib/chain-config";
+import {
+  readCanonicalNonNegativeBigInt,
+  readCanonicalPositiveInteger,
+} from "../lib/numeric-config";
 import { buildProofReadinessReport } from "../lib/proof-readiness";
 
 type ProofDecision = {
@@ -260,16 +264,9 @@ function readRegistryDeployBlock(
   address: Address,
   chain: ReturnType<typeof getProductChain>
 ) {
-  const configured = BigInt(
-    Math.max(
-      0,
-      Number.parseInt(
-        readChainEnv(chain, "REGISTRY_DEPLOY_BLOCK") ||
-          readChainEnv(chain, "CHAIN_DEPLOY_BLOCK") ||
-          "",
-        10
-      ) || 0
-    )
+  const configured = readCanonicalNonNegativeBigInt(
+    readChainEnv(chain, "REGISTRY_DEPLOY_BLOCK") ||
+      readChainEnv(chain, "CHAIN_DEPLOY_BLOCK")
   );
 
   if (configured > 0n) {
@@ -293,12 +290,10 @@ function rangeBigInt(start: bigint, end: bigint) {
 }
 
 function readChainId(chain: ReturnType<typeof getProductChain>) {
-  const parsed = Number.parseInt(
-    readChainEnv(chain, "CHAIN_ID", String(chain.chainId)) || "",
-    10
+  return readCanonicalPositiveInteger(
+    readChainEnv(chain, "CHAIN_ID"),
+    chain.chainId
   );
-
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : chain.chainId;
 }
 
 function trimSlash(value: string) {
