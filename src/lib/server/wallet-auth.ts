@@ -452,11 +452,16 @@ function readPurpose(value: unknown): WalletAuthPurpose {
 }
 
 function readChainId(value: unknown) {
-  if (value === undefined || value === null || value === "") {
+  if (value === undefined || value === null) {
     return DEFAULT_CHAIN_ID;
   }
 
-  const chainId = typeof value === "number" ? value : Number(value);
+  const chainId =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^[1-9]\d*$/.test(value)
+        ? Number(value)
+        : Number.NaN;
 
   if (!Number.isSafeInteger(chainId) || chainId <= 0) {
     throw new WalletAuthError(400, "A valid chain id is required.");
