@@ -165,6 +165,22 @@ test("normalizes OpenClaw primitive helper inputs", () => {
   assert.equal(isRecord(null), false);
 });
 
+test("rejects partial positive integer runtime settings", () => {
+  for (const value of [
+    "12seconds",
+    "1e2",
+    "12.5",
+    " 12 ",
+    "+12",
+    "012",
+    "9007199254740992",
+  ]) {
+    assert.equal(readPositiveInt(value, 60), 60, value);
+  }
+
+  assert.equal(readPositiveInt("9007199254740991", 60), Number.MAX_SAFE_INTEGER);
+});
+
 async function createCliFixture(source: string) {
   const directory = await mkdtemp(join(tmpdir(), "langclaw-openclaw-"));
   const path = join(directory, "openclaw-fixture.sh");
