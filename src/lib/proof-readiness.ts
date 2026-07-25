@@ -22,6 +22,10 @@ import {
   type ProductChainConfig,
   type ProductChainId,
 } from "./chain-config";
+import {
+  readCanonicalNonNegativeBigInt,
+  readCanonicalPositiveInteger,
+} from "./numeric-config";
 
 type ReadinessCheckStatus = "pass" | "warn" | "fail";
 
@@ -560,28 +564,19 @@ function readProofRegistryAddress(chain: ProductChainConfig) {
 }
 
 function readConfiguredChainId(chain: ProductChainConfig) {
-  const parsed = Number.parseInt(
-    readChainEnv(chain, "CHAIN_ID", String(chain.chainId)) || "",
-    10
+  return readCanonicalPositiveInteger(
+    readChainEnv(chain, "CHAIN_ID"),
+    chain.chainId
   );
-
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : chain.chainId;
 }
 
 function readRegistryDeployBlock(
   address: Address,
   chain: ProductChainConfig
 ) {
-  const configured = BigInt(
-    Math.max(
-      0,
-      Number.parseInt(
-        readChainEnv(chain, "REGISTRY_DEPLOY_BLOCK") ||
-          readChainEnv(chain, "CHAIN_DEPLOY_BLOCK") ||
-          "",
-        10
-      ) || 0
-    )
+  const configured = readCanonicalNonNegativeBigInt(
+    readChainEnv(chain, "REGISTRY_DEPLOY_BLOCK") ||
+      readChainEnv(chain, "CHAIN_DEPLOY_BLOCK")
   );
 
   if (configured > 0n) {

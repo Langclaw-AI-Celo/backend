@@ -505,3 +505,53 @@ test("proof readiness accepts legacy Mantle proof configuration", async () => {
     }
   );
 });
+
+test("proof readiness rejects partial numeric chain IDs", async () => {
+  await withEnv(
+    {
+      ...readyEnv,
+      CELO_CHAIN_ID: "5000junk",
+    },
+    async () => {
+      const report = await buildProofReadinessReport({
+        publicClient: {
+          ...buildClient(),
+          async getChainId() {
+            return 5000;
+          },
+        },
+      });
+
+      assert.equal(report.chainId, 42220);
+      assert.equal(
+        report.checks.find((check) => check.id === "rpc-chain-id")?.status,
+        "fail"
+      );
+    }
+  );
+});
+
+test("proof readiness ignores malformed deploy block overrides", async () => {
+  let logStartBlock = 0n;
+
+  await withEnv(
+    {
+      ...readyEnv,
+      CELO_CHAIN_DEPLOY_BLOCK: undefined,
+      CELO_REGISTRY_DEPLOY_BLOCK: "123junk",
+    },
+    async () => {
+      await buildProofReadinessReport({
+        publicClient: {
+          ...buildClient(),
+          async getLogs(args: { fromBlock: bigint }) {
+            logStartBlock = args.fromBlock;
+            return [];
+          },
+        },
+      });
+
+      assert.equal(logStartBlock, 67_836_343n);
+    }
+  );
+});

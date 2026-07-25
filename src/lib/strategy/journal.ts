@@ -21,6 +21,10 @@ import {
   type ProductChainConfig,
   type ProductChainId,
 } from "../chain-config";
+import {
+  readCanonicalNonNegativeBigInt,
+  readCanonicalPositiveInteger,
+} from "../numeric-config";
 import type {
   StrategyAction,
   StrategyRecordStatus,
@@ -546,21 +550,16 @@ function readAgentId(chain: ProductChainConfig) {
 }
 
 function readChainId(chain: ProductChainConfig) {
-  const parsed = Number.parseInt(
-    readChainEnv(chain, "CHAIN_ID", String(chain.chainId)) || "",
-    10
+  return readCanonicalPositiveInteger(
+    readChainEnv(chain, "CHAIN_ID"),
+    chain.chainId
   );
-
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : chain.chainId;
 }
 
 function readJournalDeployBlock(chain: ProductChainConfig) {
-  const parsed = Number.parseInt(
-    readChainEnv(chain, "TRADING_JOURNAL_DEPLOY_BLOCK") || "",
-    10
+  return readCanonicalNonNegativeBigInt(
+    readChainEnv(chain, "TRADING_JOURNAL_DEPLOY_BLOCK")
   );
-
-  return BigInt(Number.isFinite(parsed) && parsed > 0 ? parsed : 0);
 }
 
 function readJournalAddress(chain: ProductChainConfig) {
