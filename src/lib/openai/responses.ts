@@ -448,8 +448,10 @@ function readRawString(value: unknown) {
 }
 
 function readNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.trunc(value)
+  return typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0
+    ? value
     : undefined;
 }
 
