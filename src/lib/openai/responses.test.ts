@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createOpenAITextResponse,
   getDefaultOpenAIModel,
+  readOpenAIUsage,
   streamOpenAITextResponse,
 } from "./responses";
 import { mockFetch, sseResponse, withEnv } from "../../test/helpers";
@@ -48,6 +49,31 @@ test("chat default model falls back to GPT-5.2", async () => {
   await withEnv({}, async () => {
     assert.equal(getDefaultOpenAIModel("chat"), "gpt-5.2");
   });
+});
+
+test("OpenAI usage rejects invalid token counts", () => {
+  for (const invalidCount of [
+    -1,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    assert.equal(
+      readOpenAIUsage({ input_tokens: invalidCount }),
+      undefined,
+    );
+  }
+
+  const mixedUsage = readOpenAIUsage({
+    input_tokens: -1,
+    output_tokens: 4,
+    total_tokens: 4,
+  });
+  assert.equal(mixedUsage?.inputTokens, undefined);
+  assert.equal(mixedUsage?.outputTokens, 4);
+  assert.equal(mixedUsage?.totalTokens, 4);
+
+  const zeroUsage = readOpenAIUsage({ input_tokens: 0 });
+  assert.equal(zeroUsage?.inputTokens, 0);
 });
 
 test("OpenAI streaming preserves whitespace in output deltas", async () => {
