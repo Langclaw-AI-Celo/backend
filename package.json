@@ -33,7 +33,7 @@
   },
   "devDependencies": {
     "@types/node": "latest",
-    "solc": "^0.8.35",
+    "solc": "^0.8.36",
     "tsx": "latest",
     "typescript": "latest"
   },
